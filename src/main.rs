@@ -4,13 +4,15 @@ use sddag::NodeAddress;
 mod sddag;
 
 //Todo:
-//Figure out what async does
+//Test whether set_node_child works on things besides lowest level nodes (it should)
 #[macroquad::main("First Window")]
 async fn main() {
     let mut tree  = sddag::SparseDAG1D::new(2);
     let mut root = NodeAddress::new(2, 0);
     tree.set_node_child(&mut root, 0, 0b000, 1);
-    tree.set_node_child(&mut root, 0, 0b010, 1);
+    tree.set_node_child(&mut root, 0, 0b111, 1);
+    tree.set_node_child(&mut root, 0, 0b011, 1);
+    dbg!(tree.df_to_binary(&root));
 
 
     let mut player = Object::new(

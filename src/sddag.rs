@@ -176,13 +176,38 @@ impl SparseDAG1D {
         let trail = self.get_trail(&root, path, steps);
         let mut new_index = child_index;
         for step in 0..=steps {
-            let cur_address:NodeAddress = NodeAddress::new(step, trail[step]);
+            let cur_address:NodeAddress = NodeAddress::new(step + node_layer, trail[steps - step]);
             let child_direction:usize = ((path >> step) & 0b1) as usize; 
             new_index = self.add_modified_node(&cur_address, child_direction, new_index);
         }
         self.inc_ref_count(&NodeAddress::new(root.layer, new_index));
         self.dec_ref_count(&root);
         root.index = new_index;
+    }
+
+    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works.
+    pub fn df_to_binary(&mut self, root:&NodeAddress) -> u64 {
+        let mut resulting_binary:u64 = 0;
+        let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
+        queue.push((root.clone(), 0));
+
+        while queue.len() != 0 {
+            let (cur_address, cur_path) = queue.pop().unwrap();
+            let cur_node = self.get_node(&cur_address);
+            for child in 0..2 {
+                let child_index = cur_node.child_indexes[child];
+                let child_path = (cur_path << 1) | child as u32;
+                if child_index == 0 { continue }
+                else if cur_address.layer != 0 { 
+                    queue.push( (NodeAddress::new(cur_address.layer - 1, child_index), child_path) )
+                } else {
+                    resulting_binary |= 1 << child_path;
+                }
+                
+            }
+        }
+
+        resulting_binary
     }
 
 }
