@@ -70,7 +70,7 @@ impl SparseDAG1D {
         new_self
     }
 
-    //Public methods used to meta-edit the dag
+    //Public methods used to modify root nodes
     //Rename these stupid variable names
     pub fn compress_root_once(&mut self, root:&mut NodeAddress) {
         let cur_node = self.get_node(root);
@@ -98,7 +98,7 @@ impl SparseDAG1D {
     }
 
 
-    //Private methods used to meta-edit the dag 
+    //Private methods used to modify root nodes 
     fn ensure_depth(&mut self, layer:usize) {
         for _i in self.node_pot.len()..=layer {
             self.node_pot.push(vec![Node::new_empty()]);
