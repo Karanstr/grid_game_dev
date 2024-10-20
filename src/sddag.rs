@@ -80,6 +80,8 @@ impl SparseDAG1D {
     pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) {
         if root.layer == 0 { return }
         let child_index = self.get_node_child_index(&root, direction);
+        self.inc_ref_count(&NodeAddress::new(root.layer - 1, child_index));
+        self.dec_ref_count(&root);
         root.layer = root.layer - 1;
         root.index = child_index;
     }
