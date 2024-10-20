@@ -70,6 +70,10 @@ impl SparseDAG1D {
     //Combine raise and lower, remove the by_one
     //Mutates root
     pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:u32) {
+        //Arbitrary limit to prevent overflows in df_to_binary
+        if root.layer == 6-1 {
+            return
+        }
         self.ensure_depth(root.layer + 1);
         let mut new_root = NodeAddress::new(root.layer + 1, 0);
         self.set_node_child(&mut new_root, root.layer + 1, direction, root.index);
