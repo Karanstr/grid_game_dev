@@ -185,8 +185,15 @@ impl SparseDAG1D {
         root.index = new_index;
     }
 
-    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works.
-    pub fn df_to_binary(&mut self, root:&NodeAddress) -> u64 {
+    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:u32) -> usize {
+        let steps = root.layer - node_layer;
+        let trail = self.get_trail(&root, path, steps);
+        let address = NodeAddress::new(node_layer, trail[steps]);
+        self.get_node_child_index(&address, path as usize & 0b1)
+    }
+
+    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably rewrite my packed_array)
+    pub fn df_to_binary(&self, root:&NodeAddress) -> u64 {
         let mut resulting_binary:u64 = 0;
         let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
         queue.push((root.clone(), 0));
@@ -208,6 +215,17 @@ impl SparseDAG1D {
         }
 
         resulting_binary
+    }
+
+
+    //Dimensionality will have to be updated when we make this compatible with any number of dimensions
+    //This is really easy for 1 dimension, I promise it's not so easy when we scale
+    pub fn _path_to_cell(path:u32) -> u32 {
+        path
+    }
+
+    pub fn _cell_to_path(cell:u32) -> u32 {
+        cell
     }
 
 }
