@@ -18,6 +18,18 @@ impl Node {
         node1.child_indexes == node2.child_indexes
     }
 
+    fn count_kids_and_get_last(&self) -> (u32, usize) {
+        let mut count:u32 = 0;
+        let mut last_set_kid = 0;
+        for child in 0 .. self.child_indexes.len() {
+            if self.child_indexes[child] != 0 {
+                last_set_kid = child;
+                count += 1;
+            }
+        }
+        (count, last_set_kid)
+    }
+
     fn clone_without_ref(&self) -> Self {
         Self {
             child_indexes: self.child_indexes,
@@ -33,6 +45,7 @@ pub struct NodeAddress {
     pub index:usize
 }
 
+//Write get_child_address
 impl NodeAddress {
     pub fn new(layer:usize, index:usize) -> Self {
         Self {
@@ -58,6 +71,31 @@ impl SparseDAG1D {
     }
 
     //Public methods used to meta-edit the dag
+    //Rename these stupid variable names
+    pub fn compress_root_once(&mut self, root:&mut NodeAddress) {
+        let cur_node = self.get_node(root);
+        let (kid_count, last_index) = cur_node.count_kids_and_get_last();
+        if  kid_count == 1 {
+            self.lower_root_by_one(root, last_index);
+        } else {
+            let kids = cur_node.child_indexes;
+            let child_directions = [1, 0];
+            let mut new_root_node = Node::new_empty();
+            for kid in 0 .. kids.len() {
+                let kid_kids = self.get_node(&NodeAddress::new(root.layer - 1, kids[kid]));
+                let (kid_kid_count, kid_index) = kid_kids.count_kids_and_get_last();
+                if !(kid_kid_count == 1 && kid_index == child_directions[kid]) || kid_kid_count == 0 {
+                    return
+                }
+                new_root_node.child_indexes[kid] = kid_kids.child_indexes[child_directions[kid]]
+            } //If we don't return, we are good to continue
+            let mut new_root = NodeAddress::new(root.layer - 1, 0);
+            new_root.index = self.add_node(root.layer - 1, new_root_node);
+            self.transfer_reference(&root, &new_root);
+            root.layer = new_root.layer;
+            root.index = new_root.index;
+        }
+    }
 
 
     //Private methods used to meta-edit the dag 
@@ -67,7 +105,8 @@ impl SparseDAG1D {
         }
     }
 
-    //Combine raise and lower, remove the by_one
+    //Combine raise and lower, remove the by_one, make these both private
+    //Raise_root_by_one doesn't delete references either, get rid of the set_node_child call while merging and implement how lower_root does it
     //Mutates root
     pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:u32) {
         //Arbitrary limit to prevent overflows in df_to_binary
@@ -84,14 +123,9 @@ impl SparseDAG1D {
     pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) {
         if root.layer == 0 { return }
         let child_index = self.get_node_child_index(&root, direction);
-        self.inc_ref_count(&NodeAddress::new(root.layer - 1, child_index));
-        self.dec_ref_count(&root);
+        self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, child_index));
         root.layer = root.layer - 1;
         root.index = child_index;
-    }
-
-    fn compress_root() {
-
     }
 
 
@@ -237,6 +271,11 @@ impl SparseDAG1D {
         self.add_node(address.layer, mod_node)
     }
 
+    fn transfer_reference(&mut self, node_give:&NodeAddress, node_recieve:&NodeAddress) {
+        self.inc_ref_count(node_recieve);
+        self.dec_ref_count(node_give);
+    }
+
 
     //Public methods used to modify dag data
     //Modifies root to point right to the new root.
@@ -249,8 +288,7 @@ impl SparseDAG1D {
             let child_direction:usize = ((path >> step) & 0b1) as usize; 
             new_index = self.add_modified_node(&cur_address, child_direction, new_index);
         }
-        self.inc_ref_count(&NodeAddress::new(root.layer, new_index));
-        self.dec_ref_count(&root);
+        self.transfer_reference(&root, &NodeAddress::new(root.layer, new_index));
         root.index = new_index;
     }
 
