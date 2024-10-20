@@ -1,25 +1,45 @@
 use macroquad::prelude::*;
 use sddag::{NodeAddress, SparseDAG1D};
-
+use std::i32::MAX;
 mod sddag;
 
 #[macroquad::main("First Window")]
 async fn main() {
-    let tree  = sddag::SparseDAG1D::new(2);
-    let root = NodeAddress::new(2, 0);
-    let mut body = DAGBody::new(tree, root, Vec2::new(screen_width()/2., screen_height()/2.), 20.);
+
+    //Set-up
+    let dag  = sddag::SparseDAG1D::new(0);
+    let root = NodeAddress::new(0, 0);
+    let mut body = DAGBody::new(dag, root, Vec2::new(screen_width()/2., screen_height()/2.), 20.);
+    
+    let mut last_edit_cell:i32 = MAX;
 
     //Window (game) loop
     loop {
         
-        //Only edit when clicking
-        if is_mouse_button_pressed(MouseButton::Left) {
+        //Stupid code repeat, maybe abstract into toggle_cell_drag()?
+        //Makes sure while the mouse is held you won't change a cell you just changed.
+        let rel_mouse_pos = Vec2::from(mouse_position()) - body.world_tether.position;
+        let edit_cell: i32 = round_away_0_pref_pos(rel_mouse_pos.x / body.world_tether.size.x);
+        if is_mouse_button_down(MouseButton::Left) && edit_cell != last_edit_cell {
             body.toggle_cell_with_mouse(Vec2::from(mouse_position()));
+            last_edit_cell = edit_cell;
+        } else if is_mouse_button_released(MouseButton::Left) {
+            last_edit_cell = MAX
         }
+
+        if is_key_pressed(KeyCode::F) {
+            body.dag.raise_root_by_one(&mut body.root, 0);
+        }
+        if is_key_pressed(KeyCode::G) {
+            body.dag.lower_root_by_one(&mut body.root, 0);
+        }
+
 
         body.world_tether.move_with_wasd(5.);
 
-        //Render script
+
+
+
         body.render();
 
         next_frame().await
@@ -88,8 +108,8 @@ impl DAGBody {
         }
     }
 
-    fn toggle_cell_with_mouse(&mut self, mouse_position:Vec2) {
-        let rel_mouse_pos = mouse_position - self.world_tether.position;
+    fn toggle_cell_with_mouse(&mut self, mouse_pos:Vec2) {
+        let rel_mouse_pos = mouse_pos - self.world_tether.position;
         let edit_cell: i32 = round_away_0_pref_pos(rel_mouse_pos.x / self.world_tether.size.x);
         let blocks_on_side = 2i32.pow(self.root.layer as u32);
         //If mouse is within bounds. Eventually we add an else to expand the DAG if some parameter is true

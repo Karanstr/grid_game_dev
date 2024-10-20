@@ -57,17 +57,39 @@ impl SparseDAG1D {
         new_self
     }
 
+    //Public methods used to meta-edit the dag
+
+
+    //Private methods used to meta-edit the dag 
     fn ensure_depth(&mut self, layer:usize) {
         for _i in self.node_pot.len()..=layer {
             self.node_pot.push(vec![Node::new_empty()]);
         }
     }
 
-
-    pub fn get_node(&self, address:&NodeAddress) -> &Node {
-        &self.node_pot[address.layer][address.index]
+    //Combine raise and lower, remove the by_one
+    //Mutates root
+    pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:u32) {
+        self.ensure_depth(root.layer + 1);
+        let mut new_root = NodeAddress::new(root.layer + 1, 0);
+        self.set_node_child(&mut new_root, root.layer + 1, direction, root.index);
+        root.layer = new_root.layer;
+        root.index = new_root.index;
     }
 
+    pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) {
+        if root.layer == 0 { return }
+        let child_index = self.get_node_child_index(&root, direction);
+        root.layer = root.layer - 1;
+        root.index = child_index;
+    }
+
+    fn compress_root() {
+
+    }
+
+
+    //Private methods used to read from the dag
     fn get_mut_node(&mut self, address:&NodeAddress) -> &mut Node {
         &mut self.node_pot[address.layer][address.index]
     }
@@ -100,7 +122,57 @@ impl SparseDAG1D {
         first_avaliable_index
     }
 
+    fn get_trail(&self, root:&NodeAddress, path:u32, steps:usize) -> Vec<usize> {
+        let mut trail:Vec<usize> = Vec::with_capacity(steps + 1);
+        trail.push(root.index); //We start our journey at the root
+        for step in 0..=steps {
+            let cur_address= NodeAddress::new(root.layer - step, trail[step]);
+            let child_direction:usize = ((path >> (steps - step)) & 0b1) as usize;
+            trail.push(self.get_node_child_index(&cur_address, child_direction));
+        }
+        trail
+    }
 
+
+    //Public methods used to read from the dag
+    pub fn get_node(&self, address:&NodeAddress) -> &Node {
+        &self.node_pot[address.layer][address.index]
+    }
+
+    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:u32) -> usize {
+        let steps = root.layer - node_layer;
+        let trail = self.get_trail(&root, path, steps);
+        let address = NodeAddress::new(node_layer, trail[steps]);
+        self.get_node_child_index(&address, path as usize & 0b1)
+    }
+
+    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably rewrite my packed_array)
+    pub fn df_to_binary(&self, root:&NodeAddress) -> u64 {
+        let mut resulting_binary:u64 = 0;
+        let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
+        queue.push((root.clone(), 0));
+
+        while queue.len() != 0 {
+            let (cur_address, cur_path) = queue.pop().unwrap();
+            let cur_node = self.get_node(&cur_address);
+            for child in 0..2 {
+                let child_index = cur_node.child_indexes[child];
+                let child_path = (cur_path << 1) | child as u32;
+                if child_index == 0 { continue }
+                else if cur_address.layer != 0 { 
+                    queue.push( (NodeAddress::new(cur_address.layer - 1, child_index), child_path) )
+                } else {
+                    resulting_binary |= 1 << child_path;
+                }
+                
+            }
+        }
+
+        resulting_binary
+    }
+
+
+    //Private methods used to modify dag data
     fn dec_ref_count(&mut self, address:&NodeAddress) {
         let mut queue:Vec<NodeAddress> = Vec::new();
         if address.index != 0 {
@@ -159,17 +231,8 @@ impl SparseDAG1D {
         self.add_node(address.layer, mod_node)
     }
 
-    fn get_trail(&self, root:&NodeAddress, path:u32, steps:usize) -> Vec<usize> {
-        let mut trail:Vec<usize> = Vec::with_capacity(steps + 1);
-        trail.push(root.index); //We start our journey at the root
-        for step in 0..=steps {
-            let cur_address= NodeAddress::new(root.layer - step, trail[step]);
-            let child_direction:usize = ((path >> (steps - step)) & 0b1) as usize;
-            trail.push(self.get_node_child_index(&cur_address, child_direction));
-        }
-        trail
-    }
 
+    //Public methods used to modify dag data
     //Modifies root to point right to the new root.
     pub fn set_node_child(&mut self, root:&mut NodeAddress, node_layer:usize, path:u32, child_index:usize) {
         let steps = root.layer - node_layer;
@@ -185,47 +248,6 @@ impl SparseDAG1D {
         root.index = new_index;
     }
 
-    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:u32) -> usize {
-        let steps = root.layer - node_layer;
-        let trail = self.get_trail(&root, path, steps);
-        let address = NodeAddress::new(node_layer, trail[steps]);
-        self.get_node_child_index(&address, path as usize & 0b1)
-    }
 
-    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably rewrite my packed_array)
-    pub fn df_to_binary(&self, root:&NodeAddress) -> u64 {
-        let mut resulting_binary:u64 = 0;
-        let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
-        queue.push((root.clone(), 0));
-
-        while queue.len() != 0 {
-            let (cur_address, cur_path) = queue.pop().unwrap();
-            let cur_node = self.get_node(&cur_address);
-            for child in 0..2 {
-                let child_index = cur_node.child_indexes[child];
-                let child_path = (cur_path << 1) | child as u32;
-                if child_index == 0 { continue }
-                else if cur_address.layer != 0 { 
-                    queue.push( (NodeAddress::new(cur_address.layer - 1, child_index), child_path) )
-                } else {
-                    resulting_binary |= 1 << child_path;
-                }
-                
-            }
-        }
-
-        resulting_binary
-    }
-
-
-    //Dimensionality will have to be updated when we make this compatible with any number of dimensions
-    //This is really easy for 1 dimension, I promise it's not so easy when we scale
-    pub fn _path_to_cell(path:u32) -> u32 {
-        path
-    }
-
-    pub fn _cell_to_path(cell:u32) -> u32 {
-        cell
-    }
 
 }
