@@ -70,30 +70,21 @@ impl SparseDAG1D {
         new_self
     }
 
+    
     //Public methods used to modify root nodes
-    //Rename these stupid variable names
-    pub fn compress_root_once(&mut self, root:&mut NodeAddress) {
-        let cur_node = self.get_node(root);
-        let (kid_count, last_index) = cur_node.count_kids_and_get_last();
-        if  kid_count == 1 {
+    pub fn shrink_root_to_fit(&mut self, root:&mut NodeAddress) {
+        //Descend to single filled child
+        loop {
+            if root.layer == 0 { return }
+            let (kid_count, last_index) = self.get_node(&root).count_kids_and_get_last();
+            if kid_count != 1 { break }
             self.lower_root_by_one(root, last_index);
-        } else {
-            let kids = cur_node.child_indexes;
-            let child_directions = [1, 0];
-            let mut new_root_node = Node::new_empty();
-            for kid in 0 .. kids.len() {
-                let kid_kids = self.get_node(&NodeAddress::new(root.layer - 1, kids[kid]));
-                let (kid_kid_count, kid_index) = kid_kids.count_kids_and_get_last();
-                if !(kid_kid_count == 1 && kid_index == child_directions[kid]) || kid_kid_count == 0 {
-                    return
-                }
-                new_root_node.child_indexes[kid] = kid_kids.child_indexes[child_directions[kid]]
-            } //If we don't return, we are good to continue
-            let mut new_root = NodeAddress::new(root.layer - 1, 0);
-            new_root.index = self.add_node(root.layer - 1, new_root_node);
-            self.transfer_reference(&root, &new_root);
-            root.layer = new_root.layer;
-            root.index = new_root.index;
+        }
+        loop {
+            if root.layer == 0 { return }
+            if self.compact_root_children(root) == false {
+                break
+            }
         }
     }
 
@@ -128,6 +119,25 @@ impl SparseDAG1D {
         root.index = child_index;
     }
 
+    fn compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
+        let child_directions = [1, 0];
+        let mut new_root_node = Node::new_empty();
+        let children = self.get_node(&root).child_indexes;
+        for index in 0 .. child_directions.len() {
+            let address = NodeAddress::new(root.layer - 1, children[index]);
+            let node = self.get_node(&address);
+            let (child_count, last_index) = node.count_kids_and_get_last();
+            if child_count > 1 || last_index != child_directions[index] {
+                return false //Cannot compact root
+            }
+            new_root_node.child_indexes[index] = node.child_indexes[child_directions[index]];
+        } //If we don't terminate we are safe to lower the root
+        let new_root_index = self.add_node(root.layer - 1, new_root_node);
+        self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, new_root_index));
+        root.layer -= 1;
+        root.index = new_root_index;
+        true //Successfully compacted root
+    }
 
     //Private methods used to read from the dag
     fn get_mut_node(&mut self, address:&NodeAddress) -> &mut Node {
@@ -271,9 +281,9 @@ impl SparseDAG1D {
         self.add_node(address.layer, mod_node)
     }
 
-    fn transfer_reference(&mut self, node_give:&NodeAddress, node_recieve:&NodeAddress) {
-        self.inc_ref_count(node_recieve);
-        self.dec_ref_count(node_give);
+    fn transfer_reference(&mut self, node_giver:&NodeAddress, node_reciever:&NodeAddress) {
+        self.inc_ref_count(node_reciever);
+        self.dec_ref_count(node_giver);
     }
 
 

@@ -34,7 +34,7 @@ async fn main() {
             body.dag.lower_root_by_one(&mut body.root, 0);
         }
         if is_key_pressed(KeyCode::O) {
-            body.dag.compress_root_once(&mut body.root);
+            body.dag.shrink_root_to_fit(&mut body.root);
         }
 
 
