@@ -72,20 +72,24 @@ impl SparseDAG1D {
 
     
     //Public methods used to modify root nodes
-    pub fn shrink_root_to_fit(&mut self, root:&mut NodeAddress) {
+    pub fn shrink_root_to_fit(&mut self, root:&mut NodeAddress) -> i32 {
         //Descend to single filled child
+        let direction_shifted = [-1, 1];
+        let mut blocks_shifted = 0;
         loop {
-            if root.layer == 0 { return }
+            if root.layer == 0 { return blocks_shifted }
             let (kid_count, last_index) = self.get_node(&root).count_kids_and_get_last();
             if kid_count != 1 { break }
             self.lower_root_by_one(root, last_index);
+            blocks_shifted += 2i32.pow(root.layer as u32) * direction_shifted[last_index];
         }
         loop {
-            if root.layer == 0 { return }
+            if root.layer == 0 { return blocks_shifted }
             if self.compact_root_children(root) == false {
                 break
             }
         }
+        blocks_shifted
     }
 
 
@@ -96,27 +100,26 @@ impl SparseDAG1D {
         }
     }
 
-    //Combine raise and lower, remove the by_one, make these both private
-    //Raise_root_by_one doesn't delete references either, get rid of the set_node_child call while merging and implement how lower_root does it
-    //Mutates root
-    pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:u32) {
-        //Arbitrary limit to prevent overflows in df_to_binary
-        if root.layer == 6-1 {
-            return
-        }
+    pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) -> i32 {
+        //Limit to prevent binarization from overflowing
+        if root.layer == 5 { return 0 }
+        let shift_directions = [1, -1];
         self.ensure_depth(root.layer + 1);
         let mut new_root = NodeAddress::new(root.layer + 1, 0);
         self.set_node_child(&mut new_root, root.layer + 1, direction, root.index);
         root.layer = new_root.layer;
         root.index = new_root.index;
+        2i32.pow(root.layer as u32 - 1) * shift_directions[direction as usize]
     }
 
-    pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) {
-        if root.layer == 0 { return }
+    pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) -> i32 {
+        if root.layer == 0 { return 0 }
+        let shift_directions = [-1, 1];
         let child_index = self.get_node_child_index(&root, direction);
         self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, child_index));
         root.layer = root.layer - 1;
         root.index = child_index;
+        2i32.pow(root.layer as u32) * shift_directions[direction]
     }
 
     fn compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
@@ -138,6 +141,7 @@ impl SparseDAG1D {
         root.index = new_root_index;
         true //Successfully compacted root
     }
+
 
     //Private methods used to read from the dag
     fn get_mut_node(&mut self, address:&NodeAddress) -> &mut Node {
@@ -172,7 +176,7 @@ impl SparseDAG1D {
         first_avaliable_index
     }
 
-    fn get_trail(&self, root:&NodeAddress, path:u32, steps:usize) -> Vec<usize> {
+    fn get_trail(&self, root:&NodeAddress, path:usize, steps:usize) -> Vec<usize> {
         let mut trail:Vec<usize> = Vec::with_capacity(steps + 1);
         trail.push(root.index); //We start our journey at the root
         for step in 0..=steps {
@@ -189,7 +193,7 @@ impl SparseDAG1D {
         &self.node_pot[address.layer][address.index]
     }
 
-    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:u32) -> usize {
+    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:usize) -> usize {
         let steps = root.layer - node_layer;
         let trail = self.get_trail(&root, path, steps);
         let address = NodeAddress::new(node_layer, trail[steps]);
@@ -289,7 +293,7 @@ impl SparseDAG1D {
 
     //Public methods used to modify dag data
     //Modifies root to point right to the new root.
-    pub fn set_node_child(&mut self, root:&mut NodeAddress, node_layer:usize, path:u32, child_index:usize) {
+    pub fn set_node_child(&mut self, root:&mut NodeAddress, node_layer:usize, path:usize, child_index:usize) {
         let steps = root.layer - node_layer;
         let trail = self.get_trail(&root, path, steps);
         let mut new_index = child_index;
@@ -301,7 +305,6 @@ impl SparseDAG1D {
         self.transfer_reference(&root, &NodeAddress::new(root.layer, new_index));
         root.index = new_index;
     }
-
 
 
 }

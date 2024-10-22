@@ -1,7 +1,6 @@
 use macroquad::prelude::*;
-use sddag::{NodeAddress, SparseDAG1D};
-use std::i32::MAX;
 mod sddag;
+use sddag::{NodeAddress, SparseDAG1D};
 
 #[macroquad::main("First Window")]
 async fn main() {
@@ -11,30 +10,27 @@ async fn main() {
     let root = NodeAddress::new(0, 0);
     let mut body = DAGBody::new(dag, root, Vec2::new(screen_width()/2., screen_height()/2.), 20.);
     
-    let mut last_edit_cell:i32 = MAX;
 
     //Window (game) loop
     loop {
         
-        //Stupid code repeat, maybe abstract into toggle_cell_drag()?
-        //Makes sure while the mouse is held you won't change a cell you just changed.
-        let rel_mouse_pos = Vec2::from(mouse_position()) - body.world_tether.position;
-        let edit_cell: i32 = round_away_0_pref_pos(rel_mouse_pos.x / body.world_tether.size.x);
-        if is_mouse_button_down(MouseButton::Left) && edit_cell != last_edit_cell {
-            body.toggle_cell_with_mouse(Vec2::from(mouse_position()));
-            last_edit_cell = edit_cell;
-        } else if is_mouse_button_released(MouseButton::Left) {
-            last_edit_cell = MAX
-        }
+        if is_mouse_button_pressed(MouseButton::Left) {
+            body.toggle_cell_with_mouse(Vec2::from(mouse_position()), true);
+        } 
+
 
         if is_key_pressed(KeyCode::F) {
-            body.dag.raise_root_by_one(&mut body.root, 0);
+            body.double_capacity(0);
         }
         if is_key_pressed(KeyCode::G) {
-            body.dag.lower_root_by_one(&mut body.root, 0);
+            body.double_capacity(1);
         }
-        if is_key_pressed(KeyCode::O) {
-            body.dag.shrink_root_to_fit(&mut body.root);
+
+        if is_key_pressed(KeyCode::C) {
+            body.halve_capacity(0);
+        }
+        if is_key_pressed(KeyCode::V) {
+            body.halve_capacity(1);
         }
 
 
@@ -111,23 +107,31 @@ impl DAGBody {
         }
     }
 
-    fn toggle_cell_with_mouse(&mut self, mouse_pos:Vec2) {
+    //This is ugly clean it up
+    fn toggle_cell_with_mouse(&mut self, mouse_pos:Vec2, expansion:bool) {
         let rel_mouse_pos = mouse_pos - self.world_tether.position;
-        let edit_cell: i32 = round_away_0_pref_pos(rel_mouse_pos.x / self.world_tether.size.x);
-        let blocks_on_side = 2i32.pow(self.root.layer as u32);
-        //If mouse is within bounds. Eventually we add an else to expand the DAG if some parameter is true
-        if edit_cell.abs() <= blocks_on_side {
-            let path = {
-                if edit_cell < 0 {
-                    edit_cell + blocks_on_side
-                } else {
-                    edit_cell + blocks_on_side - 1
-                }
-            } as u32;
-            let cur_node_val = self.dag.read_node_child(&self.root, 0, path);
-            let new_val = if cur_node_val == 0 { 1 } else { 0 } as usize;
-            self.dag.set_node_child(&mut self.root, 0, path, new_val);
+        let edit_cell = round_away_0_pref_pos(rel_mouse_pos.x / self.world_tether.size.x);
+        let mut blocks_on_side = 2i32.pow(self.root.layer as u32);
+        while expansion == true && edit_cell.abs() > blocks_on_side  && self.root.layer != 5 {
+            let preserve_side = if edit_cell < 0 { 1 } else { 0 };
+            self.double_capacity(preserve_side);
+            blocks_on_side = 2i32.pow(self.root.layer as u32);
         }
+        if edit_cell.abs() > blocks_on_side { return }
+
+        let new_rel_mouse_pos = mouse_pos - self.world_tether.position;
+        let new_edit_cell = round_away_0_pref_pos(new_rel_mouse_pos.x / self.world_tether.size.x);
+        let path = {
+            if new_edit_cell < 0 {
+                new_edit_cell + blocks_on_side
+            } else {
+                new_edit_cell + blocks_on_side - 1
+            }
+        } as usize;
+        let cur_node_val = self.dag.read_node_child(&self.root, 0, path);
+        let new_val = if cur_node_val == 0 { 1 } else { 0 } as usize;
+        self.dag.set_node_child(&mut self.root, 0, path, new_val);
+        self.minimize_space_used();
     }
 
     fn render(&self) {
@@ -141,6 +145,21 @@ impl DAGBody {
         }
     }
 
+    //Not optimal without recursing the entire tree, our current first order search (2 layers deep is meh). Consider how much I care
+    fn minimize_space_used(&mut self) {
+        let blocks_shifted = self.dag.shrink_root_to_fit(&mut self.root);
+        self.world_tether.position.x += blocks_shifted as f32 * self.world_tether.size.x;
+    }
+
+    fn double_capacity(&mut self, preserve:usize) {
+        let blocks_shifted = self.dag.raise_root_by_one(&mut self.root, preserve);
+        self.world_tether.position.x += blocks_shifted as f32 * self.world_tether.size.x; 
+    }
+
+    fn halve_capacity(&mut self, preserve:usize) {
+        let blocks_shifted = self.dag.lower_root_by_one(&mut self.root, preserve);
+        self.world_tether.position.x += blocks_shifted as f32 * self.world_tether.size.x;     
+    }
 
 }
 
