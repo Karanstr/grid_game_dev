@@ -1,15 +1,21 @@
-//For now only implementing 1 dimension
+use macroquad::math::*;
+
+//Rethink the path system, I don't like it!!
+//Figure out how to talk about quadrants and convert between coordinates and cells!!
+
 
 #[derive(Debug)]
+//Dimensions of the DAG are determined by dimension of the Node
+//Maybe turn into an enum so we can pass whatever into a DAG?
 pub struct Node {
-    pub child_indexes:[usize; 2],
+    pub child_indexes:[usize; 4],
     pub ref_count:u8,
 }
 
 impl Node {
     fn new_empty() -> Self {
         Self {
-            child_indexes: [0, 0],
+            child_indexes: [0, 0, 0, 0],
             ref_count: 0
         }
     }
@@ -36,8 +42,9 @@ impl Node {
             ref_count: 0
         }
     }
-
+    
 }
+
 
 #[derive(Clone, Debug)]
 pub struct NodeAddress {
@@ -45,8 +52,8 @@ pub struct NodeAddress {
     pub index:usize
 }
 
-//Write get_child_address
 impl NodeAddress {
+    
     pub fn new(layer:usize, index:usize) -> Self {
         Self {
             layer,
@@ -56,11 +63,39 @@ impl NodeAddress {
 
 }
 
-pub struct SparseDAG1D {
-    pub node_pot:Vec<Vec<Node>>
+
+//Dimension reliant, mainly for error handling to make sure we're not passing steps which are too large into the DAG
+#[derive(Debug)]
+pub struct Path {
+    dimension : u32,
+    directions : Vec<u8>
+} 
+
+impl Path {
+    pub fn from(bit_path:u32, steps:usize, dimension:u32) -> Self {
+        let mut directions:Vec<u8> = Vec::with_capacity(steps);
+        let mut mask:u32 = 0;
+        // directions.push(0); //We need root position as well, unforunately
+        for _ in 0 .. dimension { mask = (mask << 1) | 1 }
+        for step in 0 .. steps {
+            let cur_direction = bit_path >> dimension*(steps - step - 1) as u32 & mask;
+            directions.push(cur_direction as u8)
+        }
+        Self {
+            dimension,
+            directions
+        }
+    }
 }
 
-impl SparseDAG1D {
+
+const MAXLAYER2D:usize = 2;
+pub struct SparseDimensionlessDAG {
+    pub node_pot:Vec<Vec<Node>>
+    //
+}
+
+impl SparseDimensionlessDAG {
 
     pub fn new(max_layer:usize) -> Self {
         let mut new_self = Self {
@@ -71,75 +106,91 @@ impl SparseDAG1D {
     }
 
     
-    //Public methods used to modify root nodes
-    pub fn shrink_root_to_fit(&mut self, root:&mut NodeAddress) -> i32 {
-        //Descend to single filled child
-        let direction_shifted = [-1, 1];
-        let mut blocks_shifted = 0;
-        loop {
-            if root.layer == 0 { return blocks_shifted }
-            let (kid_count, last_index) = self.get_node(&root).count_kids_and_get_last();
-            if kid_count != 1 { break }
-            self.lower_root_by_one(root, last_index);
-            blocks_shifted += 2i32.pow(root.layer as u32) * direction_shifted[last_index];
-        }
-        loop {
-            if root.layer == 0 { return blocks_shifted }
-            if self.compact_root_children(root) == false {
-                break
-            }
-        }
-        blocks_shifted
-    }
+    // //These don't belong here? they should be under the NodeAddress class or smthing?
+    // //Public methods used to modify root nodes
+    // pub fn shrink_root_to_fit(&mut self, root:&mut NodeAddress) -> IVec2 {
+    //     //Descend to single filled child
+    //     let mut blocks_shifted = IVec2::new(0, 0);
+    //     loop {
+    //         if root.layer == 0 { return blocks_shifted }
+    //         let (kid_count, last_index) = self.get_node(&root).count_kids_and_get_last();
+    //         if kid_count != 1 { break }
+    //         blocks_shifted += self.lower_root_by_one(root, last_index);
+    //     }
+    //     // loop {
+    //     //     if root.layer == 0 { return blocks_shifted }
+    //     //     if self.compact_root_children(root) == false {
+    //     //         break
+    //     //     }
+    //     // }
+    //     blocks_shifted
+    // }
+    
+    // pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, from_quadrant:usize) -> IVec2 {
+    //     //Limit to prevent binarization from overflowing
+    //     if root.layer == MAXLAYER2D { return IVec2::ZERO }
+    //     let shift_directions = [
+    //         IVec2::new(1, 1),  //Expanding out of (-1, -1)
+    //         IVec2::new(-1, 1), //Expanding out of (1, -1)
+    //         IVec2::new(1, -1),  //Expanding out of (-1, 1)
+    //         IVec2::new(-1, -1), //Expanding out of (1, 1)
+    //     ];
+    //     self.ensure_depth(root.layer + 1);
+    //     let mut new_root = NodeAddress::new(root.layer + 1, 0);
+    //     self.set_node_child(&mut new_root, root.layer + 1, from_quadrant, root.index);
+    //     root.layer = new_root.layer;
+    //     root.index = new_root.index;
+    //     let blocks_per_dimension = 2i32.pow(root.layer as u32 - 1);
+    //     IVec2::splat(blocks_per_dimension) * shift_directions[from_quadrant]
+    // }
+
+    // pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, preserve_quadrant:usize) -> IVec2 {
+    //     if root.layer == 0 { return IVec2::ZERO }
+    //     let shift_directions = [
+    //         IVec2::new(-1, -1),  //Preserves (-1, -1)
+    //         IVec2::new(1, -1), //Preserves (1, -1)
+    //         IVec2::new(-1, 1),  //Preserves (-1, 1)
+    //         IVec2::new(1, 1), //Preserves (1, 1)
+    //     ];
+    //     let child_index = self.get_node_child_index(&root, preserve_quadrant);
+    //     self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, child_index));
+    //     root.layer = root.layer - 1;
+    //     root.index = child_index;
+    //     let blocks_per_dimension = 2i32.pow(root.layer as u32);
+    //     IVec2::splat(blocks_per_dimension) * shift_directions[preserve_quadrant]
+    // }
+
+    // //We're doing this one last, not 2d yet
+    // fn _compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
+    //     let child_directions = [1, 0];
+    //     let mut new_root_node = Node::new_empty();
+    //     let children = self.get_node(&root).child_indexes;
+    //     for index in 0 .. child_directions.len() {
+    //         let address = NodeAddress::new(root.layer - 1, children[index]);
+    //         let node = self.get_node(&address);
+    //         let (child_count, last_index) = node.count_kids_and_get_last();
+    //         if child_count > 1 || last_index != child_directions[index] {
+    //             return false //Cannot compact root
+    //         }
+    //         new_root_node.child_indexes[index] = node.child_indexes[child_directions[index]];
+    //     } //If we don't terminate we are safe to lower the root
+    //     let new_root_index = self.add_node(root.layer - 1, new_root_node);
+    //     self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, new_root_index));
+    //     root.layer -= 1;
+    //     root.index = new_root_index;
+    //     true //Successfully compacted root
+    // }
 
 
-    //Private methods used to modify root nodes 
+
+
+
+
+    //Private methods used to.. 
     fn ensure_depth(&mut self, layer:usize) {
         for _i in self.node_pot.len()..=layer {
             self.node_pot.push(vec![Node::new_empty()]);
         }
-    }
-
-    pub fn raise_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) -> i32 {
-        //Limit to prevent binarization from overflowing
-        if root.layer == 5 { return 0 }
-        let shift_directions = [1, -1];
-        self.ensure_depth(root.layer + 1);
-        let mut new_root = NodeAddress::new(root.layer + 1, 0);
-        self.set_node_child(&mut new_root, root.layer + 1, direction, root.index);
-        root.layer = new_root.layer;
-        root.index = new_root.index;
-        2i32.pow(root.layer as u32 - 1) * shift_directions[direction as usize]
-    }
-
-    pub fn lower_root_by_one(&mut self, root:&mut NodeAddress, direction:usize) -> i32 {
-        if root.layer == 0 { return 0 }
-        let shift_directions = [-1, 1];
-        let child_index = self.get_node_child_index(&root, direction);
-        self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, child_index));
-        root.layer = root.layer - 1;
-        root.index = child_index;
-        2i32.pow(root.layer as u32) * shift_directions[direction]
-    }
-
-    fn compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
-        let child_directions = [1, 0];
-        let mut new_root_node = Node::new_empty();
-        let children = self.get_node(&root).child_indexes;
-        for index in 0 .. child_directions.len() {
-            let address = NodeAddress::new(root.layer - 1, children[index]);
-            let node = self.get_node(&address);
-            let (child_count, last_index) = node.count_kids_and_get_last();
-            if child_count > 1 || last_index != child_directions[index] {
-                return false //Cannot compact root
-            }
-            new_root_node.child_indexes[index] = node.child_indexes[child_directions[index]];
-        } //If we don't terminate we are safe to lower the root
-        let new_root_index = self.add_node(root.layer - 1, new_root_node);
-        self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, new_root_index));
-        root.layer -= 1;
-        root.index = new_root_index;
-        true //Successfully compacted root
     }
 
 
@@ -176,12 +227,12 @@ impl SparseDAG1D {
         first_avaliable_index
     }
 
-    fn get_trail(&self, root:&NodeAddress, path:usize, steps:usize) -> Vec<usize> {
-        let mut trail:Vec<usize> = Vec::with_capacity(steps + 1);
+    pub fn get_trail(&self, root:&NodeAddress, path:&Path) -> Vec<usize> { //Temp until I fix this
+        let mut trail:Vec<usize> = Vec::with_capacity(path.directions.len() + 1);
         trail.push(root.index); //We start our journey at the root
-        for step in 0..=steps {
+        for step in 0 .. path.directions.len() - 1 {
             let cur_address= NodeAddress::new(root.layer - step, trail[step]);
-            let child_direction:usize = ((path >> (steps - step)) & 0b1) as usize;
+            let child_direction = path.directions[step] as usize;
             trail.push(self.get_node_child_index(&cur_address, child_direction));
         }
         trail
@@ -193,14 +244,14 @@ impl SparseDAG1D {
         &self.node_pot[address.layer][address.index]
     }
 
-    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:usize) -> usize {
-        let steps = root.layer - node_layer;
-        let trail = self.get_trail(&root, path, steps);
-        let address = NodeAddress::new(node_layer, trail[steps]);
-        self.get_node_child_index(&address, path as usize & 0b1)
+    pub fn read_node_child(&self, root:&NodeAddress, node_layer:usize, path:&Path) -> usize {
+        let trail = self.get_trail(&root, path);
+        let address = NodeAddress::new(node_layer, *trail.last().unwrap());
+        self.get_node_child_index(&address, *path.directions.last().unwrap() as usize)
     }
 
-    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably rewrite my packed_array)
+    //I'm not touching this one for 2d yet. Ew
+    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably port over my packed_array)
     pub fn df_to_binary(&self, root:&NodeAddress) -> u64 {
         let mut resulting_binary:u64 = 0;
         let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
@@ -229,10 +280,7 @@ impl SparseDAG1D {
     //Private methods used to modify dag data
     fn dec_ref_count(&mut self, address:&NodeAddress) {
         let mut queue:Vec<NodeAddress> = Vec::new();
-        if address.index != 0 {
-            queue.push(address.clone());
-        }
-
+        if address.index != 0 { queue.push(address.clone()) }
         while queue.len() != 0 {
             let cur_address = queue.pop().unwrap();
             let cur_node = self.get_mut_node(&cur_address);
@@ -241,10 +289,10 @@ impl SparseDAG1D {
             if cur_node.ref_count == 0 {
                 //If has children nodes
                 if cur_address.layer != 0 {
-                    for child in cur_node.child_indexes.iter() {
+                    for index in cur_node.child_indexes.iter() {
                         //If child isn't a null node
-                        if *child != 0 {
-                            queue.push(NodeAddress::new(cur_address.layer - 1, *child));
+                        if *index != 0 {
+                            queue.push(NodeAddress::new(cur_address.layer - 1, *index));
                         }
                     }
                 } //Free cur_node
@@ -259,7 +307,6 @@ impl SparseDAG1D {
         }
     }
 
-    //Must consume node, as node_pot needs ownership of its nodes
     fn add_node(&mut self, layer:usize, node:Node) -> usize {
         if Node::same_children(&node, &Node::new_empty()) {
             return 0
@@ -285,26 +332,24 @@ impl SparseDAG1D {
         self.add_node(address.layer, mod_node)
     }
 
-    fn transfer_reference(&mut self, node_giver:&NodeAddress, node_reciever:&NodeAddress) {
-        self.inc_ref_count(node_reciever);
-        self.dec_ref_count(node_giver);
+    fn transfer_reference(&mut self, giver:&NodeAddress, reciever:&NodeAddress) {
+        self.inc_ref_count(reciever);
+        self.dec_ref_count(giver);
     }
 
 
     //Public methods used to modify dag data
-    //Modifies root to point right to the new root.
-    pub fn set_node_child(&mut self, root:&mut NodeAddress, node_layer:usize, path:usize, child_index:usize) {
-        let steps = root.layer - node_layer;
-        let trail = self.get_trail(&root, path, steps);
+    pub fn set_node_child(&mut self, root:&mut NodeAddress, node_layer:usize, path:&Path, child_index:usize) {
+        let trail = self.get_trail(&root, path);
         let mut new_index = child_index;
-        for step in 0..=steps {
-            let cur_address:NodeAddress = NodeAddress::new(step + node_layer, trail[steps - step]);
-            let child_direction:usize = ((path >> step) & 0b1) as usize; 
+        let steps = path.directions.len() - 1;
+        for step in 0 ..= steps {
+            let cur_address = NodeAddress::new(step + node_layer, trail[steps - step]);
+            let child_direction = path.directions[steps - step] as usize; 
             new_index = self.add_modified_node(&cur_address, child_direction, new_index);
         }
         self.transfer_reference(&root, &NodeAddress::new(root.layer, new_index));
         root.index = new_index;
     }
-
 
 }
