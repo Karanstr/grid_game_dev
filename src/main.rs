@@ -78,7 +78,6 @@ impl Object {
 }
 
 
-
 #[macroquad::main("First Window")]
 async fn main() {
 
@@ -94,6 +93,7 @@ async fn main() {
 
         if is_mouse_button_pressed(MouseButton::Left) {
             player.toggle_cell_with_mouse(&mut sddag, Vec2::from(mouse_position()));
+            //dbg!(sddag.df_to_bin_grid(&player.root));
         } 
 
         player.move_with_wasd(5.);

@@ -59,7 +59,8 @@ impl NodeAddress {
 
 }
 
-//Stores dimension for debugging
+
+//Stores dimension for (currently not implemented error prevention)
 #[derive(Debug)]
 pub struct Path {
     _dimension : u32,
@@ -152,7 +153,7 @@ impl SparseDimensionlessDAG {
     //     IVec2::splat(blocks_per_dimension) * shift_directions[preserve_quadrant]
     // }
 
-    // //We're doing this one last, not 2d yet
+    // //Not 2d yet
     // fn _compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
     //     let child_directions = [1, 0];
     //     let mut new_root_node = Node::new_empty();
@@ -263,6 +264,37 @@ impl SparseDimensionlessDAG {
         resulting_binary
     }
 
+    //Only works with 2 dimensions, up to root level 5
+    pub fn df_to_bin_grid(&self, root:&NodeAddress) -> Vec<u64> {
+        let blocks_per_side = 2usize.pow(1 + root.layer as u32);
+        let mut bin_grid:Vec<u64> = Vec::new();
+        bin_grid.resize(blocks_per_side, 0);
+
+        //Storing node addresses and their z-order cell
+        let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
+        queue.push( (root.clone(), 0) );
+
+        //Figure out how to make this thread-compatible soon
+        while queue.len() > 0 {
+            let (cur_address, cur_z_order) = queue.pop().unwrap();
+            let cur_node = self.get_node(&cur_address);
+
+            for child in 0 .. cur_node.child_indexes.len() {
+                let child_index = cur_node.child_indexes[child];
+                let kid_z_order = (cur_z_order << 2) | child as u32;
+                if child_index == 0 { 
+                    continue 
+                } else if cur_address.layer != 0 {
+                    queue.push( (NodeAddress::new(cur_address.layer - 1, child_index), kid_z_order) );
+                } else {
+                    let cartesian = zorder_to_cartesian(kid_z_order, root.layer);
+                    bin_grid[cartesian.y as usize] |= 1 << cartesian.x;
+                }
+            }
+        }
+
+        bin_grid
+    } 
 
     //Private methods used to modify dag data
     fn dec_ref_count(&mut self, address:&NodeAddress) {
@@ -339,4 +371,16 @@ impl SparseDimensionlessDAG {
         root.index = new_index;
     }
 
+}
+
+
+pub fn zorder_to_cartesian(mut cell:u32, root_layer:usize) -> UVec2 {
+    let mut xy = UVec2::new(0, 0);
+    for layer in 0 ..= root_layer {
+        xy.x |= (cell & 0b1) << layer;
+        cell >>= 1;
+        xy.y |= (cell & 0b1) << layer;
+        cell >>= 1;
+    }
+    xy
 }
