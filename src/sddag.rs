@@ -1,12 +1,8 @@
 use macroquad::math::*;
 
-//Rethink the path system, I don't like it!!
-//Figure out how to talk about quadrants and convert between coordinates and cells!!
 
-
+//Make sure we modify this when changing dimension
 #[derive(Debug)]
-//Dimensions of the DAG are determined by dimension of the Node
-//Maybe turn into an enum so we can pass whatever into a DAG?
 pub struct Node {
     pub child_indexes:[usize; 4],
     pub ref_count:u8,
@@ -63,11 +59,10 @@ impl NodeAddress {
 
 }
 
-
-//Dimension reliant, mainly for error handling to make sure we're not passing steps which are too large into the DAG
+//Stores dimension for debugging
 #[derive(Debug)]
 pub struct Path {
-    dimension : u32,
+    _dimension : u32,
     directions : Vec<u8>
 } 
 
@@ -75,24 +70,21 @@ impl Path {
     pub fn from(bit_path:u32, steps:usize, dimension:u32) -> Self {
         let mut directions:Vec<u8> = Vec::with_capacity(steps);
         let mut mask:u32 = 0;
-        // directions.push(0); //We need root position as well, unforunately
         for _ in 0 .. dimension { mask = (mask << 1) | 1 }
         for step in 0 .. steps {
             let cur_direction = bit_path >> dimension*(steps - step - 1) as u32 & mask;
             directions.push(cur_direction as u8)
         }
         Self {
-            dimension,
+            _dimension : dimension,
             directions
         }
     }
 }
 
 
-const MAXLAYER2D:usize = 2;
 pub struct SparseDimensionlessDAG {
     pub node_pot:Vec<Vec<Node>>
-    //
 }
 
 impl SparseDimensionlessDAG {
@@ -182,10 +174,6 @@ impl SparseDimensionlessDAG {
     // }
 
 
-
-
-
-
     //Private methods used to.. 
     fn ensure_depth(&mut self, layer:usize) {
         for _i in self.node_pot.len()..=layer {
@@ -227,7 +215,7 @@ impl SparseDimensionlessDAG {
         first_avaliable_index
     }
 
-    pub fn get_trail(&self, root:&NodeAddress, path:&Path) -> Vec<usize> { //Temp until I fix this
+    fn get_trail(&self, root:&NodeAddress, path:&Path) -> Vec<usize> {
         let mut trail:Vec<usize> = Vec::with_capacity(path.directions.len() + 1);
         trail.push(root.index); //We start our journey at the root
         for step in 0 .. path.directions.len() - 1 {
@@ -250,19 +238,19 @@ impl SparseDimensionlessDAG {
         self.get_node_child_index(&address, *path.directions.last().unwrap() as usize)
     }
 
-    //I'm not touching this one for 2d yet. Ew
-    //Works with cell_counts of up to 64. More than that and the u64 overflows. Solution in the works. (probably port over my packed_array)
-    pub fn df_to_binary(&self, root:&NodeAddress) -> u64 {
+    //Works with cell_counts of up to 64. More than that and the u64 overflows.
+    pub fn df_to_binary(&self, root:&NodeAddress, dimensions:u32) -> u64 {
         let mut resulting_binary:u64 = 0;
         let mut queue: Vec<(NodeAddress, u32)> = Vec::new();
         queue.push((root.clone(), 0));
 
         while queue.len() != 0 {
-            let (cur_address, cur_path) = queue.pop().unwrap();
+            let (cur_address, cur_bin_path) = queue.pop().unwrap();
             let cur_node = self.get_node(&cur_address);
-            for child in 0..2 {
+
+            for child in 0..cur_node.child_indexes.len() {
                 let child_index = cur_node.child_indexes[child];
-                let child_path = (cur_path << 1) | child as u32;
+                let child_path = (cur_bin_path << dimensions) | child as u32;
                 if child_index == 0 { continue }
                 else if cur_address.layer != 0 { 
                     queue.push( (NodeAddress::new(cur_address.layer - 1, child_index), child_path) )
@@ -272,7 +260,6 @@ impl SparseDimensionlessDAG {
                 
             }
         }
-
         resulting_binary
     }
 
