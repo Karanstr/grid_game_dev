@@ -34,6 +34,8 @@ impl Node {
     fn read_child(&self, child_direction:usize) -> Index {
         Index(self.child_indexes[child_direction])
     }
+
+
 }
 
 //Stores dimension for (currently not implemented error prevention)
@@ -63,9 +65,9 @@ pub struct Index(pub usize);
 //For now only supports a graph where each node has four children.
 //This is incredibly arbitrary and incredibly easy to change
 #[derive(Indexable, IndexableMut)]
-pub struct SparseDirectedGraph(Vec<Node>);
+pub struct DirectedGraph(Vec<Node>);
 
-impl SparseDirectedGraph {
+impl DirectedGraph {
 
     pub fn new() -> Self {
         let empty_node = Node::new(4, true);
@@ -95,11 +97,13 @@ impl SparseDirectedGraph {
         Some(self.get_node(index)?.read_child(child_direction))
     }
 
-    fn find_node(&self, node:&Node) -> Option<Index> {
-        for cur_index in 0 ..= *self.last_index() {
+    fn find_node(&self, node:&Node, ignore_protected:bool) -> Option<Index> {
+        //Eventually make this automatic, determining an automatic allocation for protected nodes?
+        let start_index = if ignore_protected { 2 } else { 0 };
+        for cur_index in start_index ..= *self.last_index() {
             let index = Index(cur_index);
             let cur_node = self.get_node(index)?;
-            if node == cur_node && cur_node.gc.get_status() != ReferenceStatus::Protected {
+            if node == cur_node {
                 return Some(index);
             }
         }
@@ -108,9 +112,9 @@ impl SparseDirectedGraph {
 
     fn get_or_make_empty_index(&mut self) -> Index {
         let empty_node = Node::new(4, false);
-        match self.find_node(&empty_node) {
+        match self.find_node(&empty_node, true) {
             Some(index) => index,
-            None => {
+            _ => {
                 self.0.push(empty_node);
                 self.last_index()
             }
@@ -161,7 +165,7 @@ impl SparseDirectedGraph {
             if let Some(node) = self.get_mut_node(cur_index) {
                 match node.gc.modify_ref(-1) {
                     Ok(status) => if let ReferenceStatus::Zero = status {
-                        for child_direction in 0 .. 4 {
+                        for child_direction in 0 .. node.child_indexes.len() {
                             stack.push( node.read_child(child_direction) );
                         }
                         self.free_node(cur_index);
@@ -180,11 +184,11 @@ impl SparseDirectedGraph {
     }
 
     fn add_node(&mut self, node:Node) -> Index {
-        match self.find_node(&node) {
+        match self.find_node(&node, false) {
             Some(index) => index,
             None => {
                 let index = self.get_or_make_empty_index();
-                for child_direction in 0 .. 4 {
+                for child_direction in 0 .. node.child_indexes.len() {
                     self.inc_ref_count(node.read_child(child_direction));
                 }
                 self[*index] = node;
@@ -205,7 +209,7 @@ impl SparseDirectedGraph {
         let mut new_index = child;
         let steps = path.directions.len() - 1;
         for step in 0 ..= steps {
-            let mut node = if steps - step < trail.len() && trail[steps - step] != root {
+            let mut node = if steps - step < trail.len() {
                 match self.get_node(trail[steps - step]) {
                     Some(node) => node.clone_without_ref(false),
                     None => Node::new(4, false)
@@ -215,24 +219,21 @@ impl SparseDirectedGraph {
             new_index = self.add_node(node);
         }
         self.transfer_reference(root, new_index);
+
         new_index
     }
 
 
 }
-
-//Figure out where to put this
-
-
-    
+   
     /* 
     Not 2d/dimensionless yet. This is the next step.
      - Figure out where to put them, they don't feel like they belong in such a generalized graph.
      - Make them functional with the new graph layout. Should be simple..?
      - Generalize them to n dimensions, along with the rest of the graph.
     */
-    /*
 
+    /*
     fn _compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
         let child_directions = [1, 0];
         let mut new_root_node = Node::new_empty();
@@ -253,15 +254,15 @@ impl SparseDirectedGraph {
         true //Successfully compacted root
     }
 
-
+    //This has a problem with my current system. Hmm
     //Only works with 2 dimensions, up to root level 5 (64x64 cell area)
-    pub fn df_to_bin_grid(&self, root:usize) -> Vec<u64> {
-        let blocks_per_side = 2usize.pow(1 + root.layer as u32);
+    pub fn df_to_bin_grid(&self, root:Index, root_layer:usize) -> Vec<u64> {
+        let blocks_per_side = 2usize.pow(1 + root_layer as u32);
         let mut bin_grid:Vec<u64> = Vec::new();
         bin_grid.resize(blocks_per_side, 0);
 
-        //Storing node addresses and their z-order cell
-        let mut stack: Vec<(NodeAddress, u32)> = Vec::new();
+        //Storing indexes their z-order cells, and the current layer (as determined by the root_layer)
+        let mut stack: Vec<(Index, u32)> = Vec::new();
         stack.push( (root.clone(), 0) );
 
         //Figure out how to make this thread-compatible soon
@@ -300,6 +301,5 @@ impl SparseDirectedGraph {
         xy
     }
 
+    */
 
-    
-     */
