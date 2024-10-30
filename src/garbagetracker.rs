@@ -1,21 +1,21 @@
 #[derive(Debug)]
 pub struct ReferenceTracker {
-    protected:bool,
+    immutable:bool,
     ref_count:usize
 }
 
 impl ReferenceTracker {
 
-    pub fn new(protected:bool) -> Self {
+    pub fn new(immutable:bool) -> Self {
         Self {
-            protected,
+            immutable,
             ref_count : 0
         }
     }
 
     pub fn modify_ref(&mut self, delta:isize) -> Result<ReferenceStatus, &str> {
-        if self.protected {
-            Result::Ok(ReferenceStatus::Protected)
+        if self.immutable {
+            Result::Ok(ReferenceStatus::Immutable)
         } else if delta < 0 {
             match self.ref_count.checked_sub(delta.abs() as usize) {
                 Some(zero) if zero == 0 => {
@@ -37,8 +37,8 @@ impl ReferenceTracker {
     }
 
     pub fn get_status(&self) -> ReferenceStatus {
-        if self.protected { 
-            ReferenceStatus::Protected 
+        if self.immutable { 
+            ReferenceStatus::Immutable 
         } else if self.ref_count == 0 {
             ReferenceStatus::Zero
         } else {
@@ -50,7 +50,7 @@ impl ReferenceTracker {
 
 #[derive(PartialEq)]
 pub enum ReferenceStatus {
-    Protected,
+    Immutable,
     Fine(usize),
     Zero,
 }
