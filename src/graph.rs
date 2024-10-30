@@ -191,17 +191,17 @@ impl DirectedGraph {
         stack.push( index );
         while stack.len() != 0 {
             let cur_index = stack.pop().unwrap();
-            let node = self.get_mut_node(cur_index)?;
-            if node.gc.get_status() != ReferenceStatus::Immutable {
-                match node.gc.modify_ref(-1) {
-                    Ok(status) => if let ReferenceStatus::Zero = status {
-                        for child_direction in 0 .. node.child_indexes.len() {
-                            stack.push( node.read_child(child_direction) );
-                        }
-                        self.free_index(cur_index);
-                    },
-                    //This is an error I'm willing to let fail quietly for now. 
-                    Err(message) => eprintln!("{message}")
+            if let Ok(node) = self.get_mut_node(cur_index) {
+                if node.gc.get_status() != ReferenceStatus::Immutable {
+                    match node.gc.modify_ref(-1) {
+                        Ok(status) => if let ReferenceStatus::Zero = status {
+                            for child_direction in 0 .. node.child_indexes.len() {
+                                stack.push( node.read_child(child_direction) );
+                            }
+                            self.free_index(cur_index);
+                        }, 
+                        Err(message) => eprintln!("{message}")
+                    }
                 }
             }
         }
@@ -277,12 +277,12 @@ impl DirectedGraph {
         //We ignore attempted access to ImmuntableMemory because the root may be 
         match inc_status {
             Ok(_) => (),
-            Err( AccessError::ImmutableMemory(_) ) => (),
+            Err( AccessError::ImmutableMemory(_) ) => {dbg!(5); ()},
             Err( error ) => { dbg!(error); () },
         }
         match dec_status {
             Ok(_) => (),
-            Err( AccessError::ImmutableMemory(_) ) => (),
+            Err( AccessError::ImmutableMemory(_) ) => {dbg!(7); ()},
             Err( error ) => { dbg!(error); () },
         }
         Ok( new_index )
