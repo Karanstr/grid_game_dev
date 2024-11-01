@@ -1,9 +1,9 @@
 use core::panic;
 
 use macroquad::prelude::*;
-use graph::{DirectedGraph, Index, Path};
+use graph::{DirectedGraph, Index, Path2D};
 mod graph;
-mod garbagetracker;
+mod fake_heap;
 
 
 const BOXSIZE:Vec2 = Vec2::splat(50.);
@@ -13,9 +13,8 @@ const DESCENT_LIMIT:u32 = 3;
 async fn main() {
 
     let mut world_graph = DirectedGraph::new();
-
     let mut player = Object {
-        root : world_graph.get_empty_root(),
+        root : world_graph.empty_root(),
         position : Vec2::new(screen_width()/2., screen_height()/2.)
     };
 
@@ -50,7 +49,7 @@ impl Object {
         let cell_count: usize = blocks_per_face.pow(2); //Squared
 
         for cell in 0 .. cell_count {
-            let path = Path::from(cell, DESCENT_LIMIT as usize, 2);
+            let path = Path2D::from(cell, DESCENT_LIMIT as usize);
             let color = match dag.read_destination(self.root, &path) {
                 Ok(val) => if *val == 0 { RED } else { BLUE },
                 Err( error ) => {
@@ -100,7 +99,7 @@ impl Object {
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
         let cell = cartesian_to_zorder(edit_cell.x as usize, edit_cell.y as usize, DESCENT_LIMIT);
-        let path = Path::from(cell, DESCENT_LIMIT as usize, 2);
+        let path = Path2D::from(cell, DESCENT_LIMIT as usize);
         let cur_val = match graph.read_destination(self.root, &path) {
             Ok(value) => *value,
             Err( error ) => {

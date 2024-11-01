@@ -1,150 +1,86 @@
-use derive_more::Deref;
-use macroquad::math::*;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 //Figure out modules and libraries and all that. I've no clue how they work
-use crate::garbagetracker::{ReferenceStatus, ReferenceTracker}; 
+use crate::fake_heap::FakeHeap; 
+pub use crate::fake_heap::{Index, AccessError};
 
-
-//Stores dimension for (currently not implemented error prevention)
+//Could be generalized to n dimensional path. I don't care atm tho
 #[derive(Debug)]
-pub struct Path {
-    _dimension : usize,
+pub struct Path2D {
     directions : Vec<usize>
 } 
 
-impl Path {
-    pub fn from(bit_path:usize, steps:usize, dimension:usize) -> Self {
+impl Path2D {
+    pub fn from(bit_path:usize, steps:usize) -> Self {
         let mut directions:Vec<usize> = Vec::with_capacity(steps);
-        let mut mask = 0; for _ in 0 .. dimension { mask = (mask << 1) | 1 }
         for step in 0 .. steps {
-            directions.push((bit_path >> (dimension * (steps - step - 1))) & mask);
+            directions.push((bit_path >> (2 * (steps - step - 1))) & 0b11);
         }
-        Self {
-            _dimension : dimension,
-            directions
-        }
+        Self { directions }
     }
 }
 
 
-//Idk why the usizes are complaining but I really don't care
-#[allow(dead_code)] 
-#[derive(Debug)]
-pub enum AccessError {
-    OutOfBoundsMemory(usize),
-    ImmutableMemory(usize),
-    FreeMemory(usize),
-    UnspecifiedMemory
-}
-
-
-#[derive(Debug)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Node {
-    pub child_indexes:Vec<usize>,
-    pub gc:ReferenceTracker,
-}
-
-impl PartialEq for Node {
-    fn eq(&self, other:&Self) -> bool {
-        self.child_indexes == other.child_indexes
-    }
-}
-impl Eq for Node {}
-impl Hash for Node {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.child_indexes.hash(state);
-    }
+    child_indexes:Vec<Index>,
 }
 
 impl Node {
-    fn new(child_count:usize, immutable:bool) -> Self {
-        Self {
-            child_indexes: vec![0; child_count],
-            //We have to garbage collect ourselves :(
-            gc: ReferenceTracker::new(immutable), 
-        }
-    }
 
-    fn clone_without_ref(&self, immutable:bool) -> Self {
+    fn new(child_count:usize) -> Self {
         Self {
-            child_indexes: self.child_indexes.clone(),
-            gc: ReferenceTracker::new(immutable),
+            child_indexes: vec![Index(0); child_count],
         }
     }
     
-    fn read_child(&self, child_direction:usize) -> Index {
-        Index(self.child_indexes[child_direction])
+    fn child(&self, child_direction:usize) -> Index {
+        self.child_indexes[child_direction]
     }
-
 
 }
 
 
-#[derive(Deref, PartialEq, PartialOrd, Clone, Copy)]
-pub struct Index(pub usize);
-
-//For now only supports a directed graph where each node points to 4 other nodes (4 children).
-//This is incredibly arbitrary and incredibly easy to change
-//I'm not quite sure what happens if you create a multi-node-cycle (something more than a node referencing itself) though
+//Currently only works with node children of size 4
 pub struct DirectedGraph {
-    nodes : Vec<Option<Node>>,
+    nodes : FakeHeap<Node>,
     index_lookup : HashMap<Node, Index>,
-    free_indexes : Vec<Index>
 }
 
 impl DirectedGraph {
 
+    //Turn this into a builder pattern? (and figure out what a bulder pattern is)
     pub fn new() -> Self {
-        let empty_node = Node::new(4, true);
-        let mut full_node = Node::new(4, true);
+        let empty_node = Node::new(4);
+        let mut full_node = Node::new(4);
         for child in 0 .. 4 {
-            full_node.child_indexes[child] = 1;
+            full_node.child_indexes[child] = Index(1);
         }
-        Self {
-            nodes : vec![
-                Some(empty_node.clone_without_ref(true)), 
-                Some(full_node.clone_without_ref(true))
-            ],
-            index_lookup : HashMap::from([
-                (empty_node, Index(0)),
-                (full_node, Index(1))
-            ]),
-            free_indexes : Vec::new()
-        }
+        let mut instance = Self {
+            nodes : FakeHeap::new(),
+            index_lookup : HashMap::new()
+        };
+        instance.add_node(empty_node, true);
+        instance.add_node(full_node, true);
+        instance
     }
 
-    pub fn get_empty_root(&mut self) -> Index {
+    pub fn empty_root(&mut self) -> Index {
         Index(0)
     }
 
-    //Private methods used to read from the graph
-    fn get_mut_node(&mut self, index:Index) -> Result<&mut Node, AccessError> {
-        if index > self.last_index() { 
-            Err( AccessError::OutOfBoundsMemory(*index) )
-        } else {
-            match &mut self.nodes[*index] {
-                Some(node) if node.gc.get_status() == ReferenceStatus::Immutable => {
-                    Err( AccessError::ImmutableMemory(*index) )
-                },
-                None => Err( AccessError::FreeMemory(*index) ),
-                Some(node) => Ok(node),
-            }
-        }
+    fn node(&self, index:Index) -> Result<&Node, AccessError> {
+        self.nodes.data(index)
     }
 
-    fn read_child(&self, index:Index, child_direction:usize) -> Result<Index, AccessError> {
-        Ok( self.get_node(index)?.read_child(child_direction) )
+    fn child(&self, index:Index, direction:usize) -> Result<Index, AccessError> {
+        Ok(self.node(index)?.child(direction))
     }
 
-    fn get_node_index(&self, node:Option<&Node>) -> Option<Index> {
-        self.index_lookup.get(node?).copied()
-    }
-
-    fn get_trail(&self, root:Index, path:&Path) -> Result<Vec<Index>, AccessError> {
+    fn get_trail(&self, root:Index, path:&Path2D) -> Result<Vec<Index>, AccessError> {
         let mut trail:Vec<Index> = vec![root];
         for step in 0 .. path.directions.len() - 1 {
-            match self.read_child(trail[step], path.directions[step]) {
+            match self.child(trail[step], path.directions[step]) {
                 Ok(child_index) if child_index != trail[step] => trail.push(child_index),
                 Ok(_) => break,
                 Err(error) => return Err( error )
@@ -153,138 +89,76 @@ impl DirectedGraph {
         Ok( trail )
     }
 
-    pub fn last_index(&self) -> Index {
-        Index(self.nodes.len() - 1)
-    }
-
-
-    //Public methods used to read from the graph
-    pub fn get_node(&self, index:Index) -> Result<&Node, AccessError> {
-        if index > self.last_index() { 
-            Err( AccessError::OutOfBoundsMemory(*index) ) 
-        } else {
-            match &self.nodes[*index] {
-                None => Err( AccessError::FreeMemory(*index) ),
-                Some(node) => Ok(node),
-            }
-        }
-    }
-
-    pub fn read_destination(&self, root:Index, path:&Path) -> Result<Index, AccessError> {
+    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
         let trail = self.get_trail(root, path)?;
         match trail.last() {
-            Some(index) => Ok( self.read_child(*index, path.directions[trail.len() - 1])? ),
+            Some(index) => Ok( self.child(*index, path.directions[trail.len() - 1])? ),
             //Can't read from the end of a trail if the trail is empty
-            None => Err( AccessError::UnspecifiedMemory )
+            None => Err( AccessError::InvalidRequest )
         }
     }
 
-
-    //Private methods used to modify graph data
-    fn inc_ref_count(&mut self, index:Index) -> Result<(), AccessError> {
-        _ = self.get_mut_node(index)?.gc.modify_ref(1);
-        Ok(())
-    }
-
-    fn dec_ref_count(&mut self, index:Index) -> Result<(), AccessError> {
+    fn dec_ref_count(&mut self, index:Index) {
         let mut stack:Vec<Index> = Vec::new();
         stack.push( index );
         while stack.len() != 0 {
-            let cur_index = stack.pop().unwrap();
-            if let Ok(node) = self.get_mut_node(cur_index) {
-                if node.gc.get_status() != ReferenceStatus::Immutable {
-                    match node.gc.modify_ref(-1) {
-                        Ok(status) => if let ReferenceStatus::Zero = status {
-                            for child_direction in 0 .. node.child_indexes.len() {
-                                stack.push( node.read_child(child_direction) );
-                            }
-                            self.free_index(cur_index);
-                        }, 
-                        Err(message) => eprintln!("{message}")
+            match self.nodes.remove_ref(stack.pop().unwrap()) {
+                Ok(Some(node)) => {
+                    for child in node.child_indexes.iter() {
+                        stack.push(*child)
                     }
+                    self.index_lookup.remove(&node);
+                },
+                Ok(None) | Err(AccessError::ProtectedMemory(_)) => (),
+                Err( error ) => {
+                    dbg!(error);
                 }
             }
         }
-        Ok(())
     }
 
-    fn transfer_reference(&mut self, giver:Index, reciever:Index) -> (Result<(), AccessError>, Result<(), AccessError>) {
-        (self.inc_ref_count(reciever), self.dec_ref_count(giver))
+    fn find_index(&self, node:&Node) -> Option<Index> {
+        self.index_lookup.get(node).copied()
     }
 
-    fn free_index(&mut self, index:Index) -> Option<Node> {
-        //Accessing as mutable because we're going to delete it
-        //Any checks against borrowing nodes mutably should be applied here too.
-        let old_node = self.get_mut_node(index)
-            .expect("Attempted to free non-reserved memory.")
-            .clone_without_ref(false);
-        self.index_lookup.remove(&old_node);
-        self.nodes[*index] = None;
-        self.free_indexes.push(index);
-        Some(old_node)
-    }
-
-    fn reserve_index(&mut self) -> Index {
-        match self.free_indexes.pop() {
+    fn add_node(&mut self, node:Node, protected:bool) -> Index {
+        match self.find_index(&node) {
             Some(index) => index,
             None => {
-                self.nodes.push(None);
-                self.last_index()
-            }
-        }        
-    }
-
-    fn add_node(&mut self, node:Node) -> Index {
-        match self.get_node_index(Some(&node)) {
-            Some(index) => index,
-            None => {
-                let index = self.reserve_index();
-                for child_direction in 0 .. node.child_indexes.len() {
-                    match self.inc_ref_count(node.read_child(child_direction)) {
-                        Ok(_) => (),
-                        //Allowed to fail quietly, this error is caught on another level and prevented
-                        Err( AccessError::ImmutableMemory(_) ) => (),
-                        //This shouldn't trigger. If it does, something is wrong.
-                        Err( error ) => { dbg!(error); () }
+                let node_dup = node.clone();
+                let index = self.nodes.push(node, protected);
+                self.index_lookup.insert(node_dup, index);
+                let node_kids = self.node(index).unwrap().child_indexes.clone();
+                for child in node_kids {
+                    if child != index { //Nodes aren't allowed to keep themselves alive.
+                        match self.nodes.add_ref(child) {
+                            Ok(_) | Err( AccessError::ProtectedMemory(_) ) => (),
+                            Err( error ) => { dbg!(error); () }
+                        }
                     }
                 }
-                self.index_lookup.insert(node.clone_without_ref(true), index);
-                self.nodes[*index] = Some(node);
                 index
             }
         }
     }
 
-
-    //Public methods used to modify graph data
-    pub fn set_node_child(&mut self, root:Index, path:&Path, child:Index) -> Result<Index, AccessError> {
+    pub fn set_node_child(&mut self, root:Index, path:&Path2D, child:Index) -> Result<Index, AccessError> {
         let trail = self.get_trail(root, path)?;
         let mut new_index = child;
         let steps = path.directions.len() - 1;
         for step in 0 ..= steps {
             let mut node = if steps - step < trail.len() {
-                match self.get_node(trail[steps - step]) {
-                    Ok(node) => node.clone_without_ref(false),
-                    Err(AccessError::FreeMemory(_)) => Node::new(4, false),
+                match self.node(trail[steps - step]) {
+                    Ok(node) => node.clone(),
+                    Err(AccessError::FreeMemory(_)) => Node::new(4),
                     Err( error ) => return Err( error ),
                 }
-            } else { Node::new(4, false) };
-            node.child_indexes[path.directions[steps - step]] = *new_index;
-            new_index = self.add_node(node);
+            } else { Node::new(4) };
+            node.child_indexes[path.directions[steps - step]] = new_index;
+            new_index = self.add_node(node, false);
         }
-        //Bunch of error checking here. We probably don't care, but can't be too safe during dev.
-        let (inc_status, dec_status) = self.transfer_reference(root, new_index);
-        //We ignore attempted access to ImmuntableMemory because the root may be 
-        match inc_status {
-            Ok(_) => (),
-            Err( AccessError::ImmutableMemory(_) ) => {dbg!(5); ()},
-            Err( error ) => { dbg!(error); () },
-        }
-        match dec_status {
-            Ok(_) => (),
-            Err( AccessError::ImmutableMemory(_) ) => {dbg!(7); ()},
-            Err( error ) => { dbg!(error); () },
-        }
+        if let Err( error ) = self.nodes.add_ref(new_index) { dbg!(error); }
+        self.dec_ref_count(root);
         Ok( new_index )
     }
 
