@@ -41,7 +41,7 @@ impl Node {
 }
 
 
-//Currently only works with node children of size 4
+//Generalized version of the SVDAG, removes fixed depth dimensions
 pub struct DirectedGraph {
     nodes : FakeHeap<Node>,
     index_lookup : HashMap<Node, Index>,
@@ -49,7 +49,6 @@ pub struct DirectedGraph {
 
 impl DirectedGraph {
 
-    //Turn this into a builder pattern? (and figure out what a bulder pattern is)
     pub fn new() -> Self {
         let empty_node = Node::new(4);
         let mut full_node = Node::new(4);

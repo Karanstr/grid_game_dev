@@ -131,9 +131,9 @@ impl<T:Clone> FakeHeap<T> {
     }
 
     fn free_index(&mut self, index:Index) -> Option<T> {
-        let data = match self.mut_data(index) {
+        let data = match self.mut_wrapper(index) {
             Err( error ) => { dbg!(error); panic!() },
-            Ok(data) => data.clone()
+            Ok(wrapper) => wrapper.data.clone()
         };
         self.memory[*index] = None;
         self.free_indexes.push(index);
@@ -174,11 +174,7 @@ impl<T:Clone> FakeHeap<T> {
         }
     }
 
-
-    pub fn mut_data(&mut self, index:Index) -> Result<&mut T, AccessError> {
-        Ok(&mut self.mut_wrapper(index)?.data)
-    }
-
+    
     pub fn data(&self, index:Index) -> Result<&T, AccessError> {
         Ok(&self.wrapper(index)?.data)
     }
