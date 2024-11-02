@@ -108,7 +108,7 @@ impl<T:Clone> FakeHeap<T> {
         }
     }
 
-
+    
     fn mut_wrapper(&mut self, index:Index) -> Result<&mut ReferenceWrapper<T>, AccessError> {
         match index {
             bad_index if index >= self.upper_bound() => Err( AccessError::OutOfBoundsMemory(*bad_index) ),
@@ -174,7 +174,7 @@ impl<T:Clone> FakeHeap<T> {
         }
     }
 
-    
+
     pub fn data(&self, index:Index) -> Result<&T, AccessError> {
         Ok(&self.wrapper(index)?.data)
     }

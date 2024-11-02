@@ -20,41 +20,39 @@ impl Path2D {
     }
 }
 
-
+//Assumes 2 dimensions for now. Using vecs is stupid for now, going back to arrays
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Node {
-    child_indexes:Vec<Index>,
+    child_indexes: [Index; 4],
 }
 
 impl Node {
 
-    fn new(child_count:usize) -> Self {
+    fn new(initial_value:Index) -> Self {
         Self {
-            child_indexes: vec![Index(0); child_count],
+            child_indexes: [initial_value; 4],
         }
     }
     
-    fn child(&self, child_direction:usize) -> Index {
-        self.child_indexes[child_direction]
+    //Trusts direction < 4. Will panic if it does
+    fn child(&self, direction:usize) -> Index {
+        self.child_indexes[direction]
     }
 
 }
 
 
 //Generalized version of the SVDAG, removes fixed depth dimensions
-pub struct DirectedGraph {
+pub struct SparsePixelDirectedGraph {
     nodes : FakeHeap<Node>,
     index_lookup : HashMap<Node, Index>,
 }
 
-impl DirectedGraph {
+impl SparsePixelDirectedGraph {
 
     pub fn new() -> Self {
-        let empty_node = Node::new(4);
-        let mut full_node = Node::new(4);
-        for child in 0 .. 4 {
-            full_node.child_indexes[child] = Index(1);
-        }
+        let empty_node = Node::new(Index(0));
+        let full_node = Node::new(Index(1));
         let mut instance = Self {
             nodes : FakeHeap::new(),
             index_lookup : HashMap::new()
@@ -64,10 +62,8 @@ impl DirectedGraph {
         instance
     }
 
-    pub fn empty_root(&mut self) -> Index {
-        Index(0)
-    }
 
+    //Private functions used for reading
     fn node(&self, index:Index) -> Result<&Node, AccessError> {
         self.nodes.data(index)
     }
@@ -88,13 +84,10 @@ impl DirectedGraph {
         Ok( trail )
     }
 
-    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let trail = self.get_trail(root, path)?;
-        match trail.last() {
-            Some(index) => Ok( self.child(*index, path.directions[trail.len() - 1])? ),
-            //Can't read from the end of a trail if the trail is empty
-            None => Err( AccessError::InvalidRequest )
-        }
+
+    //Private functions used for writing
+    fn find_index(&self, node:&Node) -> Option<Index> {
+        self.index_lookup.get(node).copied()
     }
 
     fn dec_ref_count(&mut self, index:Index) {
@@ -114,10 +107,6 @@ impl DirectedGraph {
                 }
             }
         }
-    }
-
-    fn find_index(&self, node:&Node) -> Option<Index> {
-        self.index_lookup.get(node).copied()
     }
 
     fn add_node(&mut self, node:Node, protected:bool) -> Index {
@@ -141,6 +130,8 @@ impl DirectedGraph {
         }
     }
 
+
+    //Public functions used to write
     pub fn set_node_child(&mut self, root:Index, path:&Path2D, child:Index) -> Result<Index, AccessError> {
         let trail = self.get_trail(root, path)?;
         let mut new_index = child;
@@ -149,16 +140,41 @@ impl DirectedGraph {
             let mut node = if steps - step < trail.len() {
                 match self.node(trail[steps - step]) {
                     Ok(node) => node.clone(),
-                    Err(AccessError::FreeMemory(_)) => Node::new(4),
+                    Err(AccessError::FreeMemory(_)) => Node::new(Index(0)),
                     Err( error ) => return Err( error ),
                 }
-            } else { Node::new(4) };
+            } else { Node::new(Index(0)) };
             node.child_indexes[path.directions[steps - step]] = new_index;
             new_index = self.add_node(node, false);
         }
         if let Err( error ) = self.nodes.add_ref(new_index) { dbg!(error); }
         self.dec_ref_count(root);
         Ok( new_index )
+    }
+
+
+    //Public functions used to read
+    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+        let trail = self.get_trail(root, path)?;
+        match trail.last() {
+            Some(index) => Ok( self.child(*index, path.directions[trail.len() - 1])? ),
+            //Can't read from the end of a trail if the trail is empty
+            None => Err( AccessError::InvalidRequest )
+        }
+    }
+
+
+    //Public functions used for root manipulation
+    pub fn empty_root(&self) -> Index {
+        Index(0)
+    }
+
+    pub fn raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+        self.set_node_child(self.empty_root(), path, root)
+    }
+
+    pub fn lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+        self.read_destination(root, path)
     }
 
 
@@ -172,25 +188,6 @@ impl DirectedGraph {
     */
 
     /*
-    fn _compact_root_children(&mut self, root:&mut NodeAddress) -> bool {
-        let child_directions = [1, 0];
-        let mut new_root_node = Node::new_empty();
-        let children = self.get_node(&root).child_indexes;
-        for index in 0 .. child_directions.len() {
-            let address = NodeAddress::new(root.layer - 1, children[index]);
-            let node = self.get_node(&address);
-            let (child_count, last_index) = node.count_kids_and_get_last();
-            if child_count > 1 || last_index != child_directions[index] {
-                return false //Cannot compact root
-            }
-            new_root_node.child_indexes[index] = node.child_indexes[child_directions[index]];
-        } //If we don't terminate we are safe to lower the root
-        let new_root_index = self.add_node(root.layer - 1, new_root_node);
-        self.transfer_reference(&root, &NodeAddress::new(root.layer - 1, new_root_index));
-        root.layer -= 1;
-        root.index = new_root_index;
-        true //Successfully compacted root
-    }
 
     //This has a problem with my current system. Hmm
     //Only works with 2 dimensions, up to root level 5 (64x64 cell area)

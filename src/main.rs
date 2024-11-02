@@ -1,21 +1,21 @@
 use core::panic;
 
 use macroquad::prelude::*;
-use graph::{DirectedGraph, Index, Path2D};
+use graph::{SparsePixelDirectedGraph, Index, Path2D};
 mod graph;
 mod fake_heap;
 
-
 const BOXSIZE:Vec2 = Vec2::splat(50.);
-const DESCENT_LIMIT:u32 = 3;
+
 
 #[macroquad::main("Window")]
 async fn main() {
 
-    let mut world_graph = DirectedGraph::new();
+    let mut world_graph = SparsePixelDirectedGraph::new();
     let mut player = Object {
         root : world_graph.empty_root(),
-        position : Vec2::new(screen_width()/2., screen_height()/2.)
+        position : Vec2::new(screen_width()/2., screen_height()/2.),
+        descent_limit : 2,
     };
 
     //Keeps window alive
@@ -26,6 +26,18 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::P) {
             println!("Paused.");
+        }
+        if is_key_pressed(KeyCode::E) {
+            let new_path = Path2D::from(0b00, 1);
+            player.descent_limit += 1;
+            player.root = world_graph.raise_root_domain(player.root, &new_path).unwrap();
+        }
+        if is_key_pressed(KeyCode::R) {
+            if player.descent_limit != 1 {
+                let new_path = Path2D::from(0b00, 1);
+                player.descent_limit -= 1;
+                player.root = world_graph.lower_root_domain(player.root, &new_path).unwrap();
+            }
         }
 
         player.move_with_wasd(5.);
@@ -40,16 +52,17 @@ async fn main() {
 struct Object {
     root : Index,
     position : Vec2,
+    descent_limit : u32
 }
 
 impl Object {
 
-    fn render(&self, dag:&DirectedGraph) {
-        let blocks_per_face = 2usize.pow(DESCENT_LIMIT);
+    fn render(&self, dag:&SparsePixelDirectedGraph) {
+        let blocks_per_face = 2usize.pow(self.descent_limit);
         let cell_count: usize = blocks_per_face.pow(2); //Squared
 
         for cell in 0 .. cell_count {
-            let path = Path2D::from(cell, DESCENT_LIMIT as usize);
+            let path = Path2D::from(cell, self.descent_limit as usize);
             let color = match dag.read_destination(self.root, &path) {
                 Ok(val) => if *val == 0 { RED } else { BLUE },
                 Err( error ) => {
@@ -57,7 +70,7 @@ impl Object {
                     RED
                 }
             };
-            let cartesian_cell = zorder_to_cartesian(cell, DESCENT_LIMIT as u32) - blocks_per_face as i32/2;
+            let cartesian_cell = zorder_to_cartesian(cell, self.descent_limit as u32) - blocks_per_face as i32/2;
             let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * BOXSIZE;
     
             draw_rectangle(
@@ -86,20 +99,20 @@ impl Object {
         }
     }
 
-    fn toggle_cell_with_mouse(&mut self, graph:&mut DirectedGraph, mouse_pos:Vec2) {
+    fn toggle_cell_with_mouse(&mut self, graph:&mut SparsePixelDirectedGraph, mouse_pos:Vec2) {
         let rel_mouse_pos = mouse_pos - self.position;
         let unrounded_cell = rel_mouse_pos / BOXSIZE;
         let mut edit_cell = IVec2::new(
             round_away_0_pref_pos(unrounded_cell.x),
             round_away_0_pref_pos(unrounded_cell.y)
         );
-        let blocks_on_half = 2i32.pow(DESCENT_LIMIT - 1);
+        let blocks_on_half = 2i32.pow(self.descent_limit - 1);
         if edit_cell.abs().max_element() > blocks_on_half { return }
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
-        let cell = cartesian_to_zorder(edit_cell.x as usize, edit_cell.y as usize, DESCENT_LIMIT);
-        let path = Path2D::from(cell, DESCENT_LIMIT as usize);
+        let cell = cartesian_to_zorder(edit_cell.x as usize, edit_cell.y as usize, self.descent_limit);
+        let path = Path2D::from(cell, self.descent_limit as usize);
         let cur_val = match graph.read_destination(self.root, &path) {
             Ok(value) => *value,
             Err( error ) => {
