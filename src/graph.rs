@@ -196,11 +196,17 @@ impl SparsePixelDirectedGraph {
     }
 
     pub fn raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        self.set_node_child(self.empty_root(), path, root)
+        let new_root = self.set_node_child(self.empty_root(), path, root)?;
+        self.nodes.add_ref(new_root)?;
+        self.nodes.remove_ref(root)?;
+        Ok(new_root)
     }
 
     pub fn lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        self.read_destination(root, path)
+        let new_root = self.read_destination(root, path)?;
+        self.nodes.add_ref(new_root)?;
+        self.nodes.remove_ref(root)?;
+        Ok(new_root)
     }
 
 
