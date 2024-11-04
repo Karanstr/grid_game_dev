@@ -1,6 +1,7 @@
 use core::panic;
 
 use macroquad::prelude::*;
+use vec_friendly_drawing::*;
 use graph::{SparsePixelDirectedGraph, Index, Path2D};
 mod graph;
 mod fake_heap;
@@ -61,13 +62,10 @@ impl Object {
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
             let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * block_domain + self.position - self.domain/2.;
             let color = if *index == 0 { RED } else { BLUE };
-            draw_rectangle(offset.x, offset.y, block_domain.x, block_domain.x, color);
-            draw_rectangle_lines(offset.x, offset.y, block_domain.x, block_domain.x, 2., WHITE);
+            draw_rect(offset, block_domain, color);
+            outline_rect(offset, block_domain, 2., WHITE);
         }
-
-        let mut center_of_mass = DrawRectangleParams::default();
-        center_of_mass.color = GREEN;
-        draw_rectangle_ex(self.position.x, self.position.y, 5., 5., center_of_mass);
+        draw_centered_rect(self.position, Vec2::splat(10.), GREEN);
     }
 
     fn move_with_wasd(&mut self, speed:f32) {
@@ -86,7 +84,7 @@ impl Object {
     }
 
     fn toggle_cell_with_mouse(&mut self, graph:&mut SparsePixelDirectedGraph, mouse_pos:Vec2) {
-        let depth = 3;
+        let depth = 2;
         let block_size = self.domain / 2u32.pow(depth) as f32;
 
         let rel_mouse_pos = mouse_pos - self.position;
@@ -169,3 +167,21 @@ pub fn cartesian_to_zorder(x:usize, y:usize, root_layer:u32) -> usize {
     cell
 }
 
+
+mod vec_friendly_drawing {
+    use macroquad::prelude::*;
+
+    pub fn draw_rect(top_left_corner:Vec2, length:Vec2, color:Color) {
+        draw_rectangle(top_left_corner.x, top_left_corner.y, length.y, length.x, color);
+    }
+
+    pub fn draw_centered_rect(position:Vec2, length:Vec2, color:Color) {
+        let real_pos = position - length/2.;
+        draw_rectangle(real_pos.x, real_pos.y, length.y, length.x, color);
+    }
+
+    pub fn outline_rect(position:Vec2, length:Vec2, line_width:f32, color:Color) {
+        draw_rectangle_lines(position.x, position.y, length.x, length.x, line_width, color);
+    }
+
+}
