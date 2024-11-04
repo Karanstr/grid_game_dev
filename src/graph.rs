@@ -42,7 +42,7 @@ impl Node {
 }
 
 
-//Generalized version of the SVDAG, removes fixed depth dimensions
+//Improvement on the SDAG structure
 pub struct SparsePixelDirectedGraph {
     nodes : FakeHeap<Node>,
     index_lookup : HashMap<Node, Index>,
@@ -131,7 +131,7 @@ impl SparsePixelDirectedGraph {
     }
 
 
-    //Public functions used to write
+    //Public functions used for writing
     pub fn set_node_child(&mut self, root:Index, path:&Path2D, child:Index) -> Result<Index, AccessError> {
         let trail = self.get_trail(root, path)?;
         let mut new_index = child;
@@ -153,7 +153,7 @@ impl SparsePixelDirectedGraph {
     }
 
 
-    //Public functions used to read
+    //Public functions used for reading
     pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
         let trail = self.get_trail(root, path)?;
         match trail.last() {
@@ -163,6 +163,32 @@ impl SparsePixelDirectedGraph {
         }
     }
 
+    pub fn dfs_leaves(&self, root:Index) -> Vec<(u32, u32, Index)> {
+        let mut leaves = Vec::new();
+        let mut stack = Vec::new();
+        stack.push((root, 0u32, 0u32));
+
+        while stack.len() != 0 {
+            let (cur_index, layers_deep, zorder) = stack.pop().unwrap();
+            if layers_deep == 10 { //Arbitrary depth catcher to prevent infinite diving
+                dbg!(*cur_index);
+                continue;
+            }
+            //Because we're just following pointers this only fails if the structure has failed.
+            let cur_node = self.node(cur_index).unwrap();
+            for direction in 0 .. cur_node.child_indexes.len() {
+                let child_index = cur_node.child(direction);
+                if child_index == cur_index {
+                    leaves.push((zorder, layers_deep, child_index));
+                    //This may not generalize, but for now if it's a leaf it's a full leaf
+                    break
+                } else {
+                    stack.push((child_index, layers_deep + 1, (zorder << 2) | direction as u32))
+                }
+            }
+        }
+        leaves
+    }
 
     //Public functions used for root manipulation
     pub fn empty_root(&self) -> Index {
@@ -188,7 +214,6 @@ impl SparsePixelDirectedGraph {
     */
 
     /*
-
     //This has a problem with my current system. Hmm
     //Only works with 2 dimensions, up to root level 5 (64x64 cell area)
     pub fn df_to_bin_grid(&self, root:Index, root_layer:usize) -> Vec<u64> {
@@ -196,7 +221,7 @@ impl SparsePixelDirectedGraph {
         let mut bin_grid:Vec<u64> = Vec::new();
         bin_grid.resize(blocks_per_side, 0);
 
-        //Storing indexes their z-order cells, and the current layer (as determined by the root_layer)
+        //Storing indexes, their z-order cells, and the current layer (as determined by the root_layer)
         let mut stack: Vec<(Index, u32)> = Vec::new();
         stack.push( (root.clone(), 0) );
 
