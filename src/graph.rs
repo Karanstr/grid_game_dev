@@ -4,7 +4,7 @@ use std::hash::Hash;
 use crate::fake_heap::FakeHeap; 
 pub use crate::fake_heap::{Index, AccessError};
 
-//Could be generalized to n dimensional path. I don't care atm tho
+
 #[derive(Debug)]
 pub struct Path2D {
     directions : Vec<usize>
@@ -20,7 +20,7 @@ impl Path2D {
     }
 }
 
-//Assumes 2 dimensions for now. Using vecs is stupid for now, going back to arrays
+//Assumes 2 dimensions for now
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Node {
     child_indexes: [Index; 4],

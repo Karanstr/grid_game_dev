@@ -8,12 +8,13 @@ mod fake_heap;
 
 #[macroquad::main("Window")]
 async fn main() {
-
+    let size = Vec2::new(300., 300.);
+    request_new_screen_size(size.x, size.y);
     let mut world_graph = SparsePixelDirectedGraph::new();
     let mut player = Object {
         root : world_graph.empty_root(),
-        position : Vec2::new(screen_width()/2., screen_height()/2.),
-        domain : Vec2::new(250., 250.),
+        position : Vec2::new(size.x/2., size.y/2.),
+        domain : Vec2::new(size.x, size.y),
     };
 
     //Keeps window alive
@@ -25,22 +26,14 @@ async fn main() {
         if is_key_pressed(KeyCode::P) {
             println!("Paused.");
         }
-        // if is_key_pressed(KeyCode::E) {
-        //     let new_path = Path2D::from(0b00, 1);
-        //     player.descent_limit += 1;
-        //     player.root = world_graph.raise_root_domain(player.root, &new_path).unwrap();
-        // }
-        // if is_key_pressed(KeyCode::R) {
-        //     if player.descent_limit != 1 {
-        //         let new_path = Path2D::from(0b00, 1);
-        //         player.descent_limit -= 1;
-        //         player.root = world_graph.lower_root_domain(player.root, &new_path).unwrap();
-        //     }
-        // }
 
-        player.move_with_wasd(5.);
-
+        //player.move_with_wasd(5.);
+        
         player.render(&world_graph);
+
+        if is_mouse_button_down(MouseButton::Left) {
+            player.march_from_0_0(&world_graph, Vec2::from(mouse_position()));
+        }
 
         next_frame().await
     }
@@ -53,6 +46,7 @@ struct Object {
     domain : Vec2,
 }
 
+//Figure out how to handle the center of the object being the center instead of the top left when marching
 impl Object {
 
     fn render(&self, graph:&SparsePixelDirectedGraph) {
@@ -98,7 +92,7 @@ impl Object {
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
-        let cell = cartesian_to_zorder(edit_cell.x as usize, edit_cell.y as usize, depth);
+        let cell = pos_cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
         let cur_val = match graph.read_destination(self.root, &path) {
             Ok(value) => *value,
@@ -126,8 +120,74 @@ impl Object {
         };
     }
 
+    fn coord_to_cartesian(&self, point:Vec2) -> IVec2 {
+        let blocks = IVec2::new(4, 4);
+        if point.x < self.position.x - self.domain.x/2. || point.y < self.position.y - self.domain.y/2. {
+            println!("Bad");
+        }
+        IVec2::new(
+            (point.x / (self.domain.x / 4.) ).floor() as i32,
+            (point.y / (self.domain.y / 4.) ).floor() as i32,
+        )
+    }
+
+    fn march_from_0_0(&self, world:&SparsePixelDirectedGraph, end:Vec2) {
+        let start = Vec2::splat(0.);
+        draw_line(start.x, start.y, end.x, end.y, 1., BLACK);
+        
+        let cur_depth = 2;
+        let one_we_care_about = &end;
+
+        let cartesian = self.coord_to_cartesian(*one_we_care_about);
+
+        let box_size = self.domain / 2u32.pow(cur_depth) as f32;
+        let top_left = Vec2::new(cartesian.x as f32, cartesian.y as f32) * box_size;
+        let offset_from_top_left_corner = *one_we_care_about - top_left;
+        let distance_to_wall = box_size - offset_from_top_left_corner;
+
+        let slope_to_wall_corner = distance_to_wall.y / distance_to_wall.x;
+
+        draw_line(end.x, end.y, end.x + distance_to_wall.x, end.y + distance_to_wall.y, 1., GREEN);
+
+        let delta = end - start;
+        if delta.x <= 0. || delta.y <= 0. { panic!("UH OH") }
+        let slope = delta.y / delta.x;
+
+        if slope_to_wall_corner < slope {
+            println!("Hitting horizontal wall");
+        } else if slope_to_wall_corner > slope {
+            println!("Hitting vertical wall");
+        } else {
+            println!("Hitting corner");
+        }
+
+
+    }
+
+
 }
 
+//Will overflow if our z-order goes 32 layers deep. So.. don't do that
+fn zorder_to_cartesian(mut zorder:u32, depth:u32) -> IVec2 {
+    let (mut x, mut y) = (0, 0);
+    for layer in 0 .. depth {
+        x |= (zorder & 0b1) << layer;
+        zorder >>= 1;
+        y |= (zorder & 0b1) << layer;
+        zorder >>= 1;
+    }
+    IVec2::new(x as i32, y as i32)
+}
+
+//Figure this out later
+fn pos_cartesian_to_zorder(x:u32, y:u32, root_layer:u32) -> usize {
+    let mut cell = 0;
+    for layer in (0 ..= root_layer).rev() {
+        let step = (((y >> layer) & 0b1) << 1 ) | ((x >> layer) & 0b1);
+        cell = (cell << 2) | step;
+    }
+    cell as usize
+}
 
 //Figure out where to put these
 fn round_away_0_pref_pos(number:f32) -> i32 {
@@ -142,31 +202,6 @@ fn round_away_0_pref_pos(number:f32) -> i32 {
         1 
     }
 }
-
-//Will overflow if our z-order goes 32 layers deep. So.. don't do that
-pub fn zorder_to_cartesian(mut zorder:u32, depth:u32) -> IVec2 {
-    let (mut x, mut y) = (0, 0);
-    for layer in 0 .. depth {
-        x |= (zorder & 0b1) << layer;
-        zorder >>= 1;
-        y |= (zorder & 0b1) << layer;
-        zorder >>= 1;
-    }
-    IVec2::new(x as i32, y as i32)
-}
-
-
-
-//Figure this out later
-pub fn cartesian_to_zorder(x:usize, y:usize, root_layer:u32) -> usize {
-    let mut cell = 0;
-    for layer in (0 ..= root_layer).rev() {
-        let step = (((y >> layer) & 0b1) << 1 ) | ((x >> layer) & 0b1);
-        cell = (cell << 2) | step;
-    }
-    cell
-}
-
 
 mod vec_friendly_drawing {
     use macroquad::prelude::*;
@@ -185,3 +220,4 @@ mod vec_friendly_drawing {
     }
 
 }
+
