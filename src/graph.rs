@@ -5,6 +5,15 @@ use crate::fake_heap::FakeHeap;
 pub use crate::fake_heap::{Index, AccessError};
 
 
+enum NodeTypes {
+    Full(Index, Index, Index, Index),
+    Three(Index, Index, Index),
+    Half(Index, Index),
+    One(Index),
+    Leaf,
+    Empty //Maybe this?
+}
+
 #[derive(Debug)]
 pub struct Path2D {
     directions : Vec<usize>
@@ -41,6 +50,11 @@ impl Node {
 
 }
 
+#[derive(Debug)]
+pub struct Location {
+    pub index:Index,
+    pub depth:usize,
+}
 
 //Improvement on the SDAG structure
 pub struct SparsePixelDirectedGraph {
@@ -154,10 +168,15 @@ impl SparsePixelDirectedGraph {
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Location, AccessError> {
         let trail = self.get_trail(root, path)?;
         match trail.last() {
-            Some(index) => Ok( self.child(*index, path.directions[trail.len() - 1])? ),
+            Some(index) => Ok( 
+                Location {
+                    index : self.child(*index, path.directions[trail.len() - 1])?,
+                    depth : trail.len() 
+                }
+            ),
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )
         }
@@ -203,7 +222,7 @@ impl SparsePixelDirectedGraph {
     }
 
     pub fn lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.read_destination(root, path)?;
+        let new_root = self.read_destination(root, path)?.index;
         self.nodes.add_ref(new_root)?;
         self.nodes.remove_ref(root)?;
         Ok(new_root)

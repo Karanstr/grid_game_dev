@@ -1,5 +1,5 @@
 use core::panic;
-use std::os::linux::raw::stat;
+use std::{f32::consts::PI, os::linux::raw::stat};
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
@@ -18,21 +18,35 @@ async fn main() {
         domain : Vec2::new(size.x, size.y),
     };
 
+    let step = 0.03;
+    let mut rotation = step;
+
     //Keeps window alive
     loop {
        
         if is_mouse_button_pressed(MouseButton::Left) {
             player.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
         }
-        if is_key_pressed(KeyCode::P) {
-            println!("Paused.");
+        // if is_key_pressed(KeyCode::P) {
+        //     println!("Paused.");
+        // }
+
+        if is_key_down(KeyCode::W) {
+            if rotation > step {
+                rotation -= step;
+            }
+        }
+        if is_key_down(KeyCode::S) {
+            if rotation < PI/2. - step {
+                rotation += step;
+            }
         }
 
         //player.move_with_wasd(5.);
         
         player.render(&world_graph);
 
-        player.march_down_and_right(&world_graph, Vec2::from(mouse_position()));
+        player.march_down_and_right(&world_graph, Vec2::from(mouse_position()), Vec2::from_angle(rotation));
 
         next_frame().await
     }
@@ -91,10 +105,10 @@ impl Object {
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
-        let cell = pos_cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
+        let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
         let cur_val = match graph.read_destination(self.root, &path) {
-            Ok(value) => *value,
+            Ok(value) => *value.index,
             Err( error ) => {
                 dbg!(error);
                 0   
@@ -119,48 +133,63 @@ impl Object {
         };
     }
 
-    fn coord_to_cartesian(&self, point:Vec2) -> IVec2 {
-        let blocks = IVec2::new(4, 4);
+    fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> IVec2 {
+        let blocks = Vec2::splat(2f32.powf(depth as f32));
         if point.x < self.position.x - self.domain.x/2. || point.y < self.position.y - self.domain.y/2. {
             println!("Bad");
         }
-        IVec2::new(
-            (point.x / (self.domain.x / 4.) ).floor() as i32,
-            (point.y / (self.domain.y / 4.) ).floor() as i32,
-        )
+        (point / (self.domain / blocks)).floor().as_ivec2()
     }
 
-    fn march_down_and_right(&self, world:&SparsePixelDirectedGraph, start:Vec2) {
-        
-        let cur_depth = 2;
+    //Assumes the corner is down and to the right
+    //Assumes the velocity isn't vertical only (inf slope)
+    fn march_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
+        let distance_to_corner = corner - start;
+        let slope = velocity.y / velocity.x;
+        let slope_to_corner = distance_to_corner.y / distance_to_corner.x;
 
-        let cartesian = self.coord_to_cartesian(start);
-
-        let box_size = self.domain / 2u32.pow(cur_depth) as f32;
-        let top_left = Vec2::new(cartesian.x as f32, cartesian.y as f32) * box_size;
-        let bottom_right = top_left + box_size;
-        let distance_to_tl = start - top_left;
-        let distance_to_br = bottom_right - start;
-        
-        let slope = distance_to_tl.y / distance_to_tl.x;
-        let slope_to_wall_corner = distance_to_br.y / distance_to_br.x;
-
-        let hit_point = if slope_to_wall_corner < slope {
+        let hit_point = if slope_to_corner < slope {
             println!("Hitting horizontal wall");
-            Vec2::new(start.x + distance_to_br.y/slope, bottom_right.y)
-        } else if slope_to_wall_corner > slope {
+            Vec2::new(start.x + distance_to_corner.y/slope, corner.y)
+        } else if slope_to_corner > slope {
             println!("Hitting vertical wall");
-            Vec2::new(bottom_right.x, start.y + distance_to_br.x * slope)
+            Vec2::new(corner.x, start.y + distance_to_corner.x * slope)
         } else {
             println!("Hitting corner");
-            bottom_right.clone()
+            corner.clone()
         };
 
-        draw_line(start.x, start.y, bottom_right.x, bottom_right.y, 1., GREEN);
-        
-        draw_line(top_left.x, top_left.y, hit_point.x, hit_point.y, 1., BLACK);
+        draw_vec_line(start, corner, 1., ORANGE);
+        draw_vec_line(start, hit_point, 1., GREEN);
 
         draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
+
+        hit_point
+
+    }
+
+    fn march_down_and_right(&self, world:&SparsePixelDirectedGraph, start:Vec2, velocity:Vec2) {
+        
+        let max_depth = 5;
+        let cartesian = self.coord_to_cartesian(start, max_depth).as_vec2();
+        let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth);
+
+
+        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize)) {
+            Ok(data) => data,
+            Err(error) => {
+                dbg!(error);
+                panic!();
+            }
+        };
+
+        let cur_depth = data.depth as u32 - 1;
+
+
+        let box_size = self.domain / 2u32.pow(cur_depth) as f32;
+        let bottom_right = self.coord_to_cartesian(start, cur_depth).as_vec2() * box_size + box_size;
+        
+        self.march_towards_corner(bottom_right, start, velocity);
 
     }
 
@@ -180,7 +209,7 @@ fn zorder_to_cartesian(mut zorder:u32, depth:u32) -> IVec2 {
 }
 
 //Figure this out later
-fn pos_cartesian_to_zorder(x:u32, y:u32, root_layer:u32) -> usize {
+fn cartesian_to_zorder(x:u32, y:u32, root_layer:u32) -> usize {
     let mut cell = 0;
     for layer in (0 ..= root_layer).rev() {
         let step = (((y >> layer) & 0b1) << 1 ) | ((x >> layer) & 0b1);
@@ -217,6 +246,10 @@ mod vec_friendly_drawing {
 
     pub fn outline_rect(position:Vec2, length:Vec2, line_width:f32, color:Color) {
         draw_rectangle_lines(position.x, position.y, length.x, length.x, line_width, color);
+    }
+
+    pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
+        draw_line(point1.x, point1.y, point2.x, point2.y, line_width, color);
     }
 
 }

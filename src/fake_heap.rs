@@ -17,7 +17,7 @@ pub enum AccessError {
     InvalidRequest,
 }
 
-#[derive(Deref, PartialEq, PartialOrd, Clone, Copy, Hash, Eq)]
+#[derive(Debug, Deref, PartialEq, PartialOrd, Clone, Copy, Hash, Eq)]
 pub struct Index(pub usize);
 
 
