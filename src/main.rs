@@ -19,9 +19,9 @@ async fn main() {
     };
 
     let step = 0.03;
-    let mut rotation = step;
+    let mut rotation = PI/4.;
 
-    //Keeps window alive
+    //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
        
         if is_mouse_button_pressed(MouseButton::Left) {
@@ -42,7 +42,7 @@ async fn main() {
             }
         }
 
-        //player.move_with_wasd(5.);
+        player.move_with_wasd(5.);
         
         player.render(&world_graph);
 
@@ -133,12 +133,14 @@ impl Object {
         };
     }
 
-    fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> IVec2 {
+    fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> Option<IVec2> {
+        let offset = self.domain/2.;
         let blocks = Vec2::splat(2f32.powf(depth as f32));
-        if point.x < self.position.x - self.domain.x/2. || point.y < self.position.y - self.domain.y/2. {
-            println!("Bad");
+        if point.x <= self.position.x - offset.x || point.y <= offset.y - self.domain.y/2.
+        || point.x >= self.position.x + offset.x || point.y >= offset.y + self.domain.y/2. {
+            return None
         }
-        (point / (self.domain / blocks)).floor().as_ivec2()
+        Some(((point - (self.position - offset)) / (self.domain / blocks)).floor().as_ivec2())
     }
 
     //Assumes the corner is down and to the right
@@ -161,7 +163,6 @@ impl Object {
 
         draw_vec_line(start, corner, 1., ORANGE);
         draw_vec_line(start, hit_point, 1., GREEN);
-
         draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
 
         hit_point
@@ -169,9 +170,15 @@ impl Object {
     }
 
     fn march_down_and_right(&self, world:&SparsePixelDirectedGraph, start:Vec2, velocity:Vec2) {
-        
+
         let max_depth = 5;
-        let cartesian = self.coord_to_cartesian(start, max_depth).as_vec2();
+        let cartesian = match self.coord_to_cartesian(start, max_depth) {
+            Some(cartesian) => cartesian.as_vec2(),
+            None => {
+                println!("Can't march beyond box domain");
+                return
+            }
+        };
         let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth);
 
 
@@ -187,7 +194,13 @@ impl Object {
 
 
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
-        let bottom_right = self.coord_to_cartesian(start, cur_depth).as_vec2() * box_size + box_size;
+        let bottom_right = match self.coord_to_cartesian(start, cur_depth) {
+            Some(cartesian) => cartesian.as_vec2() * box_size + box_size + self.position - self.domain/2.,
+            None => {
+                println!("Uh..");
+                return
+            }
+        };
         
         self.march_towards_corner(bottom_right, start, velocity);
 
