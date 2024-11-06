@@ -1,4 +1,5 @@
 use core::panic;
+use std::os::linux::raw::stat;
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
@@ -31,9 +32,7 @@ async fn main() {
         
         player.render(&world_graph);
 
-        if is_mouse_button_down(MouseButton::Left) {
-            player.march_from_0_0(&world_graph, Vec2::from(mouse_position()));
-        }
+        player.march_down_and_right(&world_graph, Vec2::from(mouse_position()));
 
         next_frame().await
     }
@@ -46,7 +45,7 @@ struct Object {
     domain : Vec2,
 }
 
-//Figure out how to handle the center of the object being the center instead of the top left when marching
+
 impl Object {
 
     fn render(&self, graph:&SparsePixelDirectedGraph) {
@@ -131,36 +130,37 @@ impl Object {
         )
     }
 
-    fn march_from_0_0(&self, world:&SparsePixelDirectedGraph, end:Vec2) {
-        let start = Vec2::splat(0.);
-        draw_line(start.x, start.y, end.x, end.y, 1., BLACK);
+    fn march_down_and_right(&self, world:&SparsePixelDirectedGraph, start:Vec2) {
         
         let cur_depth = 2;
-        let one_we_care_about = &end;
 
-        let cartesian = self.coord_to_cartesian(*one_we_care_about);
+        let cartesian = self.coord_to_cartesian(start);
 
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
         let top_left = Vec2::new(cartesian.x as f32, cartesian.y as f32) * box_size;
-        let offset_from_top_left_corner = *one_we_care_about - top_left;
-        let distance_to_wall = box_size - offset_from_top_left_corner;
+        let bottom_right = top_left + box_size;
+        let distance_to_tl = start - top_left;
+        let distance_to_br = bottom_right - start;
+        
+        let slope = distance_to_tl.y / distance_to_tl.x;
+        let slope_to_wall_corner = distance_to_br.y / distance_to_br.x;
 
-        let slope_to_wall_corner = distance_to_wall.y / distance_to_wall.x;
-
-        draw_line(end.x, end.y, end.x + distance_to_wall.x, end.y + distance_to_wall.y, 1., GREEN);
-
-        let delta = end - start;
-        if delta.x <= 0. || delta.y <= 0. { panic!("UH OH") }
-        let slope = delta.y / delta.x;
-
-        if slope_to_wall_corner < slope {
+        let hit_point = if slope_to_wall_corner < slope {
             println!("Hitting horizontal wall");
+            Vec2::new(start.x + distance_to_br.y/slope, bottom_right.y)
         } else if slope_to_wall_corner > slope {
             println!("Hitting vertical wall");
+            Vec2::new(bottom_right.x, start.y + distance_to_br.x * slope)
         } else {
             println!("Hitting corner");
-        }
+            bottom_right.clone()
+        };
 
+        draw_line(start.x, start.y, bottom_right.x, bottom_right.y, 1., GREEN);
+        
+        draw_line(top_left.x, top_left.y, hit_point.x, hit_point.y, 1., BLACK);
+
+        draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
 
     }
 
