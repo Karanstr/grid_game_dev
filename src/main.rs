@@ -38,7 +38,8 @@ async fn main() {
         if is_key_down(KeyCode::S) {
             rotation += step;
         }
-
+        rotation %= 2.*PI;
+=
         //player.move_with_wasd(5.);
         
         player.render(&world_graph);
