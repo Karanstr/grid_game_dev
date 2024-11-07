@@ -1,5 +1,5 @@
 use core::panic;
-use std::{f32::consts::PI, os::linux::raw::stat};
+use std::f32::consts::PI;
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
@@ -39,7 +39,7 @@ async fn main() {
             rotation += step;
         }
         rotation %= 2.*PI;
-        
+
         //player.move_with_wasd(5.);
         
         player.render(&world_graph);
