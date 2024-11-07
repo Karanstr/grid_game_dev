@@ -19,11 +19,12 @@ async fn main() {
     };
 
     let step = 0.03;
-    let mut rotation = PI/4.;
+    let mut rotation = 0.;
 
+    
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
-       
+
         if is_mouse_button_pressed(MouseButton::Left) {
             player.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
         }
@@ -32,21 +33,17 @@ async fn main() {
         // }
 
         if is_key_down(KeyCode::W) {
-            if rotation > step {
-                rotation -= step;
-            }
+            rotation -= step;
         }
         if is_key_down(KeyCode::S) {
-            if rotation < PI/2. - step {
-                rotation += step;
-            }
+            rotation += step;
         }
 
-        player.move_with_wasd(5.);
+        //player.move_with_wasd(5.);
         
         player.render(&world_graph);
 
-        player.march_down_and_right(&world_graph, Vec2::from(mouse_position()), Vec2::from_angle(rotation));
+        player.march(&world_graph, Vec2::from(mouse_position()), Vec2::from_angle(rotation));
 
         next_frame().await
     }
@@ -136,40 +133,37 @@ impl Object {
     fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> Option<IVec2> {
         let offset = self.domain/2.;
         let blocks = Vec2::splat(2f32.powf(depth as f32));
-        if point.x <= self.position.x - offset.x || point.y <= offset.y - self.domain.y/2.
-        || point.x >= self.position.x + offset.x || point.y >= offset.y + self.domain.y/2. {
+        if point.x <= self.position.x - offset.x || point.y <= self.position.y - offset.y
+        || point.x >= self.position.x + offset.x || point.y >= self.position.y + offset.y {
             return None
         }
         Some(((point - (self.position - offset)) / (self.domain / blocks)).floor().as_ivec2())
     }
 
-    //Assumes the corner is down and to the right
-    //Assumes the velocity isn't vertical only (inf slope)
-    fn march_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
+    fn march_towards_corner(&self, corner:Vec2, start:Vec2, rate:Vec2) -> Vec2 {
         let distance_to_corner = corner - start;
-        let slope = velocity.y / velocity.x;
-        let slope_to_corner = distance_to_corner.y / distance_to_corner.x;
+        //Yeah I divide by 0. No I don't care
+        let rate_to_wall = distance_to_corner/rate;
 
-        let hit_point = if slope_to_corner < slope {
-            println!("Hitting horizontal wall");
-            Vec2::new(start.x + distance_to_corner.y/slope, corner.y)
-        } else if slope_to_corner > slope {
-            println!("Hitting vertical wall");
-            Vec2::new(corner.x, start.y + distance_to_corner.x * slope)
-        } else {
-            println!("Hitting corner");
+        let hit_point = if rate_to_wall.x > rate_to_wall.y { 
+            //Hitting horizontal wall
+            Vec2::new(start.x + rate.x*rate_to_wall.y, corner.y)
+        } else if rate_to_wall.x < rate_to_wall.y { 
+            //Hitting vertical walll
+            Vec2::new(corner.x, start.y + rate.y * rate_to_wall.x)
+        } else { 
+            //Hitting corner
             corner.clone()
         };
 
-        draw_vec_line(start, corner, 1., ORANGE);
-        draw_vec_line(start, hit_point, 1., GREEN);
+        draw_vec_line(start, corner, 1., GREEN);
+        draw_vec_line(start, hit_point, 1., YELLOW);
         draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
 
         hit_point
-
     }
 
-    fn march_down_and_right(&self, world:&SparsePixelDirectedGraph, start:Vec2, velocity:Vec2) {
+    fn march(&self, world:&SparsePixelDirectedGraph, start:Vec2, velocity:Vec2) {
 
         let max_depth = 5;
         let cartesian = match self.coord_to_cartesian(start, max_depth) {
@@ -190,19 +184,23 @@ impl Object {
             }
         };
 
-        let cur_depth = data.depth as u32 - 1;
-
-
+        let cur_depth = data.depth as u32;
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
-        let bottom_right = match self.coord_to_cartesian(start, cur_depth) {
-            Some(cartesian) => cartesian.as_vec2() * box_size + box_size + self.position - self.domain/2.,
-            None => {
-                println!("Uh..");
-                return
-            }
-        };
+
+        let quadrant = (velocity.signum()+0.5).abs().floor();
+
+        let corner = self.coord_to_cartesian(start, cur_depth)
+            .unwrap()
+            .as_vec2() * box_size + box_size*quadrant + self.position - self.domain/2.;
         
-        self.march_towards_corner(bottom_right, start, velocity);
+        let cur_angle = velocity.to_angle();
+        if cur_angle == 0. || cur_angle == PI {
+            //We're horizontal
+        } else if cur_angle == PI/2. || cur_angle == -PI/2. {
+            //We're vertical
+        }
+
+        self.march_towards_corner(corner, start, Vec2::new(cur_angle.cos(), cur_angle.sin()));
 
     }
 

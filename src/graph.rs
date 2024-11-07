@@ -174,7 +174,7 @@ impl SparsePixelDirectedGraph {
             Some(index) => Ok( 
                 Location {
                     index : self.child(*index, path.directions[trail.len() - 1])?,
-                    depth : trail.len() 
+                    depth : trail.len() - 1
                 }
             ),
             //Can't read from the end of a trail if the trail is empty
