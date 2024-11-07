@@ -39,7 +39,7 @@ async fn main() {
             rotation += step;
         }
         rotation %= 2.*PI;
-=
+        
         //player.move_with_wasd(5.);
         
         player.render(&world_graph);
