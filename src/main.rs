@@ -12,51 +12,91 @@ async fn main() {
     let size = Vec2::new(300., 300.);
     request_new_screen_size(size.x, size.y);
     let mut world_graph = SparsePixelDirectedGraph::new();
-    let mut player = Object {
+    let mut world = Object {
         root : world_graph.empty_root(),
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
 
-    let step = 0.03;
-    let mut rotation = 0.;
+    let mut player = Player::new(PURPLE, size/2.);
+
+    let speed = 2.;
+    let step = 0.1;
 
     
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
 
         if is_mouse_button_pressed(MouseButton::Left) {
-            player.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
+            world.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
         }
-        // if is_key_pressed(KeyCode::P) {
-        //     println!("Paused.");
-        // }
+       
 
-        if is_key_down(KeyCode::W) {
-            rotation -= step;
-        }
-        if is_key_down(KeyCode::S) {
-            rotation += step;
-        }
-        rotation %= 2.*PI;
-
-        //player.move_with_wasd(5.);
+        world.render(&world_graph);
+        player.update_orientation_and_velocity_wasd(speed, step);
         
-        player.render(&world_graph);
-
-        player.march(&world_graph, Vec2::from(mouse_position()), Vec2::from_angle(rotation));
-
+        if player.velocity.length() != 0. {
+            world.march(&world_graph, &player.position, &player.velocity);
+        }
+        player.vel_to_pos();
+        player.render();
         next_frame().await
     }
 
 }
+
+struct Player {
+    color : Color,
+    position : Vec2,
+    velocity : Vec2,
+    rotation : f32,
+}
+
+impl Player {
+
+    fn new(color:Color, position:Vec2) -> Self {
+        Player {
+            color,
+            position,
+            velocity : Vec2::ZERO,
+            rotation : 0.,
+        }
+    }
+
+    fn render(&self) {
+        draw_centered_rect(self.position, Vec2::splat(10.), self.color);
+        draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
+    }
+
+    fn update_orientation_and_velocity_wasd(&mut self, linear:f32, rotational:f32) {
+        if is_key_down(KeyCode::A) {
+            self.rotation -= rotational;
+        }
+        if is_key_down(KeyCode::D) {
+            self.rotation += rotational;
+        }
+        self.rotation %= 2.*PI;
+        if is_key_down(KeyCode::W) {
+            self.velocity = Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+        }
+        if is_key_down(KeyCode::S) {
+            self.velocity = -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+        }
+    }
+
+    fn vel_to_pos(&mut self) {
+        self.position += self.velocity;
+        self.velocity = Vec2::ZERO;
+    }
+
+}
+
 
 struct Object {
     root : Index,
     position : Vec2,
     domain : Vec2,
 }
-
 
 impl Object {
 
@@ -73,7 +113,7 @@ impl Object {
         draw_centered_rect(self.position, Vec2::splat(10.), GREEN);
     }
 
-    fn move_with_wasd(&mut self, speed:f32) {
+    fn _move_with_wasd(&mut self, speed:f32) {
         if is_key_down(KeyCode::A) {
             self.position.x -= speed;
         }
@@ -141,33 +181,39 @@ impl Object {
         Some(((point - (self.position - offset)) / (self.domain / blocks)).floor().as_ivec2())
     }
 
-    fn march_towards_corner(&self, corner:Vec2, start:Vec2, rate:Vec2) -> Vec2 {
+    fn march_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
         let distance_to_corner = corner - start;
         //Yeah I divide by 0. No I don't care
-        let rate_to_wall = distance_to_corner/rate;
+        let ticks_to_wall = distance_to_corner/velocity;
 
-        let hit_point = if rate_to_wall.x > rate_to_wall.y { 
+        let ticks_to_hit;
+        let hit_point = if ticks_to_wall.x > ticks_to_wall.y { 
             //Hitting horizontal wall
-            Vec2::new(start.x + rate.x*rate_to_wall.y, corner.y)
-        } else if rate_to_wall.x < rate_to_wall.y { 
-            //Hitting vertical walll
-            Vec2::new(corner.x, start.y + rate.y * rate_to_wall.x)
+            ticks_to_hit = ticks_to_wall.y;
+            Vec2::new(start.x + velocity.x*ticks_to_wall.y, corner.y)
+        } else if ticks_to_wall.x < ticks_to_wall.y { 
+            //Hitting vertical wall
+            ticks_to_hit = ticks_to_wall.x;
+            Vec2::new(corner.x, start.y + velocity.y * ticks_to_wall.x)
         } else { 
             //Hitting corner
+            ticks_to_hit = ticks_to_wall.x;
             corner.clone()
         };
+        if ticks_to_hit < 1. {
+            println!("Crossing wall!!")
+        }
+        // println!("Hitting wall in {ticks_to_hit} ticks");
 
         draw_vec_line(start, corner, 1., GREEN);
-        draw_vec_line(start, hit_point, 1., YELLOW);
         draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
 
         hit_point
     }
 
-    fn march(&self, world:&SparsePixelDirectedGraph, start:Vec2, velocity:Vec2) {
-
+    fn march(&self, world:&SparsePixelDirectedGraph, start:&Vec2, velocity:&Vec2) {
         let max_depth = 5;
-        let cartesian = match self.coord_to_cartesian(start, max_depth) {
+        let cartesian = match self.coord_to_cartesian(*start, max_depth) {
             Some(cartesian) => cartesian.as_vec2(),
             None => {
                 println!("Can't march beyond box domain");
@@ -175,8 +221,6 @@ impl Object {
             }
         };
         let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth);
-
-
         let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize)) {
             Ok(data) => data,
             Err(error) => {
@@ -187,21 +231,13 @@ impl Object {
 
         let cur_depth = data.depth as u32;
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
-
         let quadrant = (velocity.signum()+0.5).abs().floor();
 
-        let corner = self.coord_to_cartesian(start, cur_depth)
+        let corner = self.coord_to_cartesian(*start, cur_depth)
             .unwrap()
             .as_vec2() * box_size + box_size*quadrant + self.position - self.domain/2.;
-        
-        let cur_angle = velocity.to_angle();
-        if cur_angle == 0. || cur_angle == PI {
-            //We're horizontal
-        } else if cur_angle == PI/2. || cur_angle == -PI/2. {
-            //We're vertical
-        }
 
-        self.march_towards_corner(corner, start, Vec2::new(cur_angle.cos(), cur_angle.sin()));
+        self.march_towards_corner(corner, *start, *velocity);
 
     }
 
