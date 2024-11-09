@@ -18,7 +18,7 @@ async fn main() {
         domain : Vec2::new(size.x, size.y),
     };
 
-    let mut player = Player::new(PURPLE, size/2.);
+    let mut player = Player::new(GREEN, size/2.);
 
     let speed = 2.;
     let step = 0.1;
@@ -31,7 +31,6 @@ async fn main() {
             world.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
         }
        
-
         world.render(&world_graph);
         player.update_orientation_and_velocity_wasd(speed, step);
         
@@ -68,6 +67,7 @@ impl Player {
         draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
     }
 
+    //Gross distinction, make it better
     fn update_orientation_and_velocity_wasd(&mut self, linear:f32, rotational:f32) {
         if is_key_down(KeyCode::A) {
             self.rotation -= rotational;
@@ -106,11 +106,10 @@ impl Object {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
             let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * block_domain + self.position - self.domain/2.;
-            let color = if *index == 0 { RED } else { BLUE };
+            let color = if *index == 0 { MAROON } else { BLUE };
             draw_rect(offset, block_domain, color);
-            outline_rect(offset, block_domain, 2., WHITE);
+            outline_rect(offset, block_domain, 2., BLACK);
         }
-        draw_centered_rect(self.position, Vec2::splat(10.), GREEN);
     }
 
     fn _move_with_wasd(&mut self, speed:f32) {
@@ -205,7 +204,7 @@ impl Object {
         }
         // println!("Hitting wall in {ticks_to_hit} ticks");
 
-        draw_vec_line(start, corner, 1., GREEN);
+        draw_vec_line(start, corner, 1., ORANGE);
         draw_centered_rect(hit_point, Vec2::splat(10.), YELLOW);
 
         hit_point
