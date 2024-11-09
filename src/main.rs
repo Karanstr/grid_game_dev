@@ -259,7 +259,6 @@ impl Object {
         };
 
         let cur_depth = data.depth as u32;
-        dbg!(cur_depth);
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
         let quadrant = (velocity.signum()+0.5).abs().floor();
 
