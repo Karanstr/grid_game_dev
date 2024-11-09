@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 macroquad = "0.4.13"
-derive_more = { version = "1", features = ["full"] }
+vec_mem_heap = "0.1.3"

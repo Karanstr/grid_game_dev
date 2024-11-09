@@ -1,10 +1,20 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-//Figure out modules and libraries and all that. I've no clue how they work
-use crate::fake_heap::FakeHeap; 
-pub use crate::fake_heap::{Index, AccessError};
 
-//Could be generalized to n dimensional path. I don't care atm tho
+use vec_mem_heap::MemHeap;
+pub use vec_mem_heap::{Index, AccessError};
+
+
+// enum NodeTypes {
+//     Full(Index, Index, Index, Index),
+//     Three(Index, Index, Index),
+//     Half(Index, Index),
+//     One(Index),
+//     Leaf,
+//     Empty //Maybe this?
+// }
+
+
 #[derive(Debug)]
 pub struct Path2D {
     directions : Vec<usize>
@@ -20,7 +30,7 @@ impl Path2D {
     }
 }
 
-//Assumes 2 dimensions for now. Using vecs is stupid for now, going back to arrays
+//Assumes 2 dimensions for now
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Node {
     child_indexes: [Index; 4],
@@ -41,10 +51,15 @@ impl Node {
 
 }
 
+#[derive(Debug)]
+pub struct Location {
+    pub index:Index,
+    pub depth:usize,
+}
 
 //Improvement on the SDAG structure
 pub struct SparsePixelDirectedGraph {
-    nodes : FakeHeap<Node>,
+    nodes : MemHeap<Node>,
     index_lookup : HashMap<Node, Index>,
 }
 
@@ -54,7 +69,7 @@ impl SparsePixelDirectedGraph {
         let empty_node = Node::new(Index(0));
         let full_node = Node::new(Index(1));
         let mut instance = Self {
-            nodes : FakeHeap::new(),
+            nodes : MemHeap::new(),
             index_lookup : HashMap::new()
         };
         instance.add_node(empty_node, true);
@@ -90,11 +105,11 @@ impl SparsePixelDirectedGraph {
         self.index_lookup.get(node).copied()
     }
 
-    fn dec_ref_count(&mut self, index:Index) {
+    fn dec_owners(&mut self, index:Index) {
         let mut stack:Vec<Index> = Vec::new();
         stack.push( index );
         while stack.len() != 0 {
-            match self.nodes.remove_ref(stack.pop().unwrap()) {
+            match self.nodes.remove_owner(stack.pop().unwrap()) {
                 Ok(Some(node)) => {
                     for child in node.child_indexes.iter() {
                         stack.push(*child)
@@ -119,7 +134,7 @@ impl SparsePixelDirectedGraph {
                 let node_kids = self.node(index).unwrap().child_indexes.clone();
                 for child in node_kids {
                     if child != index { //Nodes aren't allowed to keep themselves alive.
-                        match self.nodes.add_ref(child) {
+                        match self.nodes.add_owner(child) {
                             Ok(_) | Err( AccessError::ProtectedMemory(_) ) => (),
                             Err( error ) => { dbg!(error); () }
                         }
@@ -147,17 +162,22 @@ impl SparsePixelDirectedGraph {
             node.child_indexes[path.directions[steps - step]] = new_index;
             new_index = self.add_node(node, false);
         }
-        if let Err( error ) = self.nodes.add_ref(new_index) { dbg!(error); }
-        self.dec_ref_count(root);
+        if let Err( error ) = self.nodes.add_owner(new_index) { dbg!(error); }
+        self.dec_owners(root);
         Ok( new_index )
     }
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Location, AccessError> {
         let trail = self.get_trail(root, path)?;
         match trail.last() {
-            Some(index) => Ok( self.child(*index, path.directions[trail.len() - 1])? ),
+            Some(index) => Ok( 
+                Location {
+                    index : self.child(*index, path.directions[trail.len() - 1])?,
+                    depth : trail.len() - 1
+                }
+            ),
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )
         }
@@ -197,15 +217,15 @@ impl SparsePixelDirectedGraph {
 
     pub fn raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
         let new_root = self.set_node_child(self.empty_root(), path, root)?;
-        self.nodes.add_ref(new_root)?;
-        self.nodes.remove_ref(root)?;
+        self.nodes.add_owner(new_root)?;
+        self.nodes.remove_owner(root)?;
         Ok(new_root)
     }
 
     pub fn lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.read_destination(root, path)?;
-        self.nodes.add_ref(new_root)?;
-        self.nodes.remove_ref(root)?;
+        let new_root = self.read_destination(root, path)?.index;
+        self.nodes.add_owner(new_root)?;
+        self.nodes.remove_owner(root)?;
         Ok(new_root)
     }
 
