@@ -20,23 +20,44 @@ async fn main() {
 
     let mut player = Player::new(GREEN, size/2.);
 
-    let speed = 2.;
+    let speed = 0.15;
     let step = 0.1;
 
+    let mut operation_depth = 1;
+    let mut cur_color = BLUE;
     
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
 
+        if is_key_pressed(KeyCode::P) {
+            dbg!(0);
+        }
+
+        if is_key_pressed(KeyCode::Key1) {
+            operation_depth = 1;
+        } else if is_key_pressed(KeyCode::Key2) {
+            operation_depth = 2;
+        } else if is_key_pressed(KeyCode::Key3) {
+            operation_depth = 3;
+        } else if is_key_pressed(KeyCode::Key4) {
+            operation_depth = 4;
+        } else if is_key_pressed(KeyCode::Key5) {
+            operation_depth = 5;
+        }
+        if is_key_pressed(KeyCode::V) {
+            cur_color = if cur_color == RED { BLUE } else { RED };
+        }
         if is_mouse_button_pressed(MouseButton::Left) {
-            world.toggle_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()));
+            world.set_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()), operation_depth, cur_color);
         }
        
         world.render(&world_graph);
-        player.update_orientation_and_velocity_wasd(speed, step);
+        player.apply_acceleration(speed, step);
         
         if player.velocity.length() != 0. {
-            world.march(&world_graph, &player.position, &player.velocity);
+            world.march(&world_graph, &player.position, &player.velocity, operation_depth);
         }
+
         player.vel_to_pos();
         player.render();
         next_frame().await
@@ -67,8 +88,7 @@ impl Player {
         draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
     }
 
-    //Gross distinction, make it better
-    fn update_orientation_and_velocity_wasd(&mut self, linear:f32, rotational:f32) {
+    fn apply_acceleration(&mut self, linear:f32, rotational:f32) {
         if is_key_down(KeyCode::A) {
             self.rotation -= rotational;
         }
@@ -77,16 +97,24 @@ impl Player {
         }
         self.rotation %= 2.*PI;
         if is_key_down(KeyCode::W) {
-            self.velocity = Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+            self.velocity += Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
         }
         if is_key_down(KeyCode::S) {
-            self.velocity = -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+            self.velocity += -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
         }
     }
 
     fn vel_to_pos(&mut self) {
+        let drag = 0.99;
+        let speed_min = 0.01;
         self.position += self.velocity;
-        self.velocity = Vec2::ZERO;
+        self.velocity = self.velocity * drag;
+        if self.velocity.x.abs() < speed_min {
+            self.velocity.x = 0.;
+        }
+        if self.velocity.y.abs() < speed_min {
+            self.velocity.y = 0.;
+        }
     }
 
 }
@@ -127,8 +155,7 @@ impl Object {
         }
     }
 
-    fn toggle_cell_with_mouse(&mut self, graph:&mut SparsePixelDirectedGraph, mouse_pos:Vec2) {
-        let depth = 2;
+    fn set_cell_with_mouse(&mut self, graph:&mut SparsePixelDirectedGraph, mouse_pos:Vec2, depth:u32, color:Color) {
         let block_size = self.domain / 2u32.pow(depth) as f32;
 
         let rel_mouse_pos = mouse_pos - self.position;
@@ -144,21 +171,9 @@ impl Object {
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
         let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
-        let cur_val = match graph.read_destination(self.root, &path) {
-            Ok(value) => *value.index,
-            Err( error ) => {
-                dbg!(error);
-                0   
-            }
-        };
-        let new_val = match cur_val {
-            1 => Index(0),
-            0 => Index(1),
-            _ => {
-                dbg!(cur_val);
-                Index(0)
-            }
-        };
+
+        let new_val = Index(if color == BLUE { 1 } else { 0 });
+    
         self.root = match graph.set_node_child(self.root, &path, new_val) {
             Ok(index) => index,
             Err( error ) => {
@@ -170,16 +185,32 @@ impl Object {
         };
     }
 
-    fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> Option<IVec2> {
-        let offset = self.domain/2.;
-        let blocks = Vec2::splat(2f32.powf(depth as f32));
-        if point.x <= self.position.x - offset.x || point.y <= self.position.y - offset.y
-        || point.x >= self.position.x + offset.x || point.y >= self.position.y + offset.y {
-            return None
+
+    fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> [Option<IVec2>; 4] {
+        let mut four_points: [Option<IVec2>; 4] = [None; 4];
+        let half_length = self.domain/2.;
+        let block_size = self.domain / 2f32.powf(depth as f32);
+        let top_left = self.position - half_length;
+        let bottom_right = self.position + half_length;
+        if point.clamp(top_left, bottom_right) != point {
+            return four_points;
         }
-        Some(((point - (self.position - offset)) / (self.domain / blocks)).floor().as_ivec2())
+        
+        let offset = 0.01;
+        for i in 0 .. 4 {
+            let direction = Vec2::new(
+                if i & 1 == 1 { 1. } else { -1. },
+                if i & 2 == 1 { 1. } else { -1. }
+            );
+            four_points[i] = Some(
+                ((point - top_left + offset * direction) / block_size).floor().as_ivec2()
+            )
+        }
+        four_points
     }
 
+
+    
     fn march_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
         let distance_to_corner = corner - start;
         //Yeah I divide by 0. No I don't care
@@ -210,17 +241,16 @@ impl Object {
         hit_point
     }
 
-    fn march(&self, world:&SparsePixelDirectedGraph, start:&Vec2, velocity:&Vec2) {
-        let max_depth = 5;
-        let cartesian = match self.coord_to_cartesian(*start, max_depth) {
+    fn march(&self, world:&SparsePixelDirectedGraph, start:&Vec2, velocity:&Vec2, max_depth:u32) {
+        let cartesian = match self.coord_to_cartesian(*start, max_depth + 1)[velocity_to_zorder_direction(velocity)] {
             Some(cartesian) => cartesian.as_vec2(),
             None => {
                 println!("Can't march beyond box domain");
                 return
             }
         };
-        let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth);
-        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize)) {
+        let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth + 1);
+        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize + 1)) {
             Ok(data) => data,
             Err(error) => {
                 dbg!(error);
@@ -229,18 +259,25 @@ impl Object {
         };
 
         let cur_depth = data.depth as u32;
+        dbg!(cur_depth);
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
         let quadrant = (velocity.signum()+0.5).abs().floor();
 
-        let corner = self.coord_to_cartesian(*start, cur_depth)
-            .unwrap()
-            .as_vec2() * box_size + box_size*quadrant + self.position - self.domain/2.;
+        let corner = self.coord_to_cartesian(*start, cur_depth)[velocity_to_zorder_direction(velocity)]
+        .unwrap()
+        .as_vec2() * box_size + box_size*quadrant + self.position - self.domain/2.;
 
         self.march_towards_corner(corner, *start, *velocity);
 
     }
 
 
+}
+
+
+fn velocity_to_zorder_direction(velocity:&Vec2) -> usize {
+    let velocity_dir = velocity.signum().clamp(Vec2::ZERO, Vec2::ONE);
+    1 * velocity_dir.x as usize | 2 * velocity_dir.y as usize
 }
 
 //Will overflow if our z-order goes 32 layers deep. So.. don't do that
