@@ -3,9 +3,9 @@ use std::f32::consts::PI;
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
-use graph::{SparsePixelDirectedGraph, Index, Path2D};
+
 mod graph;
-mod fake_heap;
+use graph::{SparsePixelDirectedGraph, Path2D, Index};
 
 #[macroquad::main("Window")]
 async fn main() {
