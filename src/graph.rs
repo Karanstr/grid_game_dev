@@ -229,7 +229,7 @@ impl Path2D {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Location {
     pub index:Index,
     pub config:u8,
@@ -269,8 +269,8 @@ impl SparseDirectedGraph {
     }
 
     //Add cyclicity here.
-    fn get_trail(&self, root:Index, initial_config:u8, path:&Path2D) -> Result< Vec<(Index, u8)> , AccessError> {
-        let mut trail:Vec<(Index, u8)> = vec![(root, initial_config)];
+    fn get_trail(&self, root:Location, path:&Path2D) -> Result< Vec<(Index, u8)> , AccessError> {
+        let mut trail:Vec<(Index, u8)> = vec![(root.index, root.config)];
         for step in 0 .. path.directions.len() - 1 {
             let (index, config) = trail[step];
             match self.child(index, path.directions[step], config) {
@@ -334,8 +334,8 @@ impl SparseDirectedGraph {
 
 
     //Public functions used for writing
-    pub fn set_node_child(&mut self, root:Index, initial_config:u8, path:&Path2D, index:Index, config:u8) -> Result<(Index, u8), AccessError> {
-        let trail = self.get_trail(root, initial_config, path)?;
+    pub fn set_node_child(&mut self, root:Location, path:&Path2D, index:Index, config:u8) -> Result<Location, AccessError> {
+        let trail = self.get_trail(root, path)?;
         let mut new_index = index;
         let mut new_config = config;
         let steps = path.directions.len() - 1;
@@ -368,14 +368,18 @@ impl SparseDirectedGraph {
             new_config = next_config;   
         }
         if let Err( error ) = self.nodes.add_owner(new_index) { dbg!(error); }
-        self.dec_owners(root);
-        Ok( (new_index, new_config) )
+        self.dec_owners(root.index);
+        Ok ( Location {
+            index : new_index,
+            config : new_config,
+            depth : 0
+        } )
     }
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:Index, initial_config:u8, path:&Path2D) -> Result<Location, AccessError> {
-        let trail = self.get_trail(root, initial_config, path)?;
+    pub fn read_destination(&self, root:Location, path:&Path2D) -> Result<Location, AccessError> {
+        let trail = self.get_trail(root, path)?;
         match trail.last() {
             Some((index, config)) => {
                 let (child, child_config) = self.child(*index, path.directions[trail.len() - 1], *config)?;
@@ -426,8 +430,12 @@ impl SparseDirectedGraph {
     }
 
     //Public functions used for root manipulation
-    pub fn empty_root(&self) -> (Index, u8) {
-        (Index(0), 0b0000)
+    pub fn empty_root(&self) -> Location {
+        Location {
+            index : Index(0),
+            config : 0b0000,
+            depth : 0,
+        }
     }
 
     // pub fn _raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {

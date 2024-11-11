@@ -5,17 +5,15 @@ use macroquad::prelude::*;
 use vec_friendly_drawing::*;
 
 mod graph;
-use graph::{SparseDirectedGraph, Path2D, Index};
+use graph::{SparseDirectedGraph, Path2D, Index, Location};
 
 #[macroquad::main("Window")]
 async fn main() {
     let size = Vec2::new(1100., 1100.);
     request_new_screen_size(size.x, size.y);
     let mut world_graph = SparseDirectedGraph::new();
-    let (root, root_config) = world_graph.empty_root();
     let mut world = Object {
-        root,
-        root_config,
+        root : world_graph.empty_root(),
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
@@ -120,8 +118,7 @@ impl Player {
 
 
 struct Object {
-    root : Index,
-    root_config : u8,
+    root : Location,
     position : Vec2,
     domain : Vec2,
 }
@@ -129,7 +126,7 @@ struct Object {
 impl Object {
 
     fn render(&self, graph:&SparseDirectedGraph) {
-        let filled_blocks = graph.dfs_leaves(self.root, self.root_config);
+        let filled_blocks = graph.dfs_leaves(self.root.index, self.root.config);
         for (zorder, depth, index) in filled_blocks {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
@@ -174,16 +171,10 @@ impl Object {
 
         let value = Index( if color == BLUE { 1 } else { 0 } );
 
-        match graph.set_node_child(self.root, self.root_config, &path, value, 0b0000) {
-            Ok((index, config)) => {
-                self.root = index;
-                self.root_config = config;
-            },
+        match graph.set_node_child(self.root, &path, value, 0b0000) {
+            Ok( root ) => self.root = root,
             Err( error ) => {
-                dbg!( error );
-                //If something goes really wrong here the object isn't recoverable.
-                //Root has to remain pointing to a valid address, otherwise everything spirals
-                panic!();
+                panic!( "{error:?}" );
             }
         };
     }
@@ -251,7 +242,7 @@ impl Object {
             }
         };
         let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth + 1);
-        let data = match world.read_destination(self.root, self.root_config, &Path2D::from(zorder, max_depth as usize + 1)) {
+        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize + 1)) {
             Ok(data) => data,
             Err(error) => {
                 dbg!(error);
