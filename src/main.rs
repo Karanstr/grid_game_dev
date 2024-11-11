@@ -1,27 +1,28 @@
 use core::panic;
-use std::f32::consts::PI;
+// use std::f32::consts::PI;
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
 
 mod graph;
-use graph::{SparsePixelDirectedGraph, Path2D, Index};
+use graph::{SparseDirectedGraph, Path2D, Index};
 
 #[macroquad::main("Window")]
 async fn main() {
-    let size = Vec2::new(300., 300.);
+    let size = Vec2::new(1100., 1100.);
     request_new_screen_size(size.x, size.y);
-    let mut world_graph = SparsePixelDirectedGraph::new();
+    let mut world_graph = SparseDirectedGraph::new();
+    let (root, root_config) = world_graph.empty_root();
     let mut world = Object {
-        root : world_graph.empty_root(),
+        root,
+        root_config,
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
 
-    let mut player = Player::new(GREEN, size/2.);
-
-    let speed = 0.15;
-    let step = 0.1;
+    // let mut player = Player::new(GREEN, size/2.);
+    // let speed = 0.15;
+    // let step = 0.1;
 
     let mut operation_depth = 1;
     let mut cur_color = BLUE;
@@ -52,84 +53,83 @@ async fn main() {
         }
        
         world.render(&world_graph);
-        player.apply_acceleration(speed, step);
-        
-        if player.velocity.length() != 0. {
-            world.march(&world_graph, &player.position, &player.velocity, operation_depth);
-        }
-
-        player.vel_to_pos();
-        player.render();
+        // player.apply_acceleration(speed, step);
+        // if player.velocity.length() != 0. {
+        //     world.march(&world_graph, &player.position, &player.velocity, operation_depth);
+        // }
+        // player.vel_to_pos();
+        // player.render();
         next_frame().await
     }
 
 }
 
-struct Player {
-    color : Color,
-    position : Vec2,
-    velocity : Vec2,
-    rotation : f32,
-}
+// struct Player {
+//     color : Color,
+//     position : Vec2,
+//     velocity : Vec2,
+//     rotation : f32,
+// }
 
-impl Player {
+// impl Player {
 
-    fn new(color:Color, position:Vec2) -> Self {
-        Player {
-            color,
-            position,
-            velocity : Vec2::ZERO,
-            rotation : 0.,
-        }
-    }
+//     fn new(color:Color, position:Vec2) -> Self {
+//         Player {
+//             color,
+//             position,
+//             velocity : Vec2::ZERO,
+//             rotation : 0.,
+//         }
+//     }
 
-    fn render(&self) {
-        draw_centered_rect(self.position, Vec2::splat(10.), self.color);
-        draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
-    }
+//     fn render(&self) {
+//         draw_centered_rect(self.position, Vec2::splat(10.), self.color);
+//         draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
+//     }
 
-    fn apply_acceleration(&mut self, linear:f32, rotational:f32) {
-        if is_key_down(KeyCode::A) {
-            self.rotation -= rotational;
-        }
-        if is_key_down(KeyCode::D) {
-            self.rotation += rotational;
-        }
-        self.rotation %= 2.*PI;
-        if is_key_down(KeyCode::W) {
-            self.velocity += Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
-        }
-        if is_key_down(KeyCode::S) {
-            self.velocity += -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
-        }
-    }
+//     fn apply_acceleration(&mut self, linear:f32, rotational:f32) {
+//         if is_key_down(KeyCode::A) {
+//             self.rotation -= rotational;
+//         }
+//         if is_key_down(KeyCode::D) {
+//             self.rotation += rotational;
+//         }
+//         self.rotation %= 2.*PI;
+//         if is_key_down(KeyCode::W) {
+//             self.velocity += Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+//         }
+//         if is_key_down(KeyCode::S) {
+//             self.velocity += -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+//         }
+//     }
 
-    fn vel_to_pos(&mut self) {
-        let drag = 0.99;
-        let speed_min = 0.01;
-        self.position += self.velocity;
-        self.velocity = self.velocity * drag;
-        if self.velocity.x.abs() < speed_min {
-            self.velocity.x = 0.;
-        }
-        if self.velocity.y.abs() < speed_min {
-            self.velocity.y = 0.;
-        }
-    }
+//     fn vel_to_pos(&mut self) {
+//         let drag = 0.99;
+//         let speed_min = 0.01;
+//         self.position += self.velocity;
+//         self.velocity = self.velocity * drag;
+//         if self.velocity.x.abs() < speed_min {
+//             self.velocity.x = 0.;
+//         }
+//         if self.velocity.y.abs() < speed_min {
+//             self.velocity.y = 0.;
+//         }
+//     }
 
-}
+// }
 
 
 struct Object {
     root : Index,
+    root_config : u8,
     position : Vec2,
     domain : Vec2,
 }
 
 impl Object {
 
-    fn render(&self, graph:&SparsePixelDirectedGraph) {
-        let filled_blocks = graph.dfs_leaves(self.root);
+    fn render(&self, graph:&SparseDirectedGraph) {
+        let filled_blocks = graph.dfs_leaves(self.root, self.root_config);
         for (zorder, depth, index) in filled_blocks {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
@@ -155,7 +155,7 @@ impl Object {
         }
     }
 
-    fn set_cell_with_mouse(&mut self, graph:&mut SparsePixelDirectedGraph, mouse_pos:Vec2, depth:u32, color:Color) {
+    fn set_cell_with_mouse(&mut self, graph:&mut SparseDirectedGraph, mouse_pos:Vec2, depth:u32, color:Color) {
         let block_size = self.domain / 2u32.pow(depth) as f32;
 
         let rel_mouse_pos = mouse_pos - self.position;
@@ -172,10 +172,13 @@ impl Object {
         let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
 
-        let new_val = Index(if color == BLUE { 1 } else { 0 });
-    
-        self.root = match graph.set_node_child(self.root, &path, new_val) {
-            Ok(index) => index,
+        let value = Index( if color == BLUE { 1 } else { 0 } );
+
+        match graph.set_node_child(self.root, self.root_config, &path, value, 0b0000) {
+            Ok((index, config)) => {
+                self.root = index;
+                self.root_config = config;
+            },
             Err( error ) => {
                 dbg!( error );
                 //If something goes really wrong here the object isn't recoverable.
@@ -185,7 +188,7 @@ impl Object {
         };
     }
 
-
+/*
     fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> [Option<IVec2>; 4] {
         let mut four_points: [Option<IVec2>; 4] = [None; 4];
         let half_length = self.domain/2.;
@@ -208,8 +211,6 @@ impl Object {
         }
         four_points
     }
-
-
     
     fn march_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
         let distance_to_corner = corner - start;
@@ -241,7 +242,7 @@ impl Object {
         hit_point
     }
 
-    fn march(&self, world:&SparsePixelDirectedGraph, start:&Vec2, velocity:&Vec2, max_depth:u32) {
+    fn march(&self, world:&SparseDirectedGraph, start:&Vec2, velocity:&Vec2, max_depth:u32) {
         let cartesian = match self.coord_to_cartesian(*start, max_depth + 1)[velocity_to_zorder_direction(velocity)] {
             Some(cartesian) => cartesian.as_vec2(),
             None => {
@@ -269,7 +270,7 @@ impl Object {
         self.march_towards_corner(corner, *start, *velocity);
 
     }
-
+*/
 
 }
 
