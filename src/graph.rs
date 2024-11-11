@@ -1,19 +1,178 @@
 use std::collections::HashMap;
-use std::hash::Hash;
+// use std::hash::Hash;
 
 use vec_mem_heap::MemHeap;
 pub use vec_mem_heap::{Index, AccessError};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Child {
+    index:Index,
+    pre_cycles : u8
+}
 
-// enum NodeTypes {
-//     Full(Index, Index, Index, Index),
-//     Three(Index, Index, Index),
-//     Half(Index, Index),
-//     One(Index),
-//     Leaf,
-//     Empty //Maybe this?
-// }
+impl Child {
+    fn new(index:Index, pre_cycles:u8) -> Self {
+        Self {
+            index, 
+            pre_cycles
+        }
+    }
+}
 
+mod node_stuff {
+    use super::Child;
+    use std::convert::TryInto;
+
+    //We distinguish the structs from the enum vecs because I want data stored contigously (which requires known size arrays instead of Vecs).
+    //The structs will be stored in memory, and the enum below will be used to manipulate them by wrapping the structs so they can be passed around
+
+    //Leaves should always have a config (child_mask) of 0b1111 (7)
+    struct Leaf {
+        children : [Child; 1],
+        configs : [u8; 1]
+    }
+    struct Full {
+        children : [Child; 4],
+        configs : [u8; 4]
+    }
+    struct Three {
+        children : [Child; 3],
+        configs : [u8; 3]
+    }
+    struct Half {
+        children : [Child; 2],
+        configs : [u8; 2]
+    }
+    struct Quarter {
+        children : [Child; 1],
+        configs : [u8; 1]
+    }
+
+    //Currently assumes the children are stored in the correct order and not sorted for additional compression and defined by the config.
+    enum NodeHandler {
+        Leaf(Leaf),
+        Full(Full),
+        Three(Three),
+        Half(Half),
+        Quarter(Quarter)
+    }
+
+    impl NodeHandler {
+
+        fn has_child(config:u8, child_zorder:usize) -> bool {
+            config == (1 << child_zorder) | config
+        }
+
+        fn get_child_index(config:u8, child_zorder:usize) -> usize {
+            let mut child_mask = 1 << child_zorder;
+            if Self::has_child(config, child_zorder) {
+                let mut index = 0;
+                while child_mask != 1 {
+                    child_mask >>= 1;
+                    index += 1;
+                }
+                index
+            } else {
+                let mut shifts = 0;
+                let mut index = 0;
+                while child_mask >> shifts != 1 {
+                    index += if config >> shifts == 1 { 1 } else { 0 };
+                    shifts += 1;
+                }
+                index
+            } 
+        }
+
+        //Should always return Ok(), there isn't (*probably) any way for the program to actually return an Err(), but thems the rules.
+        pub fn with_set_child(&self, self_config:u8, child_zorder:usize, new_child:Child, child_config:u8) -> Result<Self, ()> {
+            let mut new_children;
+            let mut new_configs;
+            match self {
+                Self::Leaf(Leaf{children, configs}) => {
+                    new_children = vec![children[0]; 4];
+                    new_configs = vec![configs[0]; 4];
+                }, 
+                Self::Full(Full{children, configs}) => {
+                    new_children = Vec::from(children);
+                    new_configs = Vec::from(configs);
+                },
+                Self::Three(Three{children, configs}) => {
+                    new_children = Vec::from(children);
+                    new_configs = Vec::from(configs);
+                },
+                Self::Half(Half{children, configs}) => {
+                    new_children = Vec::from(children);
+                    new_configs = Vec::from(configs);
+                },
+                Self::Quarter(Quarter{children, configs}) => {
+                    new_children = Vec::from(children);
+                    new_configs = Vec::from(configs);
+                }
+            }
+            let index = Self::get_child_index(self_config, child_zorder);
+            if Self::has_child(self_config, child_zorder) {
+                new_children[index] = new_child;
+                new_configs[index] = child_config;
+            } else {
+                new_children.insert(index, new_child);
+                new_configs.insert(index, child_config);
+            }
+            match new_children.len() {
+                4 => {
+                    let mut is_leaf = true;
+                    for i in 0 .. 4 {
+                        if new_children[i] != new_child {
+                            is_leaf = false; 
+                            break
+                        }
+                    }
+                    if is_leaf {
+                        Ok ( Self::Leaf(Leaf {
+                            children : [new_children[0]],
+                            configs : [0b1111]
+                        } ) ) 
+                    } else {
+                        Ok ( Self::Full(Full {
+                            children : new_children.try_into().unwrap(),
+                            configs : new_configs.try_into().unwrap()
+                        } ) )
+                    }
+                },
+                3 => {
+                    Ok ( Self::Three(Three {
+                        children : new_children.try_into().unwrap(),
+                        configs : new_configs.try_into().unwrap()
+                    } ) )
+                }, 
+                2 => {
+                    Ok ( Self::Half(Half {
+                        children : new_children.try_into().unwrap(),
+                        configs : new_configs.try_into().unwrap()
+                    } ) )
+                }, 
+                1 => {
+                    Ok ( Self::Quarter(Quarter {
+                        children : new_children.try_into().unwrap(),
+                        configs : new_configs.try_into().unwrap()
+                    } ) )
+                },
+                _ => {
+                    //It should be impossible for this branch to be reached, but Rust demands completeness.
+                    Err(())
+                }
+            }
+        }
+
+        //Needs implementation
+        //Returns None if the node becomes empty after the operation empty
+        pub fn with_removed_child() -> Option<Self> {
+            
+            None
+        }
+
+    }
+
+}
 
 #[derive(Debug)]
 pub struct Path2D {
@@ -31,25 +190,25 @@ impl Path2D {
 }
 
 //Assumes 2 dimensions for now
-#[derive(PartialEq, Eq, Hash, Clone)]
-pub struct Node {
-    child_indexes: [Index; 4],
-}
+// #[derive(PartialEq, Eq, Hash, Clone)]
+// pub struct Node {
+//     child_indexes: [Index; 4],
+// }
 
-impl Node {
+// impl Node {
 
-    fn new(initial_value:Index) -> Self {
-        Self {
-            child_indexes: [initial_value; 4],
-        }
-    }
+//     fn new(initial_value:Index) -> Self {
+//         Self {
+//             child_indexes: [initial_value; 4],
+//         }
+//     }
     
-    //Trusts direction < 4. Will panic if it does
-    fn child(&self, direction:usize) -> Index {
-        self.child_indexes[direction]
-    }
+//     //Trusts direction < 4. Will panic if it does
+//     fn child(&self, direction:usize) -> Index {
+//         self.child_indexes[direction]
+//     }
 
-}
+// }
 
 #[derive(Debug)]
 pub struct Location {
@@ -215,14 +374,14 @@ impl SparsePixelDirectedGraph {
         Index(0)
     }
 
-    pub fn raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    pub fn _raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
         let new_root = self.set_node_child(self.empty_root(), path, root)?;
         self.nodes.add_owner(new_root)?;
         self.nodes.remove_owner(root)?;
         Ok(new_root)
     }
 
-    pub fn lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    pub fn _lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
         let new_root = self.read_destination(root, path)?.index;
         self.nodes.add_owner(new_root)?;
         self.nodes.remove_owner(root)?;
@@ -231,61 +390,4 @@ impl SparsePixelDirectedGraph {
 
 
 }
-   
-    /* 
-    Not 2d/dimensionless yet. This is the next step.
-     - Figure out where to put them, they don't feel like they belong in such a generalized graph.
-     - Make them functional with the new graph layout. Should be simple..?
-     - Generalize them to n dimensions, along with the rest of the graph.
-    */
-
-    /*
-    //This has a problem with my current system. Hmm
-    //Only works with 2 dimensions, up to root level 5 (64x64 cell area)
-    pub fn df_to_bin_grid(&self, root:Index, root_layer:usize) -> Vec<u64> {
-        let blocks_per_side = 2usize.pow(1 + root_layer as u32);
-        let mut bin_grid:Vec<u64> = Vec::new();
-        bin_grid.resize(blocks_per_side, 0);
-
-        //Storing indexes, their z-order cells, and the current layer (as determined by the root_layer)
-        let mut stack: Vec<(Index, u32)> = Vec::new();
-        stack.push( (root.clone(), 0) );
-
-        //Figure out how to make this thread-compatible soon
-        while stack.len() > 0 {
-            let (cur_address, cur_z_order) = stack.pop().unwrap();
-            //Should be safe to unwarp here.
-            let cur_node = match self.get_node(&cur_address) {
-                Some(node) => node,
-                None => continue
-            };
-
-            for child in 0 .. cur_node.child_indexes.len() {
-                let child_index = cur_node.child_indexes[child];
-                let kid_z_order = (cur_z_order << 2) | child as u32;
-                if cur_node.is_child_leaf(child) {
-                    if child_index == 0 { continue }
-                    let cartesian = zorder_to_cartesian(kid_z_order, root.layer);
-                    bin_grid[cartesian.y as usize] |= 1 << cartesian.x;
-                } else {
-                    stack.push( (NodeAddress::new(cur_address.layer - 1, child_index), kid_z_order) );
-                }
-            }
-        }
-        bin_grid
-    } 
-
-
-    pub fn zorder_to_cartesian(mut cell:u32, root_layer:usize) -> UVec2 {
-        let mut xy = UVec2::new(0, 0);
-        for layer in 0 ..= root_layer {
-            xy.x |= (cell & 0b1) << layer;
-            cell >>= 1;
-            xy.y |= (cell & 0b1) << layer;
-            cell >>= 1;
-        }
-        xy
-    }
-
-    */
 
