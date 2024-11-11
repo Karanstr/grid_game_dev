@@ -391,7 +391,7 @@ impl SparseDirectedGraph {
     }
 
     pub fn dfs_leaves(&self, root:Index, initial_config:u8) -> Vec<(u32, u32, Index)> {
-        let maximum_render_depth = 2;
+        let maximum_render_depth = 10;
         let mut leaves = Vec::new();
         let mut stack = Vec::new();
         //         index, configuration, depth, zorder
@@ -412,7 +412,7 @@ impl SparseDirectedGraph {
                     ignored += 1;
                     continue
                 } else {
-                    if layers_deep + 1 > 2 { 
+                    if layers_deep + 1 > maximum_render_depth { 
                         println!("Graph exceeds depth limit at index {}, rendering at layer {maximum_render_depth}", *cur_index);
                         leaves.push((zorder, layers_deep, lod.index));
                     } else {
