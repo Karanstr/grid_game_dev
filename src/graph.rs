@@ -374,7 +374,7 @@ impl SparseDirectedGraph {
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:Index, path:&Path2D, initial_config:u8) -> Result<Location, AccessError> {
+    pub fn read_destination(&self, root:Index, initial_config:u8, path:&Path2D) -> Result<Location, AccessError> {
         let trail = self.get_trail(root, initial_config, path)?;
         match trail.last() {
             Some((index, config)) => {

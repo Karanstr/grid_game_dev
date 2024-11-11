@@ -1,5 +1,5 @@
 use core::panic;
-// use std::f32::consts::PI;
+use std::f32::consts::PI;
 
 use macroquad::prelude::*;
 use vec_friendly_drawing::*;
@@ -20,9 +20,9 @@ async fn main() {
         domain : Vec2::new(size.x, size.y),
     };
 
-    // let mut player = Player::new(GREEN, size/2.);
-    // let speed = 0.15;
-    // let step = 0.1;
+    let mut player = Player::new(GREEN, size/2.);
+    let speed = 0.15;
+    let step = 0.1;
 
     let mut operation_depth = 1;
     let mut cur_color = BLUE;
@@ -53,70 +53,70 @@ async fn main() {
         }
        
         world.render(&world_graph);
-        // player.apply_acceleration(speed, step);
-        // if player.velocity.length() != 0. {
-        //     world.march(&world_graph, &player.position, &player.velocity, operation_depth);
-        // }
-        // player.vel_to_pos();
-        // player.render();
+        player.apply_acceleration(speed, step);
+        if player.velocity.length() != 0. {
+            world.march(&world_graph, &player.position, &player.velocity, operation_depth);
+        }
+        player.vel_to_pos();
+        player.render();
         next_frame().await
     }
 
 }
 
-// struct Player {
-//     color : Color,
-//     position : Vec2,
-//     velocity : Vec2,
-//     rotation : f32,
-// }
+struct Player {
+    color : Color,
+    position : Vec2,
+    velocity : Vec2,
+    rotation : f32,
+}
 
-// impl Player {
+impl Player {
 
-//     fn new(color:Color, position:Vec2) -> Self {
-//         Player {
-//             color,
-//             position,
-//             velocity : Vec2::ZERO,
-//             rotation : 0.,
-//         }
-//     }
+    fn new(color:Color, position:Vec2) -> Self {
+        Player {
+            color,
+            position,
+            velocity : Vec2::ZERO,
+            rotation : 0.,
+        }
+    }
 
-//     fn render(&self) {
-//         draw_centered_rect(self.position, Vec2::splat(10.), self.color);
-//         draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
-//     }
+    fn render(&self) {
+        draw_centered_rect(self.position, Vec2::splat(10.), self.color);
+        draw_vec_line(self.position, self.position + Vec2::new(10. * self.rotation.cos(),10. * self.rotation.sin()), 1., YELLOW);
+    }
 
-//     fn apply_acceleration(&mut self, linear:f32, rotational:f32) {
-//         if is_key_down(KeyCode::A) {
-//             self.rotation -= rotational;
-//         }
-//         if is_key_down(KeyCode::D) {
-//             self.rotation += rotational;
-//         }
-//         self.rotation %= 2.*PI;
-//         if is_key_down(KeyCode::W) {
-//             self.velocity += Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
-//         }
-//         if is_key_down(KeyCode::S) {
-//             self.velocity += -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
-//         }
-//     }
+    fn apply_acceleration(&mut self, linear:f32, rotational:f32) {
+        if is_key_down(KeyCode::A) {
+            self.rotation -= rotational;
+        }
+        if is_key_down(KeyCode::D) {
+            self.rotation += rotational;
+        }
+        self.rotation %= 2.*PI;
+        if is_key_down(KeyCode::W) {
+            self.velocity += Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+        }
+        if is_key_down(KeyCode::S) {
+            self.velocity += -1. * Vec2::new(linear * self.rotation.cos(),linear * self.rotation.sin());
+        }
+    }
 
-//     fn vel_to_pos(&mut self) {
-//         let drag = 0.99;
-//         let speed_min = 0.01;
-//         self.position += self.velocity;
-//         self.velocity = self.velocity * drag;
-//         if self.velocity.x.abs() < speed_min {
-//             self.velocity.x = 0.;
-//         }
-//         if self.velocity.y.abs() < speed_min {
-//             self.velocity.y = 0.;
-//         }
-//     }
+    fn vel_to_pos(&mut self) {
+        let drag = 0.99;
+        let speed_min = 0.01;
+        self.position += self.velocity;
+        self.velocity = self.velocity * drag;
+        if self.velocity.x.abs() < speed_min {
+            self.velocity.x = 0.;
+        }
+        if self.velocity.y.abs() < speed_min {
+            self.velocity.y = 0.;
+        }
+    }
 
-// }
+}
 
 
 struct Object {
@@ -188,7 +188,7 @@ impl Object {
         };
     }
 
-/*
+
     fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> [Option<IVec2>; 4] {
         let mut four_points: [Option<IVec2>; 4] = [None; 4];
         let half_length = self.domain/2.;
@@ -251,7 +251,7 @@ impl Object {
             }
         };
         let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth + 1);
-        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize + 1)) {
+        let data = match world.read_destination(self.root, self.root_config, &Path2D::from(zorder, max_depth as usize + 1)) {
             Ok(data) => data,
             Err(error) => {
                 dbg!(error);
@@ -270,7 +270,7 @@ impl Object {
         self.march_towards_corner(corner, *start, *velocity);
 
     }
-*/
+
 
 }
 
