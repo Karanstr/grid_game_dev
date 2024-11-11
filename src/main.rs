@@ -9,12 +9,13 @@ use graph::{SparseDirectedGraph, Path2D, Index};
 
 #[macroquad::main("Window")]
 async fn main() {
-    let size = Vec2::new(300., 300.);
+    let size = Vec2::new(1100., 1100.);
     request_new_screen_size(size.x, size.y);
     let mut world_graph = SparseDirectedGraph::new();
+    let (root, root_config) = world_graph.empty_root();
     let mut world = Object {
-        root : world_graph.empty_root(),
-        root_config : 0b1111,
+        root,
+        root_config,
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
@@ -24,7 +25,7 @@ async fn main() {
     // let step = 0.1;
 
     let mut operation_depth = 1;
-    // let mut cur_color = BLUE;
+    let mut cur_color = BLUE;
     
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
@@ -44,11 +45,11 @@ async fn main() {
         } else if is_key_pressed(KeyCode::Key5) {
             operation_depth = 5;
         }
-        // if is_key_pressed(KeyCode::V) {
-        //     cur_color = if cur_color == RED { BLUE } else { RED };
-        // }
+        if is_key_pressed(KeyCode::V) {
+            cur_color = if cur_color == RED { BLUE } else { RED };
+        }
         if is_mouse_button_pressed(MouseButton::Left) {
-            world.set_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()), operation_depth);
+            world.set_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()), operation_depth, cur_color);
         }
        
         world.render(&world_graph);
@@ -154,7 +155,7 @@ impl Object {
         }
     }
 
-    fn set_cell_with_mouse(&mut self, graph:&mut SparseDirectedGraph, mouse_pos:Vec2, depth:u32) {
+    fn set_cell_with_mouse(&mut self, graph:&mut SparseDirectedGraph, mouse_pos:Vec2, depth:u32, color:Color) {
         let block_size = self.domain / 2u32.pow(depth) as f32;
 
         let rel_mouse_pos = mouse_pos - self.position;
@@ -171,8 +172,9 @@ impl Object {
         let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
 
-    
-        match graph.set_node_child(self.root, self.root_config, &path, Index(0), 0b1111) {
+        let value = Index( if color == BLUE { 1 } else { 0 } );
+
+        match graph.set_node_child(self.root, self.root_config, &path, value, 0b0000) {
             Ok((index, config)) => {
                 self.root = index;
                 self.root_config = config;
