@@ -1,55 +1,70 @@
 use std::collections::HashMap;
-// use std::hash::Hash;
 
+use macroquad::prelude::scene::Node;
 use vec_mem_heap::MemHeap;
 pub use vec_mem_heap::{Index, AccessError};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Child {
-    index:Index,
-    pre_cycles : u8
-}
-
-impl Child {
-    fn new(index:Index, pre_cycles:u8) -> Self {
-        Self {
-            index, 
-            pre_cycles
-        }
-    }
-}
 
 mod node_stuff {
-    use super::Child;
+    use super::Index;
     use std::convert::TryInto;
+    use std::hash::Hash;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct Child {
+        pub index:Index,
+        //cycles : u8
+    }
+    impl Child {
+        pub fn new(index:Index, /*pre_cycles:u8*/) -> Self {
+            Self {
+                index, 
+                // pre_cycles
+            }
+        }
+    }
 
     //We distinguish the structs from the enum vecs because I want data stored contigously (which requires known size arrays instead of Vecs).
-    //The structs will be stored in memory, and the enum below will be used to manipulate them by wrapping the structs so they can be passed around
+    //The structs will be stored in memory (eventually), and the enum below will be used to manipulate them by wrapping the structs so they can be passed around
 
-    //Leaves should always have a config (child_mask) of 0b1111 (7)
-    struct Leaf {
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct Leaf {
         children : [Child; 1],
+        //Leaves should always have a config (child_mask) of 0b1111 (7)
         configs : [u8; 1]
     }
-    struct Full {
+    impl Leaf {
+        pub fn new(child:Child) -> Self {
+            Self {
+                children : [child],
+                configs : [0b1111]
+            }
+        }
+    }
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct Full {
         children : [Child; 4],
         configs : [u8; 4]
     }
-    struct Three {
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct Three {
         children : [Child; 3],
         configs : [u8; 3]
     }
-    struct Half {
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct Half {
         children : [Child; 2],
         configs : [u8; 2]
     }
-    struct Quarter {
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub struct Quarter {
         children : [Child; 1],
         configs : [u8; 1]
     }
 
     //Currently assumes the children are stored in the correct order and not sorted for additional compression and defined by the config.
-    enum NodeHandler {
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    pub enum NodeHandler {
         Leaf(Leaf),
         Full(Full),
         Three(Three),
@@ -59,11 +74,18 @@ mod node_stuff {
 
     impl NodeHandler {
 
-        fn has_child(config:u8, child_zorder:usize) -> bool {
+        pub fn new_quarter(child:Child, child_config:u8) -> Self {
+            Self::Quarter(Quarter {
+                children : [child],
+                configs : [child_config]
+            } )
+        }
+
+        pub fn has_child(config:u8, child_zorder:usize) -> bool {
             config == (1 << child_zorder) | config
         }
 
-        fn get_child_index(config:u8, child_zorder:usize) -> usize {
+        pub fn child_index(config:u8, child_zorder:usize) -> usize {
             let mut child_mask = 1 << child_zorder;
             if Self::has_child(config, child_zorder) {
                 let mut index = 0;
@@ -83,33 +105,86 @@ mod node_stuff {
             } 
         }
 
-        //Should always return Ok(), there isn't (*probably) any way for the program to actually return an Err(), but thems the rules.
-        pub fn with_set_child(&self, self_config:u8, child_zorder:usize, new_child:Child, child_config:u8) -> Result<Self, ()> {
-            let mut new_children;
-            let mut new_configs;
+        fn to_node(children:Vec<Child>, configs:Vec<u8>) -> Result<Option<Self>, String> {
+            match children.len() {
+                4 => {
+                    let mut is_leaf = true;
+                    for i in 0 .. 4 {
+                        if children[i] != children[0] {
+                            is_leaf = false; 
+                            break
+                        }
+                    }
+                    if is_leaf {
+                        Ok ( Some ( Self::Leaf(Leaf {
+                            children : [children[0]],
+                            configs : [0b1111]
+                        } ) ) )
+                    } else {
+                        Ok ( Some ( Self::Full(Full {
+                            children : children.try_into().unwrap(),
+                            configs : configs.try_into().unwrap()
+                        } ) ) )
+                    }
+                },
+                3 => {
+                    Ok ( Some ( Self::Three(Three {
+                        children : children.try_into().unwrap(),
+                        configs : configs.try_into().unwrap()
+                    } ) ) )
+                }, 
+                2 => {
+                    Ok ( Some ( Self::Half(Half {
+                        children : children.try_into().unwrap(),
+                        configs : configs.try_into().unwrap()
+                    } ) ) )
+                }, 
+                1 => {
+                    Ok ( Some ( Self::Quarter(Quarter {
+                        children : children.try_into().unwrap(),
+                        configs : configs.try_into().unwrap()
+                    } ) ) )
+                },
+                0 => Ok(None),
+                //This branch should be unreachable
+                _ => Err(String::from("Something went very wrong."))
+            }
+        }
+
+        pub fn read_node(&self) -> (Vec<Child>, Vec<u8>) {
             match self {
                 Self::Leaf(Leaf{children, configs}) => {
-                    new_children = vec![children[0]; 4];
-                    new_configs = vec![configs[0]; 4];
+                    (vec![children[0]; 4], vec![configs[0]; 4])
                 }, 
                 Self::Full(Full{children, configs}) => {
-                    new_children = Vec::from(children);
-                    new_configs = Vec::from(configs);
+                    (Vec::from(children), Vec::from(configs))
                 },
                 Self::Three(Three{children, configs}) => {
-                    new_children = Vec::from(children);
-                    new_configs = Vec::from(configs);
+                    (Vec::from(children), Vec::from(configs))
                 },
                 Self::Half(Half{children, configs}) => {
-                    new_children = Vec::from(children);
-                    new_configs = Vec::from(configs);
+                    (Vec::from(children), Vec::from(configs))
                 },
                 Self::Quarter(Quarter{children, configs}) => {
-                    new_children = Vec::from(children);
-                    new_configs = Vec::from(configs);
+                    (Vec::from(children), Vec::from(configs))
                 }
             }
-            let index = Self::get_child_index(self_config, child_zorder);
+        }
+
+        pub fn child(&self, config:u8, child_zorder:usize) -> Option<(Child, u8)> {
+            if Self::has_child(config, child_zorder) {
+                let index = Self::child_index(config, child_zorder);
+                let (children, configs) = self.read_node();
+                Some( (children[index], configs[index]) )
+            } else {
+                None
+            }
+        }
+
+        //Should always return Ok(Some()), there isn't (*probably) any way for the program to actually return an Err() or an Ok(None), but thems the rules.
+        pub fn with_set_child(&self, self_config:u8, child_zorder:usize, new_child:Child, child_config:u8) -> Result<Option<Self>, String> {
+            let (mut new_children, mut new_configs) = self.read_node();
+            let index = Self::child_index(self_config, child_zorder);
             if Self::has_child(self_config, child_zorder) {
                 new_children[index] = new_child;
                 new_configs[index] = child_config;
@@ -117,57 +192,19 @@ mod node_stuff {
                 new_children.insert(index, new_child);
                 new_configs.insert(index, child_config);
             }
-            match new_children.len() {
-                4 => {
-                    let mut is_leaf = true;
-                    for i in 0 .. 4 {
-                        if new_children[i] != new_child {
-                            is_leaf = false; 
-                            break
-                        }
-                    }
-                    if is_leaf {
-                        Ok ( Self::Leaf(Leaf {
-                            children : [new_children[0]],
-                            configs : [0b1111]
-                        } ) ) 
-                    } else {
-                        Ok ( Self::Full(Full {
-                            children : new_children.try_into().unwrap(),
-                            configs : new_configs.try_into().unwrap()
-                        } ) )
-                    }
-                },
-                3 => {
-                    Ok ( Self::Three(Three {
-                        children : new_children.try_into().unwrap(),
-                        configs : new_configs.try_into().unwrap()
-                    } ) )
-                }, 
-                2 => {
-                    Ok ( Self::Half(Half {
-                        children : new_children.try_into().unwrap(),
-                        configs : new_configs.try_into().unwrap()
-                    } ) )
-                }, 
-                1 => {
-                    Ok ( Self::Quarter(Quarter {
-                        children : new_children.try_into().unwrap(),
-                        configs : new_configs.try_into().unwrap()
-                    } ) )
-                },
-                _ => {
-                    //It should be impossible for this branch to be reached, but Rust demands completeness.
-                    Err(())
-                }
-            }
+            Self::to_node(new_children, new_configs)
         }
 
-        //Needs implementation
-        //Returns None if the node becomes empty after the operation empty
-        pub fn with_removed_child() -> Option<Self> {
-            
-            None
+        //Returns None if the node becomes empty after the operation
+        pub fn with_removed_child(&self, self_config:u8, child_zorder:usize) -> Result<Option<Self>, String> {
+            if !Self::has_child(self_config, child_zorder) {
+                return Err(String::from("Can't remove child which doesn't exist"))
+            }
+            let (mut new_children, mut new_configs) = self.read_node();
+            let index = Self::child_index(self_config, child_zorder);
+            new_children.remove(index);
+            new_configs.remove(index);
+            Self::to_node(new_children, new_configs)
         }
 
     }
@@ -189,68 +226,55 @@ impl Path2D {
     }
 }
 
-//Assumes 2 dimensions for now
-// #[derive(PartialEq, Eq, Hash, Clone)]
-// pub struct Node {
-//     child_indexes: [Index; 4],
-// }
-
-// impl Node {
-
-//     fn new(initial_value:Index) -> Self {
-//         Self {
-//             child_indexes: [initial_value; 4],
-//         }
-//     }
-    
-//     //Trusts direction < 4. Will panic if it does
-//     fn child(&self, direction:usize) -> Index {
-//         self.child_indexes[direction]
-//     }
-
-// }
 
 #[derive(Debug)]
 pub struct Location {
     pub index:Index,
+    pub config:u8,
     pub depth:usize,
 }
 
-//Improvement on the SDAG structure
-pub struct SparsePixelDirectedGraph {
-    nodes : MemHeap<Node>,
-    index_lookup : HashMap<Node, Index>,
+use node_stuff::{NodeHandler, Leaf, Child};
+
+//SDAG on steroids
+pub struct SparseDirectedGraph {
+    nodes : MemHeap<NodeHandler>,
+    index_lookup : HashMap<NodeHandler, Index>,
 }
 
-impl SparsePixelDirectedGraph {
+impl SparseDirectedGraph {
 
     pub fn new() -> Self {
-        let empty_node = Node::new(Index(0));
-        let full_node = Node::new(Index(1));
+                                                //This is such a gross constructor
+        let full_node = NodeHandler::Leaf(Leaf::new(Child::new(Index(0))));
         let mut instance = Self {
             nodes : MemHeap::new(),
             index_lookup : HashMap::new()
         };
-        instance.add_node(empty_node, true);
         instance.add_node(full_node, true);
         instance
     }
 
 
     //Private functions used for reading
-    fn node(&self, index:Index) -> Result<&Node, AccessError> {
+    fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
         self.nodes.data(index)
     }
 
-    fn child(&self, index:Index, direction:usize) -> Result<Index, AccessError> {
-        Ok(self.node(index)?.child(direction))
+    fn child(&self, index:Index, zorder:usize, config:u8) -> Result< Option<(Child, u8)>, AccessError> {
+        Ok( self.node(index)?.child(config, zorder) )
     }
 
-    fn get_trail(&self, root:Index, path:&Path2D) -> Result<Vec<Index>, AccessError> {
-        let mut trail:Vec<Index> = vec![root];
+    //Combine root and initial config
+    //Add cyclicity here.
+    fn get_trail(&self, root:Index, initial_config:u8, path:&Path2D) -> Result<Vec<(Index, u8)>, AccessError> {
+        let mut trail:Vec<(Index, u8)> = vec![(root, initial_config)];
         for step in 0 .. path.directions.len() - 1 {
-            match self.child(trail[step], path.directions[step]) {
-                Ok(child_index) if child_index != trail[step] => trail.push(child_index),
+            let (index, config) = trail[step];
+            match self.child(index, path.directions[step], config) {
+                Ok( Some ( (child, child_config) ) ) if child.index != index => {
+                    trail.push((child.index, child_config));
+                },
                 Ok(_) => break,
                 Err(error) => return Err( error )
             };
@@ -260,7 +284,7 @@ impl SparsePixelDirectedGraph {
 
 
     //Private functions used for writing
-    fn find_index(&self, node:&Node) -> Option<Index> {
+    fn find_index(&self, node:&NodeHandler) -> Option<Index> {
         self.index_lookup.get(node).copied()
     }
 
@@ -270,8 +294,9 @@ impl SparsePixelDirectedGraph {
         while stack.len() != 0 {
             match self.nodes.remove_owner(stack.pop().unwrap()) {
                 Ok(Some(node)) => {
-                    for child in node.child_indexes.iter() {
-                        stack.push(*child)
+                    let (children, _) = node.read_node();
+                    for child in children.iter() {
+                        stack.push(child.index)
                     }
                     self.index_lookup.remove(&node);
                 },
@@ -283,17 +308,17 @@ impl SparsePixelDirectedGraph {
         }
     }
 
-    fn add_node(&mut self, node:Node, protected:bool) -> Index {
+    fn add_node(&mut self, node:NodeHandler, protected:bool) -> Index {
         match self.find_index(&node) {
             Some(index) => index,
             None => {
                 let node_dup = node.clone();
                 let index = self.nodes.push(node, protected);
                 self.index_lookup.insert(node_dup, index);
-                let node_kids = self.node(index).unwrap().child_indexes.clone();
+                let (node_kids, _) = self.node(index).unwrap().read_node();
                 for child in node_kids {
-                    if child != index { //Nodes aren't allowed to keep themselves alive.
-                        match self.nodes.add_owner(child) {
+                    if child.index != index { //Nodes aren't allowed to keep themselves alive.
+                        match self.nodes.add_owner(child.index) {
                             Ok(_) | Err( AccessError::ProtectedMemory(_) ) => (),
                             Err( error ) => { dbg!(error); () }
                         }
@@ -306,63 +331,90 @@ impl SparsePixelDirectedGraph {
 
 
     //Public functions used for writing
-    pub fn set_node_child(&mut self, root:Index, path:&Path2D, child:Index) -> Result<Index, AccessError> {
-        let trail = self.get_trail(root, path)?;
-        let mut new_index = child;
+    pub fn set_node_child(&mut self, root:Index, initial_config:u8, path:&Path2D, child_index:Index, child_config:u8) -> Result<(Index, u8), AccessError> {
+        let trail = self.get_trail(root, initial_config, path)?;
+        let mut new_index = child_index;
+        let mut new_config = child_config;
         let steps = path.directions.len() - 1;
         for step in 0 ..= steps {
-            let mut node = if steps - step < trail.len() {
-                match self.node(trail[steps - step]) {
-                    Ok(node) => node.clone(),
-                    Err(AccessError::FreeMemory(_)) => Node::new(Index(0)),
-                    Err( error ) => return Err( error ),
-                }
-            } else { Node::new(Index(0)) };
-            node.child_indexes[path.directions[steps - step]] = new_index;
-            new_index = self.add_node(node, false);
+            let (index, config) = if steps - step < trail.len() {
+                trail[steps - step]
+            } else {
+                trail[trail.len() - 1]
+            };
+            let new_node = match self.node(index) {
+                Ok(node) => {
+                    match node.with_set_child(
+                        config, 
+                        path.directions[steps - step], 
+                        Child::new(new_index), 
+                        new_config
+                    )  {
+                        Ok ( Some (node) ) => node,
+                        //Neither of these two arms should happen.
+                        Ok ( None ) => panic!("What?"),
+                        Err(error) => panic!("{error}"),
+                    }
+                },
+                Err(AccessError::FreeMemory(_)) => NodeHandler::new_quarter(Child::new(new_index), new_config),
+                Err( error ) => return Err( error ),
+            };    
+            new_index = self.add_node(new_node, false);
+            new_config = config;   
         }
         if let Err( error ) = self.nodes.add_owner(new_index) { dbg!(error); }
         self.dec_owners(root);
-        Ok( new_index )
+        Ok( (new_index, new_config) )
     }
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:Index, path:&Path2D) -> Result<Location, AccessError> {
-        let trail = self.get_trail(root, path)?;
+    pub fn read_destination(&self, root:Index, path:&Path2D, initial_config:u8) -> Result<Location, AccessError> {
+        let trail = self.get_trail(root, initial_config, path)?;
         match trail.last() {
-            Some(index) => Ok( 
-                Location {
-                    index : self.child(*index, path.directions[trail.len() - 1])?,
-                    depth : trail.len() - 1
+            Some((index, config)) => {
+                match self.child(*index, path.directions[trail.len() - 1], *config)? {
+                    Some( (child, child_config) ) => {
+                        Ok( Location {
+                            index : child.index,
+                            config : child_config, 
+                            depth : trail.len() - 1
+                        } )
+                    }, 
+                    None => Err( AccessError::InvalidRequest )
                 }
-            ),
+                
+            },
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )
         }
     }
 
-    pub fn dfs_leaves(&self, root:Index) -> Vec<(u32, u32, Index)> {
+    pub fn dfs_leaves(&self, root:Index, initial_config:u8) -> Vec<(u32, u32, Index)> {
         let mut leaves = Vec::new();
         let mut stack = Vec::new();
-        stack.push((root, 0u32, 0u32));
+        //         index, configuration, depth, zorder
+        stack.push((root, initial_config, 0u32, 0u32));
 
         while stack.len() != 0 {
-            let (cur_index, layers_deep, zorder) = stack.pop().unwrap();
+            let (cur_index, cur_config, layers_deep, zorder) = stack.pop().unwrap();
             if layers_deep == 10 { //Arbitrary depth catcher to prevent infinite diving
                 dbg!(*cur_index);
                 continue;
             }
             //Because we're just following pointers this only fails if the structure has failed.
-            let cur_node = self.node(cur_index).unwrap();
-            for direction in 0 .. cur_node.child_indexes.len() {
-                let child_index = cur_node.child(direction);
+            let (children, child_configs) = self.node(cur_index).unwrap().read_node();
+            for child_zorder in 0 .. 4 {
+                if !NodeHandler::has_child(cur_config, child_zorder) {
+                    continue
+                }
+                let vec_index = NodeHandler::child_index(cur_config, child_zorder);
+                let child_index = children[vec_index].index;
                 if child_index == cur_index {
                     leaves.push((zorder, layers_deep, child_index));
-                    //This may not generalize, but for now if it's a leaf it's a full leaf
                     break
                 } else {
-                    stack.push((child_index, layers_deep + 1, (zorder << 2) | direction as u32))
+                    stack.push((child_index, child_configs[vec_index], layers_deep + 1, (zorder << 2) | child_zorder as u32))
                 }
             }
         }
@@ -374,19 +426,19 @@ impl SparsePixelDirectedGraph {
         Index(0)
     }
 
-    pub fn _raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.set_node_child(self.empty_root(), path, root)?;
-        self.nodes.add_owner(new_root)?;
-        self.nodes.remove_owner(root)?;
-        Ok(new_root)
-    }
+    // pub fn _raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    //     let new_root = self.set_node_child(self.empty_root(), path, root)?;
+    //     self.nodes.add_owner(new_root)?;
+    //     self.nodes.remove_owner(root)?;
+    //     Ok(new_root)
+    // }
 
-    pub fn _lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.read_destination(root, path)?.index;
-        self.nodes.add_owner(new_root)?;
-        self.nodes.remove_owner(root)?;
-        Ok(new_root)
-    }
+    // pub fn _lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
+    //     let new_root = self.read_destination(root, path)?.index;
+    //     self.nodes.add_owner(new_root)?;
+    //     self.nodes.remove_owner(root)?;
+    //     Ok(new_root)
+    // }
 
 
 }
