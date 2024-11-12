@@ -24,7 +24,7 @@ async fn main() {
 
     let mut operation_depth = 1;
     let mut cur_color = BLUE;
-    
+
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
 
