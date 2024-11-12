@@ -338,50 +338,42 @@ impl SparseDirectedGraph {
     //The conversion from full to leaf is breaking everything
     pub fn set_node_child(&mut self, root:Location, path:&Path2D, index:Index, config:u8) -> Result<Location, AccessError> {
         let trail = self.get_trail(root, path)?;
-        let mut new_index = index;
-        let mut new_config = config;
+        let mut child_index = index;
+        let mut child_config = config;
         let steps = path.directions.len() - 1;
         for step in 0 ..= steps {
-            let (child_index, child_config) = if steps - step < trail.len() {
+            let (cur_index, cur_config) = if steps - step < trail.len() {
                 trail[steps - step]
             } else {
                 trail[trail.len() - 1]
             };
-            if new_index == child_index {
-                return if step == steps {
-                    Ok ( Location {
-                        index : new_index,
-                        config : new_config,
-                        depth : 0
-                    } )
-                } else {
-                    Ok( root )
-                }
-            }
-            let (new_node, next_config) =  {
-                let (children, configs) = self.node(child_index)?
+            let (new_node, new_config) =  {
+                let (children, configs) = self.node(cur_index)?
                 .with_different_child(
-                    child_config, 
+                    cur_config, 
                     path.directions[steps - step], 
-                    Child::new(new_index), 
-                    new_config
+                    Child::new(child_index), 
+                    child_config
                 );
                 self.compact_node_parts(children, configs)?
             };
-            new_index = match self.nodes.status(child_index)? {
+
+            child_index = self.add_node(new_node, false);
+            /*child_index = match self.nodes.status(cur_index)? {
                 vec_mem_heap::Ownership::Fine(count) if count == 1 => {
-                   self.nodes.replace(child_index, new_node)?;
-                   child_index
+                   self.nodes.replace(cur_index, new_node)?;
+                   dbg!("Replacing");
+                   cur_index
                 }
                 _ => self.add_node(new_node, false),
-            };
-            new_config = next_config;
+            };*/
+            child_config = new_config;
         }
-        if let Err( error ) = self.nodes.add_owner(new_index) { dbg!(error); }
+        if let Err( error ) = self.nodes.add_owner(child_index) { dbg!(error); }
         self.dec_owners(root.index);
         Ok ( Location {
-            index : new_index,
-            config : new_config,
+            index : child_index,
+            config : child_config,
             depth : 0
         } )
     }
@@ -430,6 +422,7 @@ impl SparseDirectedGraph {
                 //Keep diving
                 } else {
                     if layers_deep + 1 > maximum_render_depth { 
+                        dbg!(layers_deep);
                         println!("Graph exceeds depth limit at index {}, rendering at layer {maximum_render_depth}", *cur_index);
                         leaves.push((zorder, layers_deep, lod));
                     } else {
