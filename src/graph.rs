@@ -268,13 +268,13 @@ impl SparseDirectedGraph {
 
     //Fix the lod_valing here
     fn compact_node_parts(&self, children:[Child; 4], configs:[u8; 4]) -> Result<(NodeHandler, u8), AccessError> {
-        //Once we're sorting the children just loop through list, counting then switching when it changes
         let lod_potentials = [
             self.node(children[0].index)?.lod(),
             self.node(children[1].index)?.lod(),
             self.node(children[2].index)?.lod(),
             self.node(children[3].index)?.lod()
-        ];
+            ];
+            //Once we're sorting the children just loop through list, counting then switching when it changes
         let lod_val = if lod_potentials[0] == lod_potentials[1] || lod_potentials[0] == lod_potentials[2] || lod_potentials[0] == lod_potentials[3]  {
             lod_potentials[0]
         } else if lod_potentials[1] == lod_potentials[2] || lod_potentials[1] == lod_potentials[3] {
@@ -347,6 +347,17 @@ impl SparseDirectedGraph {
             } else {
                 trail[trail.len() - 1]
             };
+            if new_index == child_index {
+                return if step == steps {
+                    Ok ( Location {
+                        index : new_index,
+                        config : new_config,
+                        depth : 0
+                    } )
+                } else {
+                    Ok( root )
+                }
+            }
             let (new_node, next_config) =  {
                 let (children, configs) = self.node(child_index)?
                 .with_different_child(
@@ -357,8 +368,14 @@ impl SparseDirectedGraph {
                 );
                 self.compact_node_parts(children, configs)?
             };
-            new_index = self.add_node(new_node, false);
-            new_config = next_config;   
+            new_index = match self.nodes.status(child_index)? {
+                vec_mem_heap::Ownership::Fine(count) if count == 1 => {
+                   self.nodes.replace(child_index, new_node)?;
+                   child_index
+                }
+                _ => self.add_node(new_node, false),
+            };
+            new_config = next_config;
         }
         if let Err( error ) = self.nodes.add_owner(new_index) { dbg!(error); }
         self.dec_owners(root.index);
