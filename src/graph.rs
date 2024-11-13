@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
+use macroquad::prelude::scene::Node;
 use vec_mem_heap::MemHeap;
 pub use vec_mem_heap::{Index, AccessError};
 
@@ -253,6 +254,7 @@ impl SparseDirectedGraph {
                 self.index_lookup.insert(node_dup, index);
                 let (_, node_kids, _) = self.node(index).unwrap().raw_node();
                 for child in node_kids {
+                    //This check is redundant unless something goes wrong
                     //Nodes aren't allowed to keep themselves alive.
                     if child.index != index { 
                         match self.nodes.add_owner(child.index) {
@@ -357,16 +359,7 @@ impl SparseDirectedGraph {
                 );
                 self.compact_node_parts(children, configs)?
             };
-
             child_index = self.add_node(new_node, false);
-            /*child_index = match self.nodes.status(cur_index)? {
-                vec_mem_heap::Ownership::Fine(count) if count == 1 => {
-                   self.nodes.replace(cur_index, new_node)?;
-                   dbg!("Replacing");
-                   cur_index
-                }
-                _ => self.add_node(new_node, false),
-            };*/
             child_config = new_config;
         }
         if let Err( error ) = self.nodes.add_owner(child_index) { dbg!(error); }
