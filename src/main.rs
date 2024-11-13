@@ -5,7 +5,7 @@ use macroquad::prelude::*;
 use vec_friendly_drawing::*;
 
 mod graph;
-use graph::{SparseDirectedGraph, Path2D, Index, Location};
+use graph::{SparseDirectedGraph, Path2D, Index, NodePointer};
 
 #[macroquad::main("Window")]
 async fn main() {
@@ -118,7 +118,7 @@ impl Player {
 
 
 struct Object {
-    root : Location,
+    root : NodePointer,
     position : Vec2,
     domain : Vec2,
 }
@@ -126,7 +126,7 @@ struct Object {
 impl Object {
 
     fn render(&self, graph:&SparseDirectedGraph) {
-        let filled_blocks = graph.dfs_leaves(self.root.index, self.root.config);
+        let filled_blocks = graph.dfs_leaves(self.root);
         for (zorder, depth, index) in filled_blocks {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
@@ -169,9 +169,9 @@ impl Object {
         let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
 
-        let value = Index( if color == BLUE { 1 } else { 0 } );
+        let new_child = NodePointer::new(Index( if color == BLUE { 1 } else { 0 } ), 0b0000);
 
-        match graph.set_node_child(self.root, &path, value, 0b0000) {
+        match graph.set_node_child(self.root, &path, new_child) {
             Ok( root ) => self.root = root,
             Err( error ) => {
                 panic!( "{error:?}" );
@@ -242,15 +242,15 @@ impl Object {
             }
         };
         let zorder = cartesian_to_zorder(cartesian.x as u32, cartesian.y as u32, max_depth + 1);
-        let data = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize + 1)) {
-            Ok(data) => data,
+        let depth = match world.read_destination(self.root, &Path2D::from(zorder, max_depth as usize + 1)) {
+            Ok((_, depth)) => depth as u32,
             Err(error) => {
                 dbg!(error);
                 panic!();
             }
         };
 
-        let cur_depth = data.depth as u32;
+        let cur_depth = depth;
         let box_size = self.domain / 2u32.pow(cur_depth) as f32;
         let quadrant = (velocity.signum()+0.5).abs().floor();
 
