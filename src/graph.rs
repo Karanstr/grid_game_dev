@@ -393,7 +393,6 @@ impl SparseDirectedGraph {
         println!("There are {} non-leaf nodes within the tree, consisting of:", reserved_memory);
         println!("{} non-leaf leaves, {} threes, {} halves, and {} quarters", types[0], types[1], types[2], types[3]);
         println!("There are {} dangling nodes and {} free slots", dangling - 2, free_memory);
-        println!("Optimistically this means we're using {} bits instead of {}", (16+8)*(types[0] + types[1]*2 + types[2]*3 + types[3]*4), 32*32)
     }
 
 }
