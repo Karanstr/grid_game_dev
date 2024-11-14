@@ -181,7 +181,8 @@ impl SparseDirectedGraph {
         while stack.len() != 0 {
             match self.nodes.remove_owner(stack.pop().unwrap()) {
                 Ok(Some(node)) => {
-                    let (_, children) = node.raw_node();
+                    let (lod, children) = node.raw_node();
+                    stack.push(lod.index);
                     for child in children.iter() {
                         stack.push(child.index)
                     }
@@ -206,7 +207,11 @@ impl SparseDirectedGraph {
                 }
                 self.lod_vec[*index] = self.lod_vec[*node_dup.lod()];
                 self.index_lookup.insert(node_dup, index);
-                let (_, node_kids) = self.node(index).unwrap().raw_node();
+                let (lod, node_kids) = self.node(index).unwrap().raw_node();
+                match self.nodes.add_owner(lod.index) {
+                    Ok(_) | Err( AccessError::ProtectedMemory(_) ) => (),
+                    Err( error ) => { dbg!(error); () }
+                }
                 for child in node_kids {
                     match self.nodes.add_owner(child.index) {
                         Ok(_) | Err( AccessError::ProtectedMemory(_) ) => (),
