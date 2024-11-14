@@ -29,7 +29,7 @@ async fn main() {
     loop {
 
         if is_key_pressed(KeyCode::P) {
-            dbg!(0);
+            world_graph.profile();
         }
 
         if is_key_pressed(KeyCode::Key1) {

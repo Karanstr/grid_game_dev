@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use vec_mem_heap::MemHeap;
+use vec_mem_heap::{MemHeap, Ownership};
 pub use vec_mem_heap::{Index, AccessError};
 
 
@@ -327,7 +327,7 @@ impl SparseDirectedGraph {
             let lod = self.lod_vec[*immediate_lod.index] as usize;
             let mut ignored = 0;
             //If we're in a leaf
-            if node.mask == 0 {
+            if node.mask == 0 && (immediate_lod.index == Index(0) || immediate_lod.index == Index(1)) {
                 leaves.push((zorder, layers_deep, Index(lod)));
                 continue
             }
@@ -346,7 +346,6 @@ impl SparseDirectedGraph {
         leaves
     }
 
-    
     //Public functions used for root manipulation
     pub fn empty_root(&self) -> NodePointer {
         NodePointer {
@@ -370,5 +369,31 @@ impl SparseDirectedGraph {
     //     Ok(new_root)
     // }
 
+
+    pub fn profile(&self) {
+        println!("---------- STATUS ----------");
+        let mut free_memory = 0;
+        let mut reserved_memory = 0;
+        let mut dangling = 0;
+        let mut types = [0; 4];
+        for index in 0 .. self.nodes.length() {
+            let cur_index = Index(index);
+            if let Ok(status) = self.nodes.status(cur_index) {
+                if let Ownership::Fine(_) = status {
+                    reserved_memory += 1;
+                    if let Ok(node) = self.node(cur_index) {
+                        let (_, children) = node.raw_node();
+                        types[children.len()] += 1;
+                    }
+                } else { dangling += 1 }
+            } else { free_memory += 1 }
+        }
+
+
+        println!("There are {} non-leaf nodes within the tree, consisting of:", reserved_memory);
+        println!("{} non-leaf leaves, {} threes, {} halves, and {} quarters", types[0], types[1], types[2], types[3]);
+        println!("There are {} dangling nodes and {} free slots", dangling - 2, free_memory);
+        println!("Optimistically this means we're using {} bits instead of {}", (16+8)*(types[0] + types[1]*2 + types[2]*3 + types[3]*4), 32*32)
+    }
 
 }
