@@ -126,21 +126,29 @@ pub use node_stuff::{NodeHandler, Leaf, Three, Half, Quarter, NodePointer};
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
     pub lod_vec : Vec<u8>,
+    last_leaf: usize,
     index_lookup : HashMap<NodeHandler, Index>,
 }
 
 impl SparseDirectedGraph {
 
     pub fn new() -> Self {
-        let air = NodeHandler::LeafNode(Leaf::new(Index(0)));
-        let solid = NodeHandler::LeafNode(Leaf::new(Index(1)));
+        let empty = NodeHandler::LeafNode(Leaf::new(Index(0)));
+        let red = NodeHandler::LeafNode(Leaf::new(Index(1)));
+        let blue = NodeHandler::LeafNode(Leaf::new(Index(2)));
+        let gold = NodeHandler::LeafNode(Leaf::new(Index(3)));
+        let green = NodeHandler::LeafNode(Leaf::new(Index(4)));
         let mut instance = Self {
             nodes : MemHeap::new(),
-            lod_vec : vec![0, 1],
+            lod_vec : vec![0, 1, 2, 3, 4],
+            last_leaf : 4,
             index_lookup : HashMap::new(),
         };
-        instance.add_node(air, true);
-        instance.add_node(solid, true);
+        instance.add_node(empty, true);
+        instance.add_node(red, true);
+        instance.add_node(blue, true);
+        instance.add_node(gold, true);
+        instance.add_node(green, true);
         instance
     }
 
@@ -335,7 +343,7 @@ impl SparseDirectedGraph {
             let lod = self.lod_vec[*immediate_lod.index] as usize;
             let mut ignored = 0;
             //If we're in a leaf
-            if node.mask == 0 && (immediate_lod.index == Index(0) || immediate_lod.index == Index(1)) {
+            if node.mask == 0 && (*immediate_lod.index <= self.last_leaf ) {
                 leaves.push((zorder, layers_deep, Index(lod)));
                 continue
             }
@@ -360,6 +368,11 @@ impl SparseDirectedGraph {
             index : Index(0),
             mask : 0b0000,
         }
+    }
+
+    pub fn clear_root(&mut self, root:NodePointer) -> NodePointer {
+        self.dec_owners(root.index);
+        self.empty_root()
     }
 
     //Figure these two out with the new system
@@ -396,15 +409,10 @@ impl SparseDirectedGraph {
                 } else { dangling += 1 }
             } else { free_memory += 1 }
         }
-        //Ignores all the overhead
-        //(size of a child (16bit pointer + mask)) * (number of children)
-        let ideal_bits = (16 + 4) as f64 * (types[0] + types[1]*2 + types[2]*3 + types[3]*4) as f64;
-        let naive = 128.*128.;
 
         println!("There are {} dynamic nodes within the tree, consisting of:", reserved_memory);
         println!("{} dynamic leaves, {} quarters, {} halves, and {} threes", types[0], types[1], types[2], types[3]);
-        println!("Ideally using {ideal_bits} bits, {}% of naive bit storage at {naive}",  ideal_bits/naive * 100.);
-        println!("There are {} dangling nodes and {} free slots", dangling - 2, free_memory);
+        println!("{} dangling nodes and {} free slots", dangling - (self.last_leaf + 1), free_memory);
 
     }
 

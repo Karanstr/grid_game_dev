@@ -1,6 +1,8 @@
 use std::f32::consts::PI;
-
-use macroquad::prelude::*;
+use macroquad::{
+    prelude::*,
+    rand::gen_range,
+};
 use vec_friendly_drawing::*;
 
 mod graph;
@@ -16,17 +18,34 @@ async fn main() {
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
-    let mut player = Player::new(GREEN, size/2.);
-    let speed = 0.15;
-    let step = 0.1;
+    // let mut player = Player::new(GREEN, size/2.);
+    // let speed = 0.15;
+    // let step = 0.1;
     let mut operation_depth = 1;
-    let mut cur_color = BLUE;
+    let mut cur_color = MAROON;
 
     //Keeps window alive, window closes when main terminates (Figure out how that works)
     loop {
 
         if is_key_pressed(KeyCode::P) {
             world_graph.profile();
+        } else if is_key_pressed(KeyCode::C) {
+            world.root = world_graph.clear_root(world.root);
+        } else if is_key_pressed(KeyCode::R) {
+            let depth = 9;
+            let steps = 200_000;
+            world.root = world_graph.clear_root(world.root);
+            world.color_war(&mut world_graph, depth, steps);
+            world_graph.profile();
+        } else if is_key_pressed(KeyCode::V) {
+            cur_color = match cur_color {
+                BLACK => MAROON,
+                MAROON => BLUE,
+                BLUE => GOLD,
+                GOLD => GREEN,
+                GREEN => BLACK,
+                _ => BLACK
+            }
         }
 
         if is_key_pressed(KeyCode::Key1) {
@@ -47,20 +66,18 @@ async fn main() {
             operation_depth = 8;
         }
 
-        if is_key_pressed(KeyCode::V) {
-            cur_color = if cur_color == RED { BLUE } else { RED };
-        }
+        
         if is_mouse_button_down(MouseButton::Left) {
             world.set_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()), operation_depth, cur_color);
         }
        
-        world.render(&world_graph);
-        player.apply_acceleration(speed, step);
-        if player.velocity.length() != 0. {
-            world.march(&world_graph, &player.position, &player.velocity, operation_depth);
-        }
-        player.vel_to_pos();
-        player.render();
+        world.render(&world_graph, true);
+        // player.apply_acceleration(speed, step);
+        // if player.velocity.length() != 0. {
+        //     world.march(&world_graph, &player.position, &player.velocity, operation_depth);
+        // }
+        // player.vel_to_pos();
+        // player.render();
         next_frame().await
     }
 
@@ -129,15 +146,17 @@ struct Object {
 
 impl Object {
 
-    fn render(&self, graph:&SparseDirectedGraph) {
+    fn render(&self, graph:&SparseDirectedGraph, draw_lines:bool) {
         let filled_blocks = graph.dfs_leaves(self.root);
         for (zorder, depth, index) in filled_blocks {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
             let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * block_domain + self.position - self.domain/2.;
-            let color = if *index == 0 { MAROON } else { BLUE };
+            let color = if *index == 0 { BLACK } else if *index == 1 { RED } else if *index == 2 { BLUE } else if *index == 3 { GOLD } else { GREEN };
             draw_rect(offset, block_domain, color);
-            outline_rect(offset, block_domain, 2., BLACK);
+            if draw_lines {
+                outline_rect(offset, block_domain, 1., BLACK);
+            }
         }
     }
 
@@ -173,16 +192,53 @@ impl Object {
         let cell = cartesian_to_zorder(edit_cell.x as u32, edit_cell.y as u32, depth);
         let path = Path2D::from(cell, depth as usize);
 
-        let new_child = NodePointer::new(Index( if color == BLUE { 1 } else { 0 } ), 0b0000);
+        let child_index = Index( match color {
+            BLACK => 0,
+            MAROON => 1,
+            BLUE => 2,
+            GOLD => 3,
+            GREEN => 4,
+            _ => 0,
+        } );
 
-        match graph.set_node_child(self.root, &path, new_child) {
-            Ok( root ) => self.root = root,
-            Err( error ) => {
-                panic!( "{error:?}" );
-            }
+        let new_child = NodePointer::new(child_index, 0b0000);
+
+        if let Ok(root) = graph.set_node_child(self.root, &path, new_child) {
+            self.root = root
         };
     }
 
+    fn fill_walk(&mut self, graph:&mut SparseDirectedGraph, start:IVec2, depth:u32, steps:usize, data:usize) {
+        let max = IVec2::splat(2i32.pow(depth) - 1);
+        // let mut current = IVec2::new(gen_range(0, max.x+1) as i32, gen_range(0, max.y+1) as i32);
+        let mut current = start;
+        for _ in 0 .. steps as u32 {
+            let path = Path2D::from(cartesian_to_zorder(current.x as u32, current.y as u32, depth), depth as usize);
+            current.x += gen_range(0, 3) as i32 - 1;
+            current.y += gen_range(0, 3) as i32 - 1;
+            current = current.clamp(IVec2::ZERO, max);
+            if let Ok(root) = graph.set_node_child(self.root, &path, NodePointer::new(Index(data), 0b0000)) {
+                self.root = root
+            };
+        }
+    }
+
+    fn color_war(&mut self, graph:&mut SparseDirectedGraph, depth:u32, steps:usize) {
+        let max = 2i32.pow(depth) - 1;
+        let mut positions = [IVec2::ZERO, IVec2::new(0, max), IVec2::new(max, max), IVec2::new(max, 0)];
+        for _ in 0 .. steps as u32 {
+            for i in 0 .. 4 {
+                let path = Path2D::from(cartesian_to_zorder(positions[i].x as u32, positions[i].y as u32, depth), depth as usize);
+                positions[i].x += gen_range(0, 3) as i32 - 1;
+                positions[i].y += gen_range(0, 3) as i32 - 1;
+                positions[i] = positions[i].clamp(IVec2::ZERO, IVec2::splat(max));
+                if let Ok(root) = graph.set_node_child(self.root, &path, NodePointer::new(Index(i + 1), 0b0000)) {
+                    self.root = root
+                };
+    
+            }
+        }
+    }
 
     fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> [Option<IVec2>; 4] {
         let mut four_points: [Option<IVec2>; 4] = [None; 4];
