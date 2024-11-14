@@ -1,4 +1,3 @@
-use core::panic;
 use std::f32::consts::PI;
 
 use macroquad::prelude::*;
@@ -17,11 +16,9 @@ async fn main() {
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
-
     let mut player = Player::new(GREEN, size/2.);
     let speed = 0.15;
     let step = 0.1;
-
     let mut operation_depth = 1;
     let mut cur_color = BLUE;
 
@@ -42,11 +39,18 @@ async fn main() {
             operation_depth = 4;
         } else if is_key_pressed(KeyCode::Key5) {
             operation_depth = 5;
+        } else if is_key_pressed(KeyCode::Key6) {
+            operation_depth = 6;
+        } else if is_key_pressed(KeyCode::Key7) {
+            operation_depth = 7;
+        } else if is_key_pressed(KeyCode::Key8) {
+            operation_depth = 8;
         }
+
         if is_key_pressed(KeyCode::V) {
             cur_color = if cur_color == RED { BLUE } else { RED };
         }
-        if is_mouse_button_pressed(MouseButton::Left) {
+        if is_mouse_button_down(MouseButton::Left) {
             world.set_cell_with_mouse(&mut world_graph, Vec2::from(mouse_position()), operation_depth, cur_color);
         }
        

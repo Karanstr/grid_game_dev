@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
 use vec_mem_heap::{MemHeap, Ownership};
 pub use vec_mem_heap::{Index, AccessError};
 
@@ -224,20 +223,28 @@ impl SparseDirectedGraph {
     }
 
     //This is really ugly but should work
-    fn compact_node_parts(&self, children:[NodePointer; 4]) -> Result<(NodeHandler, u8), AccessError> {
-        let lod_potentials = [
-            self.lod_vec[*children[0].index],
-            self.lod_vec[*children[1].index],
-            self.lod_vec[*children[2].index],
-            self.lod_vec[*children[3].index],
-        ];
+    fn compact_node_parts(&self, children:[NodePointer; 4]) -> (NodeHandler, u8) {
         //Once we're sorting the children just loop through list, counting then switching when it changes
-        let lod_zorder = if lod_potentials[0] == lod_potentials[1] || lod_potentials[0] == lod_potentials[2] || lod_potentials[0] == lod_potentials[3]  {
+        let lod_zorder = if children[0] == children[1] || children[0] == children[2] || children[0] == children[3]  {
             0
-        } else if lod_potentials[1] == lod_potentials[2] || lod_potentials[1] == lod_potentials[3] {
+        } else if children[1] == children[2] || children[1] == children[3] {
             1
-        } else {
-            3
+        } else if children[2] == children[3] {
+            2
+        } else { 
+            let lods = [
+                self.lod_vec[*children[0].index],
+                self.lod_vec[*children[1].index],
+                self.lod_vec[*children[2].index],
+                self.lod_vec[*children[3].index],
+            ];
+            if lods[0] == lods[1] || lods[0] == lods[2] || lods[0] == lods[3]  {
+                0
+            } else if lods[1] == lods[2] || lods[1] == lods[3] {
+                1
+            } else {
+                3
+            }
         };
         let mut culled_children = Vec::new();
         let mut mask = 0;
@@ -248,24 +255,24 @@ impl SparseDirectedGraph {
             } 
         }
         let node = match culled_children.len() {
-            3 => Ok ( NodeHandler::ThreeNode(Three{
+            3 => NodeHandler::ThreeNode(Three{
                 lod : children[lod_zorder],
-                children : culled_children.try_into().unwrap()
-            } ) ), 
-            2 => Ok ( NodeHandler::HalfNode(Half{
+                children : [culled_children[0], culled_children[1], culled_children[2]]
+            } ), 
+            2 => NodeHandler::HalfNode(Half{
                 lod : children[lod_zorder],
-                children : culled_children.try_into().unwrap()
-            } ) ), 
-            1 => Ok ( NodeHandler::QuarterNode(Quarter{
+                children : [culled_children[0], culled_children[1]]
+            } ), 
+            1 => NodeHandler::QuarterNode(Quarter{
                 lod : children[lod_zorder],
                 child : culled_children[0]
-            } ) ), 
-            0 => Ok ( NodeHandler::LeafNode(Leaf{
+            } ), 
+            0 => NodeHandler::LeafNode(Leaf{
                 child : children[0]
-            } ) ),
-            _ => Err ( AccessError::InvalidRequest )
+            } ),
+            _ => panic!("What?")
         };
-        Ok((node?, mask))
+        (node, mask)
     }
 
 
@@ -288,7 +295,7 @@ impl SparseDirectedGraph {
                     path.directions[steps - step], 
                     cur_child
                 );
-                self.compact_node_parts(children)?
+                self.compact_node_parts(children)
             };
             cur_child.index = self.add_node(new_node, false);
             cur_child.mask = new_mask;
@@ -316,6 +323,7 @@ impl SparseDirectedGraph {
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(u32, u32, Index)> {
         //Arbitrary limit
         let maximum_render_depth = 10;
+        //              zorder, depth, index
         let mut leaves = Vec::new();
         let mut stack = Vec::new();
         //       node_pointer, depth, zorder
@@ -388,11 +396,16 @@ impl SparseDirectedGraph {
                 } else { dangling += 1 }
             } else { free_memory += 1 }
         }
+        //Ignores all the overhead
+        //(size of a child (16bit pointer + mask)) * (number of children)
+        let ideal_bits = (16 + 4) as f64 * (types[0] + types[1]*2 + types[2]*3 + types[3]*4) as f64;
+        let naive = 128.*128.;
 
-
-        println!("There are {} non-leaf nodes within the tree, consisting of:", reserved_memory);
-        println!("{} non-leaf leaves, {} threes, {} halves, and {} quarters", types[0], types[1], types[2], types[3]);
+        println!("There are {} dynamic nodes within the tree, consisting of:", reserved_memory);
+        println!("{} dynamic leaves, {} quarters, {} halves, and {} threes", types[0], types[1], types[2], types[3]);
+        println!("Ideally using {ideal_bits} bits, {}% of naive bit storage at {naive}",  ideal_bits/naive * 100.);
         println!("There are {} dangling nodes and {} free slots", dangling - 2, free_memory);
+
     }
 
 }
