@@ -18,9 +18,9 @@ async fn main() {
         position : Vec2::new(size.x/2., size.y/2.),
         domain : Vec2::new(size.x, size.y),
     };
-    // let mut player = Player::new(GREEN, size/2.);
-    // let speed = 0.15;
-    // let step = 0.1;
+    let mut player = Player::new(WHITE, size/2.);
+    let speed = 0.15;
+    let step = 0.1;
     let mut operation_depth = 1;
     let mut cur_color = MAROON;
 
@@ -32,8 +32,8 @@ async fn main() {
         } else if is_key_pressed(KeyCode::C) {
             world.root = world_graph.clear_root(world.root);
         } else if is_key_pressed(KeyCode::R) {
-            let depth = 9;
-            let steps = 200_000;
+            let depth = 3;
+            let steps = 20;
             world.root = world_graph.clear_root(world.root);
             world.color_war(&mut world_graph, depth, steps);
             world_graph.profile();
@@ -41,8 +41,8 @@ async fn main() {
             cur_color = match cur_color {
                 BLACK => MAROON,
                 MAROON => BLUE,
-                BLUE => GOLD,
-                GOLD => GREEN,
+                BLUE => DARKPURPLE,
+                DARKPURPLE => GREEN,
                 GREEN => BLACK,
                 _ => BLACK
             }
@@ -72,12 +72,12 @@ async fn main() {
         }
        
         world.render(&world_graph, true);
-        // player.apply_acceleration(speed, step);
-        // if player.velocity.length() != 0. {
-        //     world.march(&world_graph, &player.position, &player.velocity, operation_depth);
-        // }
-        // player.vel_to_pos();
-        // player.render();
+        player.apply_acceleration(speed, step);
+        if player.velocity.length() != 0. {
+            world.march(&world_graph, &player.position, &player.velocity, operation_depth);
+        }
+        player.vel_to_pos();
+        player.render();
         next_frame().await
     }
 
@@ -152,10 +152,10 @@ impl Object {
             let block_domain = self.domain / 2u32.pow(depth) as f32;
             let cartesian_cell = zorder_to_cartesian(zorder, depth);
             let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * block_domain + self.position - self.domain/2.;
-            let color = if *index == 0 { BLACK } else if *index == 1 { RED } else if *index == 2 { BLUE } else if *index == 3 { GOLD } else { GREEN };
+            let color = if *index == 0 { BLACK } else if *index == 1 { RED } else if *index == 2 { BLUE } else if *index == 3 { DARKPURPLE } else { GREEN };
             draw_rect(offset, block_domain, color);
             if draw_lines {
-                outline_rect(offset, block_domain, 1., BLACK);
+                outline_rect(offset, block_domain, 1., WHITE);
             }
         }
     }
@@ -196,7 +196,7 @@ impl Object {
             BLACK => 0,
             MAROON => 1,
             BLUE => 2,
-            GOLD => 3,
+            DARKPURPLE => 3,
             GREEN => 4,
             _ => 0,
         } );
@@ -235,7 +235,6 @@ impl Object {
                 if let Ok(root) = graph.set_node_child(self.root, &path, NodePointer::new(Index(i + 1), 0b0000)) {
                     self.root = root
                 };
-    
             }
         }
     }
