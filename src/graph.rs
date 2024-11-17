@@ -363,16 +363,11 @@ impl SparseDirectedGraph {
     }
 
     //Public functions used for root manipulation
-    pub fn empty_root(&self) -> NodePointer {
+    pub fn get_root(&self, leaf:usize) -> NodePointer {
         NodePointer {
-            index : Index(0),
+            index : Index(leaf),
             mask : 0b0000,
         }
-    }
-
-    pub fn clear_root(&mut self, root:NodePointer) -> NodePointer {
-        self.dec_owners(root.index);
-        self.empty_root()
     }
 
     //Figure these two out with the new system
