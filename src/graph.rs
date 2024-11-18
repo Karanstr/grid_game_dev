@@ -134,21 +134,19 @@ impl SparseDirectedGraph {
 
     pub fn new() -> Self {
         let empty = NodeHandler::LeafNode(Leaf::new(Index(0)));
-        let red = NodeHandler::LeafNode(Leaf::new(Index(1)));
-        let blue = NodeHandler::LeafNode(Leaf::new(Index(2)));
-        let gold = NodeHandler::LeafNode(Leaf::new(Index(3)));
-        let green = NodeHandler::LeafNode(Leaf::new(Index(4)));
+        let maroon = NodeHandler::LeafNode(Leaf::new(Index(1)));
+        let white = NodeHandler::LeafNode(Leaf::new(Index(2)));
+        let lods = vec![0, 1, 2];
+        let last = lods.len() - 1;
         let mut instance = Self {
             nodes : MemHeap::new(),
-            lod_vec : vec![0, 1, 2, 3, 4],
-            last_leaf : 4,
+            lod_vec : lods,
+            last_leaf : last,
             index_lookup : HashMap::new(),
         };
         instance.add_node(empty, true);
-        instance.add_node(red, true);
-        instance.add_node(blue, true);
-        instance.add_node(gold, true);
-        instance.add_node(green, true);
+        instance.add_node(maroon, true);
+        instance.add_node(white, true);
         instance
     }
 
@@ -315,12 +313,12 @@ impl SparseDirectedGraph {
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:NodePointer, path:&Path2D) -> Result<(NodePointer, u8), AccessError> {
+    pub fn read_destination(&self, root:NodePointer, path:&Path2D) -> Result<(NodePointer, u32), AccessError> {
         let trail = self.get_trail(root, path)?;
         match trail.last() {
             Some(node_pointer) => {
                 let child = self.child(*node_pointer, path.directions[trail.len() - 1])?;
-                Ok( (child, trail.len() as u8 - 1) )
+                Ok( (child, trail.len() as u32 - 1) )
             },  
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )

@@ -10,14 +10,12 @@ use game::*;
 async fn main() {  
     let size = Vec2::new(1100., 1100.);
     request_new_screen_size(size.x, size.y);
-    let mut scene = Scene::new();
-
+    let mut scene = Scene::new();    
     let mut world = Object::new(scene.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), Vec2::new(size.x, size.y));
-    let mut player = Object::new(scene.graph.get_root(3), Vec2::new(size.x/2., size.y/2.), Vec2::new(10., 10.));
+    let mut player = Object::new(scene.graph.get_root(2), Vec2::new(size.x/2., size.y/2.), Vec2::new(10., 10.));
 
-
-    let speed = 0.01;
-    let torque = 0.001;
+    let speed = 0.1;
+    let torque = 0.05;
     let mut operation_depth = 1;
     let mut cur_color = MAROON;
 
@@ -29,11 +27,8 @@ async fn main() {
         } else if is_key_pressed(KeyCode::V) {
             cur_color = match cur_color {
                 BLACK => MAROON,
-                MAROON => BLUE,
-                BLUE => DARKPURPLE,
-                DARKPURPLE => GREEN,
-                GREEN => BLACK,
-                _ => BLACK
+                MAROON => BLACK,
+                _ => WHITE
             }
         }
 
