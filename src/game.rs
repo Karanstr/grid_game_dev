@@ -123,7 +123,8 @@ impl Object {
         let mut rem_displacement = displacement;
         let initial = velocity_to_zorder_direction(-displacement);
         let relevant_cells = velocity_to_zorder_direction(displacement);
-        let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[initial[0]]?;
+        //Why does using the last potential cell work but the first causes inf loops??
+        let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[*initial.last().unwrap()]?;
         loop {
             let (new_position, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement)?;
             rem_displacement -= new_position - cur_position;
@@ -132,7 +133,9 @@ impl Object {
             let mut hit_count = 0;
             for index in relevant_cells.iter() {
                 if let Some((solid, cell, depth)) = data[*index] {
-                    if solid { hit_count += 1 } else { grid_cell = cell; cur_depth = depth; }
+                    if solid { hit_count += 1 }
+                    grid_cell = cell;
+                    cur_depth = depth;
                 }
             }
             if hit_count == relevant_cells.len() {
@@ -191,12 +194,7 @@ impl Scene {
         if moving.velocity.length() != 0. {
             let mut cur_position = moving.position;
             let mut remaining_displacement = moving.velocity;
-            let mut count = 0;
             while remaining_displacement.length() != 0. {
-                count += 1;
-                if count == 10 {
-                    break //Prevents inf looping until I fix it.
-                }
                 match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
                     None => break,
                     Some((new_position, walls_hit)) => {
