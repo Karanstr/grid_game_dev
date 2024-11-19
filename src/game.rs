@@ -1,6 +1,6 @@
 use core::panic;
 use std::f32::consts::PI;
-use macroquad::{prelude::*, telemetry::frame};
+use macroquad::prelude::*;
 
 use crate::graph::{Index, NodePointer, Path2D, SparseDirectedGraph};
 
@@ -28,9 +28,9 @@ impl Object {
         }
     }
 
-    //This is all raymarching stuff
+    //This is all raymarching stuff, move to scene?
 
-    pub fn coord_to_cartesian(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
+    pub fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let half_length = self.domain/2.;
         let block_size = self.domain / 2f32.powf(depth as f32);
@@ -50,87 +50,75 @@ impl Object {
         four_points
     }
 
-    fn step_towards_corner(&self, corner:Vec2, start:Vec2, velocity:Vec2) -> Vec2 {
-        //Yeah I divide by 0. No I don't care
-        (corner-start)/velocity
-    }
-
-    fn calculate_corner(&self, vel_sign:Vec2, cartesian_cell:UVec2, depth:u32) -> Vec2 {
+    fn calculate_corner(&self, sign:Vec2, grid_cell:UVec2, depth:u32) -> Vec2 {
         let box_size = self.domain / 2u32.pow(depth) as f32;
-        let quadrant = (vel_sign + 0.5).abs().floor();
-        cartesian_cell.as_vec2() * box_size + box_size * quadrant + self.position - self.domain/2.
+        let quadrant = (sign + 0.5).abs().floor();
+        grid_cell.as_vec2() * box_size + box_size * quadrant + self.position - self.domain/2.
     }
 
-    fn find_real_cell(&self, graph:&SparseDirectedGraph, cell:Option<UVec2>, max_depth:u32) -> Option<(NodePointer, UVec2, u32)> {
-        let cell_zorder = cartesian_to_zorder(cell?, max_depth);
-            match graph.read_destination(self.root, &Path2D::from(cell_zorder, max_depth as usize)) {
-                Ok((cell_data, real_depth)) => {
-                    let culled_zorder = cell_zorder as u32 >> 2 * (max_depth - real_depth);
-                    Some((cell_data, zorder_to_cartesian(culled_zorder, real_depth), real_depth))
-                },
-                Err(error) => {
-                    dbg!(error);
-                    None
-                }
-            }
-    }
-
-    fn march(&self, graph:&SparseDirectedGraph, moving:&Object, max_depth:u32) -> (Vec2, Vec2) {
-        let mut step_count = 0;
-        let mut cur_position = moving.position;
-        let mut rem_velocity = moving.velocity;
-        let mut collision_vel_modifier = Vec2::ONE;
-        let coming_from = velocity_to_zorder_direction(rem_velocity * -1.);
-        let start_cell = self.coord_to_cartesian(cur_position, max_depth)[coming_from];
-        let (mut cell_cartesian, mut cell_depth) = match self.find_real_cell(graph, start_cell, max_depth) {
-            Some((_, cartesian, depth)) => (cartesian, depth),
-            None => {
-                //Figure out how to get corner from the exterior, until then:
-                println!("You're outside right now. Stop that");
-                return (cur_position + rem_velocity, moving.velocity)
-            }
-        };
-        let going_to = velocity_to_zorder_direction(rem_velocity);
-        loop {
-            step_count += 1;
-            rem_velocity *= collision_vel_modifier;
-            let frames_to_hit = {
-                let corner = self.calculate_corner(rem_velocity.signum(), cell_cartesian, cell_depth);
-                self.step_towards_corner(corner, cur_position, rem_velocity)
-            };
-            match frames_to_hit.min_element() {
-                no_hit if no_hit >= 1. => return (cur_position + rem_velocity, moving.velocity * collision_vel_modifier),
-                hitting => {
-                    let traveled = rem_velocity * hitting;
-                    rem_velocity -= traveled;
-                    cur_position += traveled;
-                    let new_cell = self.coord_to_cartesian(cur_position, max_depth)[going_to];
-                    match self.find_real_cell(graph, new_cell, max_depth) {
-                        Some((cell_data, cell, depth)) => {
-                            cell_cartesian = cell;
-                            cell_depth = depth;
-                            if *cell_data.index == 1 {
-                                if frames_to_hit.x == frames_to_hit.y {
-                                    collision_vel_modifier = Vec2::ZERO
-                                } else if frames_to_hit.y < frames_to_hit.x {
-                                    collision_vel_modifier.y = 0.
-                                } else if frames_to_hit.x < frames_to_hit.y {
-                                    collision_vel_modifier.x = 0.
-                                }
-                            }
-                        },
-                        None => {
-                            //Figure out how to get corner from the exterior, until then:
-                            println!("You're outside right now. Stop that");
-                            return (cur_position + rem_velocity, moving.velocity)
-                        }
-                    }
-                }
-            }
-            if step_count == 10 {
-                panic!();
+    fn next_intersection(&self, cell:UVec2, depth:u32, position:Vec2, max_displacement:Vec2) -> Option<(Vec2, Vec2)> {
+        let corner = self.calculate_corner(max_displacement.signum(), cell, depth);
+        let ticks = (corner - position) / max_displacement;
+        match ticks.min_element() {
+            no_hit if no_hit > 1. => None,
+            hitting => {
+                let distance = max_displacement * hitting;
+                let walls_hit = if ticks.y < ticks.x {
+                    Vec2::new(0., 1.)
+                } else if ticks.x < ticks.y {
+                    Vec2::new(1., 0.)
+                } else { Vec2::ONE };
+                Some((position + distance, walls_hit))
             }
         }
+    }
+
+    fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
+        let bit_path = cell_to_zorder(cell, max_depth);
+            match graph.read_destination(self.root, &Path2D::from(bit_path, max_depth as usize)) {
+                Ok((cell_pointer, real_depth)) => {
+                    let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
+                    (cell_pointer, zorder_to_cell(zorder, real_depth), real_depth)
+                },
+                Err(error) => panic!("{error:?}")
+            }
+    }
+
+    fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
+        let max_depth_cells = self.coord_to_cell(position, max_depth);
+        let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
+        for i in 0 .. 4 {
+            if let Some(grid_cell) = max_depth_cells[i] {
+                let (node, real_cell, depth) = self.find_real_node(graph, grid_cell, max_depth);
+                    //If the node is solid (once we have a proper definition of solid abstract this)
+                    data[i] = Some((*node.index == 1, real_cell, depth))
+            }
+        }
+        data
+    }
+
+    fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, Vec2)> {
+        let mut cur_position = position;
+        let mut rem_displacement = displacement;
+        //I don't think I care which possibility we start with when moving along a single axis
+        //I remember using the inverse velocity for the first cell causing problems, but I have no clue why
+        let initial = velocity_to_zorder_direction(-displacement);
+        let relevant_cells = velocity_to_zorder_direction(displacement);
+        let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[initial[0]]?;
+        while rem_displacement.length() != 0. {
+            let (new_position, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement)?;
+            rem_displacement -= new_position - cur_position;
+            cur_position = new_position;
+            let data = self.get_data_at_position(graph, cur_position, max_depth);
+            let mut hit_count = 0;
+            for possibility in relevant_cells.iter() {
+                if let Some((solid, cell, depth)) = data[*possibility] {
+                    if solid { hit_count += 1 } else { grid_cell = cell; cur_depth = depth}
+                }
+            }
+            if hit_count == relevant_cells.len() { return Some((cur_position, walls_hit)) }
+        }
+        None
     }
 
 
@@ -166,19 +154,30 @@ impl Scene {
         let filled_blocks = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in filled_blocks {
             let block_domain = object.domain / 2u32.pow(depth) as f32;
-            let cartesian_cell = zorder_to_cartesian(zorder, depth);
-            let offset = Vec2::new(cartesian_cell.x as f32, cartesian_cell.y as f32) * block_domain + object.position - object.domain/2.;
+            let grid_cell = zorder_to_cell(zorder, depth);
+            let offset = Vec2::new(grid_cell.x as f32, grid_cell.y as f32) * block_domain + object.position - object.domain/2.;
             let color = if *index == 0 { BLACK } else if *index == 1 { MAROON } else { WHITE };
             draw_rect(offset, block_domain, color);
-            if draw_lines {
-                outline_rect(offset, block_domain, 1., WHITE);
-            }
+            if draw_lines { outline_rect(offset, block_domain, 1., WHITE) }
         }
     }
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object) {
         if moving.velocity.length() != 0. {
-            (moving.position, moving.velocity) = hitting.march(&self.graph, moving, 5);
+            let mut cur_position = moving.position;
+            let mut remaining_displacement = moving.velocity;
+            while remaining_displacement.length() != 0. {
+                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
+                    None => break,
+                    Some((new_position, walls_hit)) => {
+                        remaining_displacement -= new_position - cur_position;
+                        remaining_displacement *= (walls_hit - 1.).abs();
+                        moving.velocity *= (walls_hit - 1.).abs();
+                        cur_position = new_position;
+                    }
+                }
+            }
+            moving.position = cur_position + remaining_displacement;
             let drag = 0.99;
             moving.velocity *= drag;
             let speed_min = 0.005;
@@ -204,8 +203,8 @@ impl Scene {
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
-        let cell = cartesian_to_zorder(edit_cell.as_uvec2(), depth);
-        let path = Path2D::from(cell, depth as usize);
+        let bit_path = cell_to_zorder(edit_cell.as_uvec2(), depth);
+        let path = Path2D::from(bit_path, depth as usize);
 
         let child_index = Index( match color {
             MAROON => 1,
@@ -225,13 +224,28 @@ impl Scene {
 }
 
 
-fn velocity_to_zorder_direction(velocity:Vec2) -> usize {
-    let velocity_dir = velocity.signum().clamp(Vec2::ZERO, Vec2::ONE);
-    1 * velocity_dir.x as usize | 2 * velocity_dir.y as usize
+fn velocity_to_zorder_direction(velocity:Vec2) -> Vec<usize> {
+    let velocity_dir = velocity.signum();
+    let clamped = velocity_dir.clamp(Vec2::ZERO, Vec2::ONE).as_uvec2();
+    if velocity_dir.x == 0. && velocity_dir.y == 0. {
+        vec![0b00, 0b01, 0b10, 0b11]
+    } else if velocity_dir.x == 0. {
+        vec![
+            2 * clamped.y as usize | 1, 
+            2 * clamped.y as usize | 0,
+        ]
+    } else if velocity_dir.y == 0. {
+        vec![
+            clamped.x as usize, 
+            2 | clamped.x as usize,
+        ]
+    } else {
+        vec![2 * clamped.y as usize | clamped.x as usize] 
+    }
 }
 
-//Will overflow if our z-order goes 32 layers deep. So.. don't do that
-fn zorder_to_cartesian(mut zorder:u32, depth:u32) -> UVec2 {
+//Will overflow if our z-order goes 16 layers deep. So.. don't do that
+fn zorder_to_cell(mut zorder:u32, depth:u32) -> UVec2 {
     let (mut x, mut y) = (0, 0);
     for layer in 0 .. depth {
         x |= (zorder & 0b1) << layer;
@@ -243,10 +257,10 @@ fn zorder_to_cartesian(mut zorder:u32, depth:u32) -> UVec2 {
 }
 
 //Figure this out later
-fn cartesian_to_zorder(cartesian_cell:UVec2, root_layer:u32) -> usize {
+fn cell_to_zorder(grid_cell:UVec2, root_layer:u32) -> usize {
     let mut cell = 0;
     for layer in (0 ..= root_layer).rev() {
-        let step = (((cartesian_cell.y >> layer) & 0b1) << 1 ) | ((cartesian_cell.x >> layer) & 0b1);
+        let step = (((grid_cell.y >> layer) & 0b1) << 1 ) | ((grid_cell.x >> layer) & 0b1);
         cell = (cell << 2) | step;
     }
     cell as usize
