@@ -84,42 +84,67 @@ impl Object {
             }
     }
 
+    //Give this a data struct?
     fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
         let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
         for i in 0 .. 4 {
             if let Some(grid_cell) = max_depth_cells[i] {
                 let (node, real_cell, depth) = self.find_real_node(graph, grid_cell, max_depth);
-                    //If the node is solid (once we have a proper definition of solid abstract this)
-                    data[i] = Some((*node.index == 1, real_cell, depth))
+                //If the node is solid (once we have a proper definition of solid abstract this)
+                data[i] = Some((*node.index == 1, real_cell, depth))
             }
         }
         data
     }
 
+    fn slide_check(&self, walls_hit:Vec2, displacement:Vec2, position_data:[Option<(bool, UVec2, u32)>; 4]) -> Vec2 {
+        let mut updated_walls = walls_hit;
+        let (x_slide_check, y_slide_check) = if displacement.x < 0. && displacement.y < 0. { //(-,-)
+            (2, 1)
+        } else if displacement.x < 0. && displacement.y > 0. { //(-,+)
+            (0, 3)
+        } else if displacement.x > 0. && displacement.y < 0. { //(+,-)
+            (3, 0)
+        } else { //(+,+)
+            (1, 2)
+        };
+        if let Some((hit, ..)) = position_data[x_slide_check] {
+            if !hit { updated_walls.x = 0. }
+        }
+        if let Some((hit, ..)) = position_data[y_slide_check] {
+            if !hit { updated_walls.y = 0. }
+        }
+        updated_walls
+    }
+
     fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, Vec2)> {
         let mut cur_position = position;
         let mut rem_displacement = displacement;
-        //I don't think I care which possibility we start with when moving along a single axis
-        //I remember using the inverse velocity for the first cell causing problems, but I have no clue why
         let initial = velocity_to_zorder_direction(-displacement);
         let relevant_cells = velocity_to_zorder_direction(displacement);
         let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[initial[0]]?;
-        while rem_displacement.length() != 0. {
+        loop {
             let (new_position, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement)?;
             rem_displacement -= new_position - cur_position;
             cur_position = new_position;
             let data = self.get_data_at_position(graph, cur_position, max_depth);
             let mut hit_count = 0;
-            for possibility in relevant_cells.iter() {
-                if let Some((solid, cell, depth)) = data[*possibility] {
-                    if solid { hit_count += 1 } else { grid_cell = cell; cur_depth = depth}
+            for index in relevant_cells.iter() {
+                if let Some((solid, cell, depth)) = data[*index] {
+                    if solid { hit_count += 1 } else { grid_cell = cell; cur_depth = depth; }
                 }
             }
-            if hit_count == relevant_cells.len() { return Some((cur_position, walls_hit)) }
+            if hit_count == relevant_cells.len() {
+                return if walls_hit.x == walls_hit.y {
+                    Some((cur_position, self.slide_check(walls_hit, displacement, data)))
+                } else {
+                    Some((cur_position, walls_hit))
+                }
+            }
         }
-        None
     }
+    
 
 
     pub fn apply_linear_force(&mut self, force:Vec2) {
@@ -166,7 +191,12 @@ impl Scene {
         if moving.velocity.length() != 0. {
             let mut cur_position = moving.position;
             let mut remaining_displacement = moving.velocity;
+            let mut count = 0;
             while remaining_displacement.length() != 0. {
+                count += 1;
+                if count == 10 {
+                    break //Prevents inf looping until I fix it.
+                }
                 match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
                     None => break,
                     Some((new_position, walls_hit)) => {
@@ -225,16 +255,15 @@ impl Scene {
 
 
 fn velocity_to_zorder_direction(velocity:Vec2) -> Vec<usize> {
-    let velocity_dir = velocity.signum();
-    let clamped = velocity_dir.clamp(Vec2::ZERO, Vec2::ONE).as_uvec2();
-    if velocity_dir.x == 0. && velocity_dir.y == 0. {
+    let clamped = velocity.signum().clamp(Vec2::ZERO, Vec2::ONE);
+    if velocity.x == 0. && velocity.y == 0. {
         vec![0b00, 0b01, 0b10, 0b11]
-    } else if velocity_dir.x == 0. {
+    } else if velocity.x == 0. {
         vec![
+            2 * clamped.y as usize,
             2 * clamped.y as usize | 1, 
-            2 * clamped.y as usize | 0,
         ]
-    } else if velocity_dir.y == 0. {
+    } else if velocity.y == 0. {
         vec![
             clamped.x as usize, 
             2 | clamped.x as usize,
