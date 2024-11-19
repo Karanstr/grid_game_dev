@@ -318,7 +318,7 @@ impl SparseDirectedGraph {
         match trail.last() {
             Some(node_pointer) => {
                 let child = self.child(*node_pointer, path.directions[trail.len() - 1])?;
-                Ok( (child, trail.len() as u32 - 1) )
+                Ok( (child, trail.len() as u32) )
             },  
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )

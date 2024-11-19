@@ -28,7 +28,7 @@ impl Object {
         }
     }
 
-    //This is all raymarching stuff, move to scene?
+    //Refactor into raymarching struct
 
     pub fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
@@ -125,6 +125,7 @@ impl Object {
         let relevant_cells = velocity_to_zorder_direction(displacement);
         //Why does using the last potential cell work but the first causes inf loops??
         let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[*initial.last().unwrap()]?;
+        dbg!(grid_cell);
         loop {
             let (new_position, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement)?;
             rem_displacement -= new_position - cur_position;
@@ -195,7 +196,7 @@ impl Scene {
             let mut cur_position = moving.position;
             let mut remaining_displacement = moving.velocity;
             while remaining_displacement.length() != 0. {
-                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
+                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 3) {
                     None => break,
                     Some((new_position, walls_hit)) => {
                         remaining_displacement -= new_position - cur_position;
