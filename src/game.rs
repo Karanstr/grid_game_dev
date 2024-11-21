@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 
 use crate::graph::{Index, NodePointer, Path2D, SparseDirectedGraph};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum OnTouch {
     Ignore,
     Resist(IVec2),
@@ -128,11 +128,17 @@ impl Object {
         } else { //(+,+)
             (1, 2)
         };
-        if let Some((block_type, ..)) = position_data[x_slide_check] {
-            if let OnTouch::Ignore = self.on_touch(block_type) { updated_walls.x = 0 }
-        }
-        if let Some((block_type, ..)) = position_data[y_slide_check] {
-            if let OnTouch::Ignore = self.on_touch(block_type) { updated_walls.y = 0 }
+        let x_block_collision = match position_data[x_slide_check] {
+            Some((block, ..)) => self.on_touch(block),
+            None => OnTouch::Resist(IVec2::ZERO)
+        };
+        let y_block_collision = match position_data[y_slide_check] {
+            Some((block, ..)) => self.on_touch(block),
+            None => OnTouch::Resist(IVec2::ZERO)
+        };
+        if x_block_collision != y_block_collision {
+            if let OnTouch::Resist(_) = x_block_collision { updated_walls.x = 0 }
+            if let OnTouch::Resist(_) = y_block_collision { updated_walls.y = 0 }
         }
         updated_walls
     }
@@ -174,7 +180,7 @@ impl Object {
         let mut end_velocity = velocity;
         let mut first = true;
         while remaining_displacement.length() != 0. {
-            match self.next_boundary(graph, cur_position, remaining_displacement, 0, max_depth, first) {
+            match self.next_boundary(graph, cur_position, remaining_displacement, 3, max_depth, first) {
                 Some((new_position, action)) => {
                     remaining_displacement -= new_position - cur_position;
                     cur_position = new_position;
