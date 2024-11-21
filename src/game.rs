@@ -3,6 +3,19 @@ use macroquad::prelude::*;
 
 use crate::graph::{Index, NodePointer, Path2D, SparseDirectedGraph};
 
+#[derive(Clone, Copy, Debug)]
+enum OnTouch {
+    Ignore,
+    Resist(IVec2),
+    //...
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BlockType {
+    Air,
+    Ground,
+    //...
+}
 
 pub struct Object {
     root : NodePointer,
@@ -76,21 +89,35 @@ impl Object {
             }
     }
 
-    //Change this from a bool to just returning the on_touch action
-    fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
+    fn on_touch(&self, block:BlockType) -> OnTouch {
+        match block {
+            BlockType::Air => OnTouch::Ignore,
+            BlockType::Ground => OnTouch::Resist(IVec2::ZERO),
+            _ => OnTouch::Ignore,
+        }
+    }
+
+    fn block_type(&self, index:Index) -> BlockType {
+        match *index {
+            0 => BlockType::Air,
+            1 => BlockType::Ground,
+            _ => BlockType::Air,
+        }
+    }
+
+    fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(BlockType, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
-        let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
+        let mut data: [Option<(BlockType, UVec2, u32)>; 4] = [None; 4];
         for i in 0 .. 4 {
             if let Some(grid_cell) = max_depth_cells[i] {
                 let (node, real_cell, depth) = self.find_real_node(graph, grid_cell, max_depth);
-                //If the node is solid (once we have a proper definition of solid abstract this)
-                data[i] = Some((*node.index == 1, real_cell, depth))
+                data[i] = Some((self.block_type(node.index), real_cell, depth))
             }
         }
         data
     }
 
-    fn slide_check(&self, walls_hit:IVec2, displacement:Vec2, position_data:[Option<(bool, UVec2, u32)>; 4]) -> IVec2 {
+    fn slide_check(&self, walls_hit:IVec2, displacement:Vec2, position_data:[Option<(BlockType, UVec2, u32)>; 4]) -> IVec2 {
         let mut updated_walls = walls_hit;
         let (x_slide_check, y_slide_check) = if displacement.x < 0. && displacement.y < 0. { //(-,-)
             (2, 1)
@@ -101,43 +128,42 @@ impl Object {
         } else { //(+,+)
             (1, 2)
         };
-        if let Some((hit, ..)) = position_data[x_slide_check] {
-            if !hit { updated_walls.x = 0 }
+        if let Some((block_type, ..)) = position_data[x_slide_check] {
+            if let OnTouch::Ignore = self.on_touch(block_type) { updated_walls.x = 0 }
         }
-        if let Some((hit, ..)) = position_data[y_slide_check] {
-            if !hit { updated_walls.y = 0 }
+        if let Some((block_type, ..)) = position_data[y_slide_check] {
+            if let OnTouch::Ignore = self.on_touch(block_type) { updated_walls.y = 0 }
         }
         updated_walls
     }
 
-    //Also get this stupid thing out of here and just take the on_touch action each block_step, doing as it says.
-    fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, IVec2)> {
+    fn next_boundary(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, orientation:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
+        let relevant_cell = velocity_to_zorder_direction(displacement, orientation);
         let mut cur_position = position;
         let mut rem_displacement = displacement;
-        let initial = velocity_to_zorder_direction(-displacement);
-        let relevant_cells = velocity_to_zorder_direction(displacement);
-        //Why does using the last potential cell work but the first causes inf loops??
-        let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[*initial.last().unwrap()]?;
+        let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)
+        [if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}]?;
         loop {
             let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
             if ticks_to_reach >= 1. { return None }
-            rem_displacement -= new_position - cur_position;
+            let delta = new_position - cur_position;
+            rem_displacement -= delta;
             cur_position = new_position;
-            let data = self.get_data_at_position(graph, cur_position, max_depth);
-            let mut hit_count = 0;
-            for index in relevant_cells.iter() {
-                if let Some((solid, cell, depth)) = data[*index] {
-                    if solid { hit_count += 1 }
-                    grid_cell = cell;
-                    cur_depth = depth;
-                }
-            }
-            if hit_count == relevant_cells.len() {
-                return if walls_hit.x == walls_hit.y {
-                    Some((cur_position, self.slide_check(walls_hit, displacement, data)))
-                } else {
-                    Some((cur_position, walls_hit))
-                }
+            let data = self.get_data_at_position(graph, new_position, max_depth);
+            let new_block_type;
+            (new_block_type, grid_cell, cur_depth) = data[relevant_cell]?;
+            if ticks_to_reach == 0. && new_block_type == cur_block_type { continue }
+            return match self.on_touch(new_block_type) {
+                OnTouch::Ignore => {
+                    Some((new_position, OnTouch::Ignore))
+                },
+                OnTouch::Resist(_) => {
+                    if walls_hit.x == walls_hit.y {
+                        Some((new_position, OnTouch::Resist(self.slide_check(walls_hit, rem_displacement, data))))
+                    } else {
+                        Some((new_position, OnTouch::Resist(walls_hit)))
+                    }
+                },
             }
         }
     }
@@ -146,21 +172,28 @@ impl Object {
         let mut cur_position = position;
         let mut remaining_displacement = velocity;
         let mut end_velocity = velocity;
+        let mut first = true;
         while remaining_displacement.length() != 0. {
-            match self.next_collision(graph, cur_position, remaining_displacement, max_depth) {
-                None => break,
-                Some((new_position, walls_hit)) => {
+            match self.next_boundary(graph, cur_position, remaining_displacement, 0, max_depth, first) {
+                Some((new_position, action)) => {
                     remaining_displacement -= new_position - cur_position;
-                    if walls_hit.x == 1 {
-                        remaining_displacement.x = 0.;
-                        end_velocity.x = 0.;
-                    }
-                    if walls_hit.y == 1 {
-                        remaining_displacement.y = 0.;
-                        end_velocity.y = 0.;
-                    }
                     cur_position = new_position;
-                }
+                    match action {
+                        OnTouch::Ignore => first = false,
+                        OnTouch::Resist(walls_hit) => {
+                            first = true;
+                            if walls_hit.x == 1 {
+                                remaining_displacement.x = 0.;
+                                end_velocity.x = 0.;
+                            }
+                            if walls_hit.y == 1 {
+                                remaining_displacement.y = 0.;
+                                end_velocity.y = 0.;
+                            }
+                        }
+                    }
+                },
+                None => break,
             }
         }
         (cur_position + remaining_displacement, end_velocity)
@@ -254,23 +287,15 @@ impl Scene {
 
 }
 
-
-fn velocity_to_zorder_direction(velocity:Vec2) -> Vec<usize> {
+//Don't call if velocity.length() == 0
+fn velocity_to_zorder_direction(velocity:Vec2, orientation:u8) -> usize {
     let clamped = velocity.signum().clamp(Vec2::ZERO, Vec2::ONE);
-    if velocity.x == 0. && velocity.y == 0. {
-        vec![0b00, 0b01, 0b10, 0b11]
-    } else if velocity.x == 0. {
-        vec![
-            2 * clamped.y as usize,
-            2 * clamped.y as usize | 1, 
-        ]
+    if velocity.x == 0. {
+        2 * clamped.y as usize | if orientation == 0 || orientation == 2 { 1 } else { 0 }
     } else if velocity.y == 0. {
-        vec![
-            clamped.x as usize, 
-            2 | clamped.x as usize,
-        ]
+        clamped.x as usize | if orientation == 0 || orientation == 1 { 2 } else { 0 }
     } else {
-        vec![2 * clamped.y as usize | clamped.x as usize] 
+        2 * clamped.y as usize | clamped.x as usize
     }
 }
 
