@@ -3,13 +3,12 @@ use macroquad::prelude::*;
 
 use crate::graph::{Index, NodePointer, Path2D, SparseDirectedGraph};
 
-//Figure out all of the weird return type recasting I'm doing rn
 
 pub struct Object {
     root : NodePointer,
-    pub position : Vec2,
+    position : Vec2,
     velocity : Vec2,
-    rotation : f32, 
+    rotation : f32, // >:( iykyk
     angular_velocity : f32,
     grid_length : f32,
 }
@@ -51,29 +50,21 @@ impl Object {
         four_points
     }
 
-    fn calculate_corner(&self, sign:Vec2, grid_cell:UVec2, depth:u32) -> Vec2 {
+    fn next_intersection(&self, cell:UVec2, depth:u32, position:Vec2, velocity:Vec2) -> (Vec2, f32, IVec2) {
         let cell_length = self.cell_length(depth);
-        let quadrant = (sign + 0.5).abs().floor();
-        grid_cell.as_vec2() * cell_length + cell_length * quadrant + self.position - self.grid_length/2.
+        let quadrant = (velocity.signum() + 0.5).abs().floor();
+        let corner = cell.as_vec2() * cell_length + cell_length * quadrant + self.position - self.grid_length/2.;
+        let ticks = (corner - position) / velocity;
+        let ticks_to_first_hit = ticks.min_element();
+        let walls_hit = if ticks.y < ticks.x {
+            IVec2::new(0, 1)
+        } else if ticks.x < ticks.y {
+            IVec2::new(1, 0)
+        } else { IVec2::ONE };
+        (position + velocity * ticks_to_first_hit, ticks_to_first_hit, walls_hit)
     }
 
-    fn next_intersection(&self, cell:UVec2, depth:u32, position:Vec2, max_displacement:Vec2) -> Option<(Vec2, Vec2)> {
-        let corner = self.calculate_corner(max_displacement.signum(), cell, depth);
-        let ticks = (corner - position) / max_displacement;
-        match ticks.min_element() {
-            no_hit if no_hit > 1. => None,
-            hitting => {
-                let distance = max_displacement * hitting;
-                let walls_hit = if ticks.y < ticks.x {
-                    Vec2::new(0., 1.)
-                } else if ticks.x < ticks.y {
-                    Vec2::new(1., 0.)
-                } else { Vec2::ONE };
-                Some((position + distance, walls_hit))
-            }
-        }
-    }
-
+    //Add a class for this return and slide_check's input?
     fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
         let bit_path = zorder_from_cell(cell, max_depth);
             match graph.read_destination(self.root, &Path2D::from(bit_path, max_depth as usize)) {
@@ -85,6 +76,8 @@ impl Object {
             }
     }
 
+    //Change this from a bool to just returning the index
+    //Also add a proper on_collision system?
     fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
         let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
@@ -98,7 +91,7 @@ impl Object {
         data
     }
 
-    fn slide_check(&self, walls_hit:Vec2, displacement:Vec2, position_data:[Option<(bool, UVec2, u32)>; 4]) -> Vec2 {
+    fn slide_check(&self, walls_hit:IVec2, displacement:Vec2, position_data:[Option<(bool, UVec2, u32)>; 4]) -> IVec2 {
         let mut updated_walls = walls_hit;
         let (x_slide_check, y_slide_check) = if displacement.x < 0. && displacement.y < 0. { //(-,-)
             (2, 1)
@@ -110,15 +103,15 @@ impl Object {
             (1, 2)
         };
         if let Some((hit, ..)) = position_data[x_slide_check] {
-            if !hit { updated_walls.x = 0. }
+            if !hit { updated_walls.x = 0 }
         }
         if let Some((hit, ..)) = position_data[y_slide_check] {
-            if !hit { updated_walls.y = 0. }
+            if !hit { updated_walls.y = 0 }
         }
         updated_walls
     }
 
-    fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, Vec2)> {
+    fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, IVec2)> {
         let mut cur_position = position;
         let mut rem_displacement = displacement;
         let initial = velocity_to_zorder_direction(-displacement);
@@ -127,7 +120,8 @@ impl Object {
         let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[*initial.last().unwrap()]?;
         dbg!(grid_cell);
         loop {
-            let (new_position, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement)?;
+            let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
+            if ticks_to_reach >= 1. { return None }
             rem_displacement -= new_position - cur_position;
             cur_position = new_position;
             let data = self.get_data_at_position(graph, cur_position, max_depth);
@@ -149,7 +143,29 @@ impl Object {
         }
     }
     
-
+    fn all_collisions(&self, graph:&SparseDirectedGraph, position:Vec2, velocity:Vec2, max_depth:u32) -> (Vec2, Vec2) {
+        let mut cur_position = position;
+        let mut remaining_displacement = velocity;
+        let mut end_velocity = velocity;
+        while remaining_displacement.length() != 0. {
+            match self.next_collision(graph, cur_position, remaining_displacement, max_depth) {
+                None => break,
+                Some((new_position, walls_hit)) => {
+                    remaining_displacement -= new_position - cur_position;
+                    if walls_hit.x == 1 {
+                        remaining_displacement.x = 0.;
+                        end_velocity.x = 0.;
+                    }
+                    if walls_hit.y == 1 {
+                        remaining_displacement.y = 0.;
+                        end_velocity.y = 0.;
+                    }
+                    cur_position = new_position;
+                }
+            }
+        }
+        (cur_position + remaining_displacement, end_velocity)
+    }
 
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force * Vec2::new(self.rotation.cos(), self.rotation.sin());
@@ -184,7 +200,7 @@ impl Scene {
         for (zorder, depth, index) in filled_blocks {
             let cell_length = object.cell_length(depth);
             let grid_cell = zorder_to_cell(zorder, depth);
-            let offset = Vec2::new(grid_cell.x as f32, grid_cell.y as f32) * cell_length + object.position - object.grid_length/2.;
+            let offset = grid_cell.as_vec2() * cell_length + object.position - object.grid_length/2.;
             let color = if *index == 0 { BLACK } else if *index == 1 { MAROON } else { WHITE };
             draw_square(offset, cell_length, color);
             if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
@@ -193,20 +209,7 @@ impl Scene {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object) {
         if moving.velocity.length() != 0. {
-            let mut cur_position = moving.position;
-            let mut remaining_displacement = moving.velocity;
-            while remaining_displacement.length() != 0. {
-                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
-                    None => break,
-                    Some((new_position, walls_hit)) => {
-                        remaining_displacement -= new_position - cur_position;
-                        remaining_displacement *= (walls_hit - 1.).abs();
-                        moving.velocity *= (walls_hit - 1.).abs();
-                        cur_position = new_position;
-                    }
-                }
-            }
-            moving.position = cur_position + remaining_displacement;
+            (moving.position, moving.velocity) = hitting.all_collisions(&self.graph, moving.position, moving.velocity, 5);
             let drag = 0.99;
             moving.velocity *= drag;
             let speed_min = 0.005;
@@ -301,7 +304,7 @@ fn round_away_0_pref_pos(number:f32) -> i32 {
     }
     else {
         //We don't want to return 0 when we're trying to avoid 0
-        //And the name of the function is prefer_position, so..
+        //And the name of the function is prefer_positive, so..
         1 
     }
 }
