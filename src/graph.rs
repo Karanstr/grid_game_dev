@@ -120,13 +120,17 @@ impl Path2D {
     }
 }
 
+//Frequency is 1, so every node contains the data for the children
+
 
 pub use node_stuff::{NodeHandler, Leaf, Three, Half, Quarter, NodePointer};
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
-    pub lod_vec : Vec<u8>,
+    lod_vec : Vec<u8>,
     last_leaf: usize,
     index_lookup : HashMap<NodeHandler, Index>,
+                    //Zorder, Vec<(Index, CurrentCount)>
+    frequency_tables : HashMap<u32, Vec<(Index, u8)>>,
 }
 
 impl SparseDirectedGraph {
@@ -142,6 +146,7 @@ impl SparseDirectedGraph {
             lod_vec : lods,
             last_leaf : last,
             index_lookup : HashMap::new(),
+            frequency_tables : HashMap::new(),
         };
         instance.add_node(empty, true);
         instance.add_node(maroon, true);
