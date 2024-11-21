@@ -21,33 +21,31 @@ mod node_stuff {
         }
     }
 
-    //The structs will be stored in memory (eventually) and the enum will be used to manipulate them
-
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub struct Leaf {
-        pub child : NodePointer,
+        pub most_common_child : NodePointer,
     }
     impl Leaf {
         pub fn new(index:Index) -> Self {
             Self { 
-                child : NodePointer::new(index, 0b0000) 
+                most_common_child : NodePointer::new(index, 0b0000) 
             }
         }
     }
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub struct Three {
-        pub lod : NodePointer,
-        pub children : [NodePointer; 3],
+        pub most_common_child : NodePointer,
+        pub other_children : [NodePointer; 3],
     }
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub struct Half {
-        pub lod : NodePointer,
-        pub children : [NodePointer; 2],
+        pub most_common_child : NodePointer,
+        pub other_children : [NodePointer; 2],
     }
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub struct Quarter {
-        pub lod : NodePointer,
-        pub child : NodePointer,
+        pub most_common_child : NodePointer,
+        pub other_children : NodePointer,
     }
 
 
@@ -61,7 +59,6 @@ mod node_stuff {
 
     impl NodeHandler {
 
-        //Think of better names for (read and raw) node
         fn read_node(&self, mask:u8) -> [NodePointer; 4] {
             let (lod, mut children) = self.raw_node();
             for i in 0 .. 4 {
@@ -82,21 +79,56 @@ mod node_stuff {
 
         pub fn raw_node(&self) -> (NodePointer, Vec<NodePointer>) {
             match self {
-                Self::LeafNode(node) => (node.child, Vec::new()),
-                Self::ThreeNode(node) => (node.lod, Vec::from(node.children)),
-                Self::HalfNode(node) => (node.lod, Vec::from(node.children)),
-                Self::QuarterNode(node) => (node.lod, Vec::from([node.child])),
+                Self::LeafNode(node) => (node.most_common_child, Vec::new()),
+                Self::ThreeNode(node) => (node.most_common_child, Vec::from(node.other_children)),
+                Self::HalfNode(node) => (node.most_common_child, Vec::from(node.other_children)),
+                Self::QuarterNode(node) => (node.most_common_child, Vec::from([node.other_children])),
             }
         }
 
-        pub fn with_different_child(&self, mask:u8, child_zorder:usize, new_child:NodePointer) -> [NodePointer; 4] {
+        pub fn with_different_child(&self, mask:u8, child_zorder:usize, new_child:NodePointer) -> (Self, u8) {
             let mut new_children = self.read_node(mask);
             new_children[child_zorder] = new_child;
-            new_children
+            NodeHandler::compact_node_parts(new_children)
         }
 
-        pub fn lod(&self) -> Index {
-            self.raw_node().0.index
+        fn compact_node_parts( children:[NodePointer; 4]) -> (Self, u8) {
+            let lod_zorder = if children[0] == children[1] || children[0] == children[2] || children[0] == children[3]  {
+                0
+            } else if children[1] == children[2] || children[1] == children[3] {
+                1
+            } else if children[2] == children[3] {
+                2
+            } else {
+                3
+            };
+            let mut culled_children = Vec::new();
+            let mut mask = 0;
+            for zorder in 0 .. 4 {
+                if children[zorder] != children[lod_zorder] {
+                    culled_children.push(children[zorder]);
+                    mask |= 1 << zorder;
+                } 
+            }
+            ( match culled_children.len() {
+                3 => Self::ThreeNode(Three{
+                    most_common_child : children[lod_zorder],
+                    other_children : [culled_children[0], culled_children[1], culled_children[2]]
+                } ), 
+                2 => Self::HalfNode(Half{
+                    most_common_child : children[lod_zorder],
+                    other_children : [culled_children[0], culled_children[1]]
+                } ), 
+                1 => Self::QuarterNode(Quarter{
+                    most_common_child : children[lod_zorder],
+                    other_children : culled_children[0]
+                } ), 
+                0 => Self::LeafNode(Leaf{
+                    most_common_child : children[0]
+                } ),
+                _ => panic!("What?")
+            }, 
+            mask)
         }
 
     }
@@ -120,37 +152,25 @@ impl Path2D {
     }
 }
 
-//Frequency is 1, so every node contains the data for the children
 
 
-pub use node_stuff::{NodeHandler, Leaf, Three, Half, Quarter, NodePointer};
+pub use node_stuff::{NodeHandler, Leaf, NodePointer};
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
-    lod_vec : Vec<u8>,
-    last_leaf: usize,
     index_lookup : HashMap<NodeHandler, Index>,
-                    //Zorder, Vec<(Index, CurrentCount)>
-    frequency_tables : HashMap<u32, Vec<(Index, u8)>>,
 }
 
 impl SparseDirectedGraph {
 
     pub fn new() -> Self {
         let empty = NodeHandler::LeafNode(Leaf::new(Index(0)));
-        let maroon = NodeHandler::LeafNode(Leaf::new(Index(1)));
-        let white = NodeHandler::LeafNode(Leaf::new(Index(2)));
-        let lods = vec![0, 1, 2];
-        let last = lods.len() - 1;
+        let full = NodeHandler::LeafNode(Leaf::new(Index(1)));
         let mut instance = Self {
             nodes : MemHeap::new(),
-            lod_vec : lods,
-            last_leaf : last,
             index_lookup : HashMap::new(),
-            frequency_tables : HashMap::new(),
         };
         instance.add_node(empty, true);
-        instance.add_node(maroon, true);
-        instance.add_node(white, true);
+        instance.add_node(full, true);
         instance
     }
 
@@ -211,10 +231,6 @@ impl SparseDirectedGraph {
             None => {
                 let node_dup = node.clone();
                 let index = self.nodes.push(node, protected);
-                if *index >= self.lod_vec.len() {
-                    self.lod_vec.resize(*index + 1, 0);
-                }
-                self.lod_vec[*index] = self.lod_vec[*node_dup.lod()];
                 self.index_lookup.insert(node_dup, index);
                 let (lod, node_kids) = self.node(index).unwrap().raw_node();
                 match self.nodes.add_owner(lod.index) {
@@ -232,60 +248,6 @@ impl SparseDirectedGraph {
         }
     }
 
-    //This is really ugly but should work
-    fn compact_node_parts(&self, children:[NodePointer; 4]) -> (NodeHandler, u8) {
-        //Once we're sorting the children just loop through list, counting then switching when it changes
-        let lod_zorder = if children[0] == children[1] || children[0] == children[2] || children[0] == children[3]  {
-            0
-        } else if children[1] == children[2] || children[1] == children[3] {
-            1
-        } else if children[2] == children[3] {
-            2
-        } else { 
-            let lods = [
-                self.lod_vec[*children[0].index],
-                self.lod_vec[*children[1].index],
-                self.lod_vec[*children[2].index],
-                self.lod_vec[*children[3].index],
-            ];
-            if lods[0] == lods[1] || lods[0] == lods[2] || lods[0] == lods[3]  {
-                0
-            } else if lods[1] == lods[2] || lods[1] == lods[3] {
-                1
-            } else {
-                3
-            }
-        };
-        let mut culled_children = Vec::new();
-        let mut mask = 0;
-        for zorder in 0 .. 4 {
-            if children[zorder] != children[lod_zorder] {
-                culled_children.push(children[zorder]);
-                mask |= 1 << zorder;
-            } 
-        }
-        let node = match culled_children.len() {
-            3 => NodeHandler::ThreeNode(Three{
-                lod : children[lod_zorder],
-                children : [culled_children[0], culled_children[1], culled_children[2]]
-            } ), 
-            2 => NodeHandler::HalfNode(Half{
-                lod : children[lod_zorder],
-                children : [culled_children[0], culled_children[1]]
-            } ), 
-            1 => NodeHandler::QuarterNode(Quarter{
-                lod : children[lod_zorder],
-                child : culled_children[0]
-            } ), 
-            0 => NodeHandler::LeafNode(Leaf{
-                child : children[0]
-            } ),
-            _ => panic!("What?")
-        };
-        (node, mask)
-    }
-
-
     //Public functions used for writing
     //Add cyclicity here.
     pub fn set_node_child(&mut self, root:NodePointer, path:&Path2D, new_child:NodePointer) -> Result<NodePointer, AccessError> {
@@ -299,14 +261,13 @@ impl SparseDirectedGraph {
                 trail[trail.len() - 1]
             };
             let (new_node, new_mask) =  {
-                let children = self.node(parent.index)?
-                .with_different_child(
+                self.node(parent.index)?.with_different_child(
                     parent.mask, 
                     path.directions[steps - step], 
                     cur_child
-                );
-                self.compact_node_parts(children)
+                )
             };
+            dbg!(&new_node);
             cur_child.index = self.add_node(new_node, false);
             cur_child.mask = new_mask;
         }
@@ -341,20 +302,18 @@ impl SparseDirectedGraph {
 
         while stack.len() != 0 {
             let (node, layers_deep, zorder) = stack.pop().unwrap();
-            let (immediate_lod, children) = self.node(node.index).unwrap().raw_node();
-            let lod = self.lod_vec[*immediate_lod.index] as usize;
+            let (most_common_child, children) = self.node(node.index).unwrap().raw_node();
             let mut ignored = 0;
-            //If we're in a leaf
-            if node.mask == 0 && (*immediate_lod.index <= self.last_leaf ) {
-                leaves.push((zorder, layers_deep, Index(lod)));
+            //If we're cycling
+            if node.mask == 0 && (most_common_child.index == node.index ) {
+                leaves.push((zorder, layers_deep, most_common_child.index));
                 continue
             }
             for i in 0 .. 4 {
                 if layers_deep + 1 > maximum_render_depth { 
                     println!("Graph exceeds depth limit at index {}, rendering at layer {maximum_render_depth}", *node.index);
-                    leaves.push((zorder, layers_deep, Index(lod)));
                 } else if !NodeHandler::has_child(node.mask, i) {
-                    stack.push((immediate_lod, layers_deep + 1, (zorder << 2) | i as u32));
+                    stack.push((most_common_child, layers_deep + 1, (zorder << 2) | i as u32));
                     ignored += 1;
                 } else {
                     stack.push((children[i - ignored], layers_deep + 1, (zorder << 2) | i as u32));
@@ -408,8 +367,8 @@ impl SparseDirectedGraph {
         }
 
         println!("There are {} dynamic nodes within the tree, consisting of:", reserved_memory);
-        println!("{} dynamic leaves, {} quarters, {} halves, and {} threes", types[0], types[1], types[2], types[3]);
-        println!("{} dangling nodes and {} free slots", dangling - (self.last_leaf + 1), free_memory);
+        println!("{} leaves, {} quarters, {} halves, and {} threes", types[0], types[1], types[2], types[3]);
+        println!("{} dangling nodes and {} free slots", dangling, free_memory);
 
     }
 

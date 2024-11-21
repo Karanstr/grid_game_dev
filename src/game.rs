@@ -76,8 +76,7 @@ impl Object {
             }
     }
 
-    //Change this from a bool to just returning the index
-    //Also add a proper on_collision system?
+    //Change this from a bool to just returning the on_touch action
     fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
         let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
@@ -111,6 +110,7 @@ impl Object {
         updated_walls
     }
 
+    //Also get this stupid thing out of here and just take the on_touch action each block_step, doing as it says.
     fn next_collision(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, max_depth:u32) -> Option<(Vec2, IVec2)> {
         let mut cur_position = position;
         let mut rem_displacement = displacement;
@@ -118,7 +118,6 @@ impl Object {
         let relevant_cells = velocity_to_zorder_direction(displacement);
         //Why does using the last potential cell work but the first causes inf loops??
         let (_, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, cur_position, max_depth)[*initial.last().unwrap()]?;
-        dbg!(grid_cell);
         loop {
             let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
             if ticks_to_reach >= 1. { return None }
@@ -241,7 +240,7 @@ impl Scene {
         let child_index = Index( match color {
             MAROON => 1,
             BLACK => 0,
-            _ => 2,
+            _ => 0
         } );
 
         let new_child = NodePointer::new(child_index, 0b0000);
