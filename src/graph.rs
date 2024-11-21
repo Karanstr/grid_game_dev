@@ -144,9 +144,9 @@ pub struct Path2D {
 
 impl Path2D {
     pub fn from(bit_path:usize, steps:usize) -> Self {
-        let mut directions:Vec<usize> = Vec::with_capacity(steps);
-        for step in 0 .. steps {
-            directions.push((bit_path >> (2 * (steps - step - 1))) & 0b11);
+        let mut directions:Vec<usize> = Vec::with_capacity(steps + 1);
+        for step in 0 ..= steps {
+            directions.push((bit_path >> (2 * (steps - step))) & 0b11);
         }
         Self { directions }
     }
@@ -283,7 +283,7 @@ impl SparseDirectedGraph {
         match trail.last() {
             Some(node_pointer) => {
                 let child = self.child(*node_pointer, path.directions[trail.len() - 1])?;
-                Ok( (child, trail.len() as u32) )
+                Ok( (child, (trail.len() - 1) as u32) )
             },  
             //Can't read from the end of a trail if the trail is empty
             None => Err( AccessError::InvalidRequest )

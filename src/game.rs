@@ -82,6 +82,7 @@ impl Object {
         let bit_path = zorder_from_cell(cell, max_depth);
             match graph.read_destination(self.root, &Path2D::from(bit_path, max_depth as usize)) {
                 Ok((cell_pointer, real_depth)) => {
+                    dbg!(real_depth);
                     let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
                     (cell_pointer, zorder_to_cell(zorder, real_depth), real_depth)
                 },
@@ -143,12 +144,12 @@ impl Object {
         updated_walls
     }
 
+    //Add the option for no orientation, making my life difficult in exchange for functionality
     fn next_boundary(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, orientation:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
         let relevant_cell = velocity_to_zorder_direction(displacement, orientation);
         let mut cur_position = position;
         let mut rem_displacement = displacement;
-        let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)
-        [if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}]?;
+        let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)[if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}]?;
         loop {
             let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
             if ticks_to_reach >= 1. { return None }
@@ -180,7 +181,7 @@ impl Object {
         let mut end_velocity = velocity;
         let mut first = true;
         while remaining_displacement.length() != 0. {
-            match self.next_boundary(graph, cur_position, remaining_displacement, 3, max_depth, first) {
+            match self.next_boundary(graph, cur_position, remaining_displacement, 0, max_depth, first) {
                 Some((new_position, action)) => {
                     remaining_displacement -= new_position - cur_position;
                     cur_position = new_position;
@@ -268,7 +269,7 @@ impl Scene {
             round_away_0_pref_pos(unrounded_cell.x),
             round_away_0_pref_pos(unrounded_cell.y)
         );
-        let blocks_on_half = 2i32.pow(depth - 1);
+        let blocks_on_half = 2i32.pow(depth);
         if edit_cell.abs().max_element() > blocks_on_half { return }
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }

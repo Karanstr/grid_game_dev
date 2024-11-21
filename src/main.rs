@@ -16,7 +16,7 @@ async fn main() {
 
     let speed = 0.1;
     let torque = 0.05;
-    let mut operation_depth = 1;
+    let mut operation_depth = 0;
     let mut cur_color = MAROON;
 
     loop {
