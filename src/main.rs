@@ -11,8 +11,8 @@ async fn main() {
     let size = Vec2::new(1100., 1100.);
     request_new_screen_size(size.x, size.y);
     let mut scene = Scene::new();    
-    let mut world = Object::new(scene.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), Vec2::new(size.x, size.y));
-    let mut player = Object::new(scene.graph.get_root(2), Vec2::new(size.x/2., size.y/2.), Vec2::new(10., 10.));
+    let mut world = Object::new(scene.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
+    let mut player = Object::new(scene.graph.get_root(2), Vec2::new(size.x/2., size.y/2.), 10.);
 
     let speed = 0.1;
     let torque = 0.05;

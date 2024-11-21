@@ -51,7 +51,6 @@ mod node_stuff {
     }
 
 
-    //Currently assumes the children are stored in the correct order and not sorted for additional compression
     #[derive(Clone, PartialEq, Eq, Hash, Debug)]
     pub enum NodeHandler {
         LeafNode(Leaf),

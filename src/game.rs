@@ -1,4 +1,3 @@
-use core::panic;
 use std::f32::consts::PI;
 use macroquad::prelude::*;
 
@@ -12,28 +11,30 @@ pub struct Object {
     velocity : Vec2,
     rotation : f32, 
     angular_velocity : f32,
-    domain : Vec2,
+    grid_length : f32,
 }
 
 impl Object {
 
-    pub fn new(root:NodePointer, position:Vec2, domain:Vec2) -> Self {
+    pub fn new(root:NodePointer, position:Vec2, grid_length:f32) -> Self {
         Self {
             root,
             position,
             velocity : Vec2::ZERO,
             rotation : 0.0,
             angular_velocity : 0.,
-            domain,
+            grid_length,
         }
     }
 
-    //Refactor into raymarching struct
+    fn cell_length(&self, depth:u32) -> f32 {
+        self.grid_length / 2f32.powf(depth as f32)
+    }
 
-    pub fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
+    fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
-        let half_length = self.domain/2.;
-        let block_size = self.domain / 2f32.powf(depth as f32);
+        let half_length = self.grid_length/2.;
+        let cell_length = self.cell_length(depth);
         let top_left = self.position - half_length;
         let bottom_right = self.position + half_length;
         let offset = 0.01;
@@ -44,16 +45,16 @@ impl Object {
             );
             let cur_point = point - top_left + offset * direction;
             four_points[i] = if cur_point.clamp(top_left, bottom_right) == cur_point {
-                Some( (cur_point / block_size).floor().as_uvec2() )
+                Some( (cur_point / cell_length).floor().as_uvec2() )
             } else { None }
         }
         four_points
     }
 
     fn calculate_corner(&self, sign:Vec2, grid_cell:UVec2, depth:u32) -> Vec2 {
-        let box_size = self.domain / 2u32.pow(depth) as f32;
+        let cell_length = self.cell_length(depth);
         let quadrant = (sign + 0.5).abs().floor();
-        grid_cell.as_vec2() * box_size + box_size * quadrant + self.position - self.domain/2.
+        grid_cell.as_vec2() * cell_length + cell_length * quadrant + self.position - self.grid_length/2.
     }
 
     fn next_intersection(&self, cell:UVec2, depth:u32, position:Vec2, max_displacement:Vec2) -> Option<(Vec2, Vec2)> {
@@ -74,7 +75,7 @@ impl Object {
     }
 
     fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
-        let bit_path = cell_to_zorder(cell, max_depth);
+        let bit_path = zorder_from_cell(cell, max_depth);
             match graph.read_destination(self.root, &Path2D::from(bit_path, max_depth as usize)) {
                 Ok((cell_pointer, real_depth)) => {
                     let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
@@ -84,7 +85,6 @@ impl Object {
             }
     }
 
-    //Give this a data struct?
     fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(bool, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
         let mut data: [Option<(bool, UVec2, u32)>; 4] = [None; 4];
@@ -182,12 +182,12 @@ impl Scene {
     pub fn render(&self, object:&Object, draw_lines:bool) {
         let filled_blocks = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in filled_blocks {
-            let block_domain = object.domain / 2u32.pow(depth) as f32;
+            let cell_length = object.cell_length(depth);
             let grid_cell = zorder_to_cell(zorder, depth);
-            let offset = Vec2::new(grid_cell.x as f32, grid_cell.y as f32) * block_domain + object.position - object.domain/2.;
+            let offset = Vec2::new(grid_cell.x as f32, grid_cell.y as f32) * cell_length + object.position - object.grid_length/2.;
             let color = if *index == 0 { BLACK } else if *index == 1 { MAROON } else { WHITE };
-            draw_rect(offset, block_domain, color);
-            if draw_lines { outline_rect(offset, block_domain, 1., WHITE) }
+            draw_square(offset, cell_length, color);
+            if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
         }
     }
 
@@ -196,7 +196,7 @@ impl Scene {
             let mut cur_position = moving.position;
             let mut remaining_displacement = moving.velocity;
             while remaining_displacement.length() != 0. {
-                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 3) {
+                match hitting.next_collision(&self.graph, cur_position, remaining_displacement, 5) {
                     None => break,
                     Some((new_position, walls_hit)) => {
                         remaining_displacement -= new_position - cur_position;
@@ -219,7 +219,7 @@ impl Scene {
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, color:Color) {
-        let block_size = modified.domain / 2u32.pow(depth) as f32;
+        let block_size = modified.cell_length(depth);
 
         let rel_mouse_pos = mouse_pos - modified.position;
         let unrounded_cell = rel_mouse_pos / block_size;
@@ -232,7 +232,7 @@ impl Scene {
         edit_cell += blocks_on_half;
         if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
         if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
-        let bit_path = cell_to_zorder(edit_cell.as_uvec2(), depth);
+        let bit_path = zorder_from_cell(edit_cell.as_uvec2(), depth);
         let path = Path2D::from(bit_path, depth as usize);
 
         let child_index = Index( match color {
@@ -284,8 +284,7 @@ fn zorder_to_cell(mut zorder:u32, depth:u32) -> UVec2 {
     UVec2::new(x, y)
 }
 
-//Figure this out later
-fn cell_to_zorder(grid_cell:UVec2, root_layer:u32) -> usize {
+fn zorder_from_cell(grid_cell:UVec2, root_layer:u32) -> usize {
     let mut cell = 0;
     for layer in (0 ..= root_layer).rev() {
         let step = (((grid_cell.y >> layer) & 0b1) << 1 ) | ((grid_cell.x >> layer) & 0b1);
@@ -294,7 +293,6 @@ fn cell_to_zorder(grid_cell:UVec2, root_layer:u32) -> usize {
     cell as usize
 }
 
-//Figure out where to put these
 fn round_away_0_pref_pos(number:f32) -> i32 {
     if number < 0. {
         number.floor() as i32
@@ -312,17 +310,17 @@ fn round_away_0_pref_pos(number:f32) -> i32 {
 mod vec_friendly_drawing {
     use macroquad::prelude::*;
 
-    pub fn draw_rect(top_left_corner:Vec2, length:Vec2, color:Color) {
-        draw_rectangle(top_left_corner.x, top_left_corner.y, length.y, length.x, color);
+    pub fn draw_square(top_left_corner:Vec2, length:f32, color:Color) {
+        draw_rectangle(top_left_corner.x, top_left_corner.y, length, length, color);
     }
 
-    pub fn draw_centered_rect(position:Vec2, length:Vec2, color:Color) {
+    pub fn draw_centered_square(position:Vec2, length:f32, color:Color) {
         let real_pos = position - length/2.;
-        draw_rectangle(real_pos.x, real_pos.y, length.y, length.x, color);
+        draw_rectangle(real_pos.x, real_pos.y, length, length, color);
     }
 
-    pub fn outline_rect(position:Vec2, length:Vec2, line_width:f32, color:Color) {
-        draw_rectangle_lines(position.x, position.y, length.x, length.x, line_width, color);
+    pub fn outline_square(position:Vec2, length:f32, line_width:f32, color:Color) {
+        draw_rectangle_lines(position.x, position.y, length, length, line_width, color);
     }
 
     pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
