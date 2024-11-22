@@ -114,6 +114,7 @@ impl Object {
 
     fn slide_check(&self, walls_hit:IVec2, displacement:Vec2, position_data:[Option<(BlockType, UVec2, u32)>; 4]) -> IVec2 {
         let mut updated_walls = walls_hit;
+        //Formalize this by adding a zorder struct with all the zorder methods and some zorder arithmatic.
         let (x_slide_check, y_slide_check) = if displacement.x < 0. && displacement.y < 0. { //(-,-)
             (2, 1)
         } else if displacement.x < 0. && displacement.y > 0. { //(-,+)
@@ -139,43 +140,43 @@ impl Object {
     }
 
     //Add the option for no orientation, making my life difficult in exchange for functionality
-    fn next_boundary(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, orientation:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
+    //Add particle struct, containing position, velocity, orientation
+    fn next_boundary_in_tick(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, orientation:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
         let relevant_cell = velocity_to_zorder_direction(displacement, orientation);
-        let mut cur_position = position;
-        let mut rem_displacement = displacement;
-        let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)[if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}]?;
+        let (mut cur_position, mut rem_displacement) = (position, displacement);
+        let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)[
+            if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}
+        ]?;
         loop {
             let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
             if ticks_to_reach >= 1. { return None }
-            let delta = new_position - cur_position;
-            rem_displacement -= delta;
+            rem_displacement -= new_position - cur_position;
             cur_position = new_position;
             let data = self.get_data_at_position(graph, new_position, max_depth);
             let new_block_type;
             (new_block_type, grid_cell, cur_depth) = data[relevant_cell]?;
-            if ticks_to_reach == 0. && new_block_type == cur_block_type { continue }
+            if new_block_type == cur_block_type { continue }
             return match self.on_touch(new_block_type) {
-                OnTouch::Ignore => {
-                    Some((new_position, OnTouch::Ignore))
-                },
+                OnTouch::Ignore => Some((new_position, OnTouch::Ignore)),
                 OnTouch::Resist(_) => {
-                    if walls_hit.x == walls_hit.y {
-                        Some((new_position, OnTouch::Resist(self.slide_check(walls_hit, rem_displacement, data))))
-                    } else {
-                        Some((new_position, OnTouch::Resist(walls_hit)))
-                    }
+                    Some((new_position, OnTouch::Resist(
+                        if walls_hit.x == walls_hit.y {
+                            self.slide_check(walls_hit, rem_displacement, data)
+                        } else { walls_hit }
+                    )))
                 },
             }
         }
     }
     
+    //Also particle collisions. Maybe extract particle raymarching into the particle struct?
     fn all_collisions(&self, graph:&SparseDirectedGraph, position:Vec2, velocity:Vec2, max_depth:u32) -> (Vec2, Vec2) {
         let mut cur_position = position;
         let mut remaining_displacement = velocity;
         let mut end_velocity = velocity;
         let mut first = true;
         while remaining_displacement.length() != 0. {
-            match self.next_boundary(graph, cur_position, remaining_displacement, 0, max_depth, first) {
+            match self.next_boundary_in_tick(graph, cur_position, remaining_displacement, 1, max_depth, first) {
                 Some((new_position, action)) => {
                     remaining_displacement -= new_position - cur_position;
                     cur_position = new_position;
@@ -263,7 +264,7 @@ impl Scene {
             round_away_0_pref_pos(unrounded_cell.x),
             round_away_0_pref_pos(unrounded_cell.y)
         );
-        //Clean all this bs up and find a way to generalize it. Edgecases are the silent killer.
+        //Clean all this up and find a way to generalize it. Edgecases are the silent killer.
         if depth != 0 {
             let blocks_on_half = 2i32.pow(depth - 1);
             if edit_cell.abs().max_element() > blocks_on_half { return }
