@@ -143,10 +143,10 @@ pub struct Path2D {
 } 
 
 impl Path2D {
-    pub fn from(bit_path:usize, steps:usize) -> Self {
-        let mut directions:Vec<usize> = Vec::with_capacity(steps + 1);
-        for step in 0 ..= steps {
-            directions.push((bit_path >> (2 * (steps - step))) & 0b11);
+    pub fn from(bit_path:usize, depth:usize) -> Self {
+        let mut directions:Vec<usize> = Vec::with_capacity(depth);
+        for layer in 1 ..= depth {
+            directions.push(bit_path >> (2 * (depth - layer)) & 0b11);
         }
         Self { directions }
     }
@@ -185,17 +185,17 @@ impl SparseDirectedGraph {
     }
 
     //Add cyclicity here
-    fn get_trail(&self, root:NodePointer, path:&Path2D) -> Result< Vec<NodePointer> , AccessError> {
+    fn get_trail(&self, root:NodePointer, path:&Path2D) -> Vec<NodePointer>  {
         let mut trail = vec![root];
-        for step in 0 .. path.directions.len() - 1 {
+        for step in 0 .. path.directions.len() {
             let parent = trail[step];
             match self.child(parent, path.directions[step]) {
                 Ok( child ) if child != parent => trail.push(child),
                 Ok(_) => break,
-                Err(error) => return Err( error )
+                Err(error) => panic!("Trail encountered a fatal error, {error:?}")
             };
         }
-        Ok( trail )
+        trail 
     }
 
 
@@ -250,44 +250,35 @@ impl SparseDirectedGraph {
 
     //Public functions used for writing
     //Add cyclicity here.
-    pub fn set_node_child(&mut self, root:NodePointer, path:&Path2D, new_child:NodePointer) -> Result<NodePointer, AccessError> {
-        let trail = self.get_trail(root, path)?;
-        let mut cur_child = new_child;
-        let steps = path.directions.len() - 1;
-        for step in 0 ..= steps {
-            let parent = if steps - step < trail.len() {
-                trail[steps - step]
-            } else {
-                trail[trail.len() - 1]
-            };
+    pub fn set_node(&mut self, root:NodePointer, path:&Path2D, new_node:NodePointer) -> Result<NodePointer, AccessError> {
+        let trail = self.get_trail(root, path);
+        let mut cur_node = new_node;
+        let depth = path.directions.len();
+        for layer in 1 ..= depth {
+            let cur_depth = depth - layer;
+            let parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
             let (new_node, new_mask) =  {
                 self.node(parent.index)?.with_different_child(
                     parent.mask, 
-                    path.directions[steps - step], 
-                    cur_child
+                    path.directions[cur_depth], 
+                    cur_node
                 )
             };
-            dbg!(&new_node);
-            cur_child.index = self.add_node(new_node, false);
-            cur_child.mask = new_mask;
+            cur_node.index = self.add_node(new_node, false);
+            cur_node.mask = new_mask;
         }
-        if let Err( error ) = self.nodes.add_owner(cur_child.index) { dbg!(error); }
+        if let Err( error ) = self.nodes.add_owner(cur_node.index) { dbg!(error); }
         self.dec_owners(root.index);
-        Ok ( cur_child )
+        Ok ( cur_node )
     }
 
 
     //Public functions used for reading
-    pub fn read_destination(&self, root:NodePointer, path:&Path2D) -> Result<(NodePointer, u32), AccessError> {
-        let trail = self.get_trail(root, path)?;
-        match trail.last() {
-            Some(node_pointer) => {
-                let child = self.child(*node_pointer, path.directions[trail.len() - 1])?;
-                Ok( (child, (trail.len() - 1) as u32) )
-            },  
-            //Can't read from the end of a trail if the trail is empty
-            None => Err( AccessError::InvalidRequest )
-        }
+    pub fn read(&self, root:NodePointer, path:&Path2D) -> (NodePointer, u32) {
+        let trail = self.get_trail(root, path);
+        if let Some(node_pointer) = trail.last() {
+            (*node_pointer, trail.len() as u32 - 1)
+        } else { panic!("Trail is broken again") }
     }
 
     //Add cyclicity here.

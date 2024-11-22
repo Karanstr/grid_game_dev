@@ -80,22 +80,9 @@ impl Object {
     //Add a class for this return and slide_check's input?
     fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
         let bit_path = zorder_from_cell(cell, max_depth);
-            match graph.read_destination(self.root, &Path2D::from(bit_path, max_depth as usize)) {
-                Ok((cell_pointer, real_depth)) => {
-                    dbg!(real_depth);
-                    let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
-                    (cell_pointer, zorder_to_cell(zorder, real_depth), real_depth)
-                },
-                Err(error) => panic!("{error:?}")
-            }
-    }
-
-    fn on_touch(&self, block:BlockType) -> OnTouch {
-        match block {
-            BlockType::Air => OnTouch::Ignore,
-            BlockType::Ground => OnTouch::Resist(IVec2::ZERO),
-            _ => OnTouch::Ignore,
-        }
+        let (cell_pointer, real_depth) = graph.read(self.root, &Path2D::from(bit_path, max_depth as usize));
+        let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
+        (cell_pointer, zorder_to_cell(zorder, real_depth), real_depth)
     }
 
     fn block_type(&self, index:Index) -> BlockType {
@@ -103,6 +90,13 @@ impl Object {
             0 => BlockType::Air,
             1 => BlockType::Ground,
             _ => BlockType::Air,
+        }
+    }
+
+    fn on_touch(&self, block:BlockType) -> OnTouch {
+        match block {
+            BlockType::Air => OnTouch::Ignore,
+            BlockType::Ground => OnTouch::Resist(IVec2::ZERO),
         }
     }
 
@@ -269,11 +263,16 @@ impl Scene {
             round_away_0_pref_pos(unrounded_cell.x),
             round_away_0_pref_pos(unrounded_cell.y)
         );
-        let blocks_on_half = 2i32.pow(depth);
-        if edit_cell.abs().max_element() > blocks_on_half { return }
-        edit_cell += blocks_on_half;
-        if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
-        if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }
+        //Clean all this bs up and find a way to generalize it. Edgecases are the silent killer.
+        if depth != 0 {
+            let blocks_on_half = 2i32.pow(depth - 1);
+            if edit_cell.abs().max_element() > blocks_on_half { return }
+            edit_cell += blocks_on_half;
+            if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
+            if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }    
+        } else {
+            edit_cell = IVec2::ZERO
+        }
         let bit_path = zorder_from_cell(edit_cell.as_uvec2(), depth);
         let path = Path2D::from(bit_path, depth as usize);
 
@@ -285,12 +284,10 @@ impl Scene {
 
         let new_child = NodePointer::new(child_index, 0b0000);
 
-        if let Ok(root) = self.graph.set_node_child(modified.root, &path, new_child) {
+        if let Ok(root) = self.graph.set_node(modified.root, &path, new_child) {
             modified.root = root
         };
     }
-
-
 
 }
 
@@ -318,9 +315,9 @@ fn zorder_to_cell(mut zorder:u32, depth:u32) -> UVec2 {
     UVec2::new(x, y)
 }
 
-fn zorder_from_cell(grid_cell:UVec2, root_layer:u32) -> usize {
+fn zorder_from_cell(grid_cell:UVec2, depth:u32) -> usize {
     let mut cell = 0;
-    for layer in (0 ..= root_layer).rev() {
+    for layer in (0 .. depth).rev() {
         let step = (((grid_cell.y >> layer) & 0b1) << 1 ) | ((grid_cell.x >> layer) & 0b1);
         cell = (cell << 2) | step;
     }

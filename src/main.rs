@@ -18,7 +18,6 @@ async fn main() {
     let torque = 0.05;
     let mut operation_depth = 0;
     let mut cur_color = MAROON;
-
     loop {
 
         if is_key_pressed(KeyCode::P) {
