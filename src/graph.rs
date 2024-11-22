@@ -135,25 +135,6 @@ mod node_stuff {
 
 }
 
-
-
-#[derive(Debug)]
-pub struct Path2D {
-    directions : Vec<usize>
-} 
-
-impl Path2D {
-    pub fn from(bit_path:usize, depth:usize) -> Self {
-        let mut directions:Vec<usize> = Vec::with_capacity(depth);
-        for layer in 1 ..= depth {
-            directions.push(bit_path >> (2 * (depth - layer)) & 0b11);
-        }
-        Self { directions }
-    }
-}
-
-
-
 pub use node_stuff::{NodeHandler, Leaf, NodePointer};
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
@@ -185,11 +166,11 @@ impl SparseDirectedGraph {
     }
 
     //Add cyclicity here
-    fn get_trail(&self, root:NodePointer, path:&Path2D) -> Vec<NodePointer>  {
+    fn get_trail(&self, root:NodePointer, path:&Vec<u32>) -> Vec<NodePointer>  {
         let mut trail = vec![root];
-        for step in 0 .. path.directions.len() {
+        for step in 0 .. path.len() {
             let parent = trail[step];
-            match self.child(parent, path.directions[step]) {
+            match self.child(parent, path[step] as usize) {
                 Ok( child ) if child != parent => trail.push(child),
                 Ok(_) => break,
                 Err(error) => panic!("Trail encountered a fatal error, {error:?}")
@@ -250,17 +231,17 @@ impl SparseDirectedGraph {
 
     //Public functions used for writing
     //Add cyclicity here.
-    pub fn set_node(&mut self, root:NodePointer, path:&Path2D, new_node:NodePointer) -> Result<NodePointer, AccessError> {
+    pub fn set_node(&mut self, root:NodePointer, path:&Vec<u32>, new_node:NodePointer) -> Result<NodePointer, AccessError> {
         let trail = self.get_trail(root, path);
         let mut cur_node = new_node;
-        let depth = path.directions.len();
+        let depth = path.len();
         for layer in 1 ..= depth {
             let cur_depth = depth - layer;
             let parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
             let (new_node, new_mask) =  {
                 self.node(parent.index)?.with_different_child(
                     parent.mask, 
-                    path.directions[cur_depth], 
+                    path[cur_depth] as usize, 
                     cur_node
                 )
             };
@@ -274,7 +255,7 @@ impl SparseDirectedGraph {
 
 
     //Public functions used for reading
-    pub fn read(&self, root:NodePointer, path:&Path2D) -> (NodePointer, u32) {
+    pub fn read(&self, root:NodePointer, path:&Vec<u32>) -> (NodePointer, u32) {
         let trail = self.get_trail(root, path);
         if let Some(node_pointer) = trail.last() {
             (*node_pointer, trail.len() as u32 - 1)

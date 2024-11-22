@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use macroquad::prelude::*;
 
-use crate::graph::{Index, NodePointer, Path2D, SparseDirectedGraph};
+use crate::graph::{Index, NodePointer, SparseDirectedGraph};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum OnTouch {
@@ -79,10 +79,10 @@ impl Object {
 
     //Add a class for this return and slide_check's input?
     fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
-        let bit_path = zorder_from_cell(cell, max_depth);
-        let (cell_pointer, real_depth) = graph.read(self.root, &Path2D::from(bit_path, max_depth as usize));
-        let zorder = bit_path as u32 >> 2 * (max_depth - real_depth);
-        (cell_pointer, zorder_to_cell(zorder, real_depth), real_depth)
+        let max_zorder = Zorder::from_cell(cell, max_depth);
+        let (cell_pointer, real_depth) = graph.read(self.root, &Zorder::path(max_zorder, max_depth));
+        let zorder = max_zorder >> 2 * (max_depth - real_depth);
+        (cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
     }
 
     fn block_type(&self, index:Index) -> BlockType {
@@ -140,12 +140,12 @@ impl Object {
     }
 
     //Add the option for no orientation, making my life difficult in exchange for functionality
-    //Add particle struct, containing position, velocity, orientation
-    fn next_boundary_in_tick(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, orientation:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
-        let relevant_cell = velocity_to_zorder_direction(displacement, orientation);
+    //Add particle struct, containing position, velocity, configuration
+    fn next_boundary_in_tick(&self, graph:&SparseDirectedGraph, position:Vec2, displacement:Vec2, configuration:u8, max_depth:u32, first:bool) -> Option<(Vec2, OnTouch)> {
+        let relevant_cell = Zorder::from_configured_direction(displacement, configuration);
         let (mut cur_position, mut rem_displacement) = (position, displacement);
         let (cur_block_type, mut grid_cell, mut cur_depth) = self.get_data_at_position(graph, position, max_depth)[
-            if first { velocity_to_zorder_direction(-displacement, orientation) } else {relevant_cell}
+            if first { Zorder::from_configured_direction(-displacement, configuration) } else {relevant_cell}
         ]?;
         loop {
             let (new_position, ticks_to_reach, walls_hit) = self.next_intersection(grid_cell, cur_depth, cur_position, rem_displacement);
@@ -169,7 +169,7 @@ impl Object {
         }
     }
     
-    //Also particle collisions. Maybe extract particle raymarching into the particle struct?
+    //Maybe extract particle raymarching into the particle struct?
     fn all_collisions(&self, graph:&SparseDirectedGraph, position:Vec2, velocity:Vec2, max_depth:u32) -> (Vec2, Vec2) {
         let mut cur_position = position;
         let mut remaining_displacement = velocity;
@@ -233,7 +233,7 @@ impl Scene {
         let filled_blocks = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in filled_blocks {
             let cell_length = object.cell_length(depth);
-            let grid_cell = zorder_to_cell(zorder, depth);
+            let grid_cell = Zorder::to_cell(zorder, depth);
             let offset = grid_cell.as_vec2() * cell_length + object.position - object.grid_length/2.;
             let color = if *index == 0 { BLACK } else if *index == 1 { MAROON } else { WHITE };
             draw_square(offset, cell_length, color);
@@ -274,8 +274,8 @@ impl Scene {
         } else {
             edit_cell = IVec2::ZERO
         }
-        let bit_path = zorder_from_cell(edit_cell.as_uvec2(), depth);
-        let path = Path2D::from(bit_path, depth as usize);
+
+        let path = Zorder::path( Zorder::from_cell(edit_cell.as_uvec2(), depth), depth );
 
         let child_index = Index( match color {
             MAROON => 1,
@@ -292,20 +292,12 @@ impl Scene {
 
 }
 
-//Don't call if velocity.length() == 0
-fn velocity_to_zorder_direction(velocity:Vec2, orientation:u8) -> usize {
-    let clamped = velocity.signum().clamp(Vec2::ZERO, Vec2::ONE);
-    if velocity.x == 0. {
-        2 * clamped.y as usize | if orientation == 0 || orientation == 2 { 1 } else { 0 }
-    } else if velocity.y == 0. {
-        clamped.x as usize | if orientation == 0 || orientation == 1 { 2 } else { 0 }
-    } else {
-        2 * clamped.y as usize | clamped.x as usize
-    }
-}
+//Move into utils or something?
+//Can only handle up to depth 16 for now without overflowing
+pub struct Zorder;
+impl Zorder {
 
-//Will overflow if our z-order goes 16 layers deep. So.. don't do that
-fn zorder_to_cell(mut zorder:u32, depth:u32) -> UVec2 {
+    pub fn to_cell(mut zorder:u32, depth:u32) -> UVec2 {
     let (mut x, mut y) = (0, 0);
     for layer in 0 .. depth {
         x |= (zorder & 0b1) << layer;
@@ -314,16 +306,52 @@ fn zorder_to_cell(mut zorder:u32, depth:u32) -> UVec2 {
         zorder >>= 1;
     }
     UVec2::new(x, y)
+    }
+
+    pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
+        let mut zorder = 0;
+        for layer in (0 .. depth).rev() {
+            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
+            zorder = (zorder << 2) | step;
+        }
+        zorder
+    }
+
+    //Don't call if direction.length() == 0
+    pub fn from_configured_direction(direction:Vec2, configuration:u8) -> usize {
+        let clamped: Vec2 = direction.signum().clamp(Vec2::ZERO, Vec2::ONE);
+        if direction.x == 0. {
+            2 * clamped.y as usize | if configuration == 0 || configuration == 2 { 1 } else { 0 }
+        } else if direction.y == 0. {
+            clamped.x as usize | if configuration == 0 || configuration == 1 { 2 } else { 0 }
+        } else {
+            2 * clamped.y as usize | clamped.x as usize
+        }
+    }
+
+    pub fn read(zorder:u32, layer:u32, depth:u32) -> u32 {
+        zorder >> (2 * (depth - layer)) & 0b11
+    }
+
+    pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> u32 {
+        for layer in 1 ..= depth {
+            if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
+                return layer
+            }
+        }
+        0
+    }
+
+    pub fn path(zorder:u32, depth:u32) -> Vec<u32> {
+        let mut steps:Vec<u32> = Vec::with_capacity(depth as usize);
+        for layer in 1 ..= depth {
+            steps.push(Self::read(zorder, layer, depth));
+        }
+        steps
+    }
+
 }
 
-fn zorder_from_cell(grid_cell:UVec2, depth:u32) -> usize {
-    let mut cell = 0;
-    for layer in (0 .. depth).rev() {
-        let step = (((grid_cell.y >> layer) & 0b1) << 1 ) | ((grid_cell.x >> layer) & 0b1);
-        cell = (cell << 2) | step;
-    }
-    cell as usize
-}
 
 fn round_away_0_pref_pos(number:f32) -> i32 {
     if number < 0. {
