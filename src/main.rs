@@ -30,6 +30,7 @@ async fn main() {
             }
         }
 
+        //Wow this is ugly, abstract this stuff away into a proper input handler?
         if is_key_pressed(KeyCode::Key1) {
             operation_depth = 1;
         } else if is_key_pressed(KeyCode::Key2) {
@@ -46,6 +47,10 @@ async fn main() {
             operation_depth = 7;
         } else if is_key_pressed(KeyCode::Key8) {
             operation_depth = 8;
+        } else if is_key_pressed(KeyCode::Key9) {
+            operation_depth = 9;
+        } else if is_key_pressed(KeyCode::Key0) {
+            operation_depth = 0;
         }
 
         if is_key_down(KeyCode::A) {
