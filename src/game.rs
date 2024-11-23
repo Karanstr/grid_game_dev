@@ -1,122 +1,19 @@
 use std::f32::consts::PI;
 use macroquad::prelude::*;
-
 use crate::graph::{Index, NodePointer, SparseDirectedGraph};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum OnTouch {
-    Ignore,
-    Resist(IVec2),
-    //...
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum BlockType {
-    Air,
-    Ground,
-    //...
-}
-
-#[derive(Debug)]
-struct Particle {
-    position : Vec2,
-    velocity : Vec2,
-    configuration : u8,
-}
-
-impl Particle {
-
-    fn slide_check(&self, object:&Object, mut walls_hit:IVec2, position_data:[Option<(BlockType, UVec2, u32)>; 4]) -> IVec2 {
-        //Formalize this with some zorder arithmatic.
-        let (x_slide_check, y_slide_check) = if self.velocity.x < 0. && self.velocity.y < 0. { //(-,-)
-            (2, 1)
-        } else if self.velocity.x < 0. && self.velocity.y > 0. { //(-,+)
-            (0, 3)
-        } else if self.velocity.x > 0. && self.velocity.y < 0. { //(+,-)
-            (3, 0)
-        } else { //(+,+)
-            (1, 2)
-        };
-        let x_block_collision = match position_data[x_slide_check] {
-            Some((block, ..)) => object.on_touch(block),
-            None => OnTouch::Resist(IVec2::ZERO)
-        };
-        let y_block_collision = match position_data[y_slide_check] {
-            Some((block, ..)) => object.on_touch(block),
-            None => OnTouch::Resist(IVec2::ZERO)
-        };
-        if x_block_collision != y_block_collision {
-            if let OnTouch::Resist(_) = x_block_collision { walls_hit.x = 0 }
-            if let OnTouch::Resist(_) = y_block_collision { walls_hit.y = 0 }
-        }
-        walls_hit
-    }
-
-    fn next_boundary_in_tick(&mut self, object:&Object, graph:&SparseDirectedGraph, max_depth:u32, first:bool) -> Option<OnTouch> {
-        let relevant_cell = Zorder::from_configured_direction(self.velocity, self.configuration);
-        let (cur_block_type, mut grid_cell, mut cur_depth) = object.get_data_at_position(graph, self.position, max_depth)[
-            if first { Zorder::from_configured_direction(-self.velocity, self.configuration) } else {relevant_cell}
-        ]?;
-        loop {
-            let (new_position, ticks_to_reach, walls_hit) = object.next_intersection(grid_cell, cur_depth, self.position, self.velocity);
-            dbg!(new_position);
-            if ticks_to_reach >= 1. { return None }
-            self.velocity -= new_position - self.position;
-            self.position = new_position;
-            let data = object.get_data_at_position(graph, self.position, max_depth);
-            let new_block_type;
-            (new_block_type, grid_cell, cur_depth) = data[relevant_cell]?;
-            if new_block_type == cur_block_type { continue }
-            return match object.on_touch(new_block_type) {
-                OnTouch::Ignore => Some(OnTouch::Ignore),
-                OnTouch::Resist(_) => {
-                    Some(OnTouch::Resist(
-                        if walls_hit.x == walls_hit.y {
-                            self.slide_check(object, walls_hit, data)
-                        } else { walls_hit }
-                    ))
-                },
-            }
-        }
-    }
-
-    fn march_through(&mut self, object:&Object, graph:&SparseDirectedGraph, max_depth:u32) {
-        let mut velocity = self.velocity;
-        let mut first = true;
-        while self.velocity.length() != 0. {
-            match self.next_boundary_in_tick(object, graph, max_depth, first) {
-                Some(action) => {
-                    match action {
-                        OnTouch::Ignore => first = false,
-                        OnTouch::Resist(walls_hit) => {
-                            first = true;
-                            if walls_hit.x == 1 {
-                                self.velocity.x = 0.;
-                                velocity.x = 0.;
-                            }
-                            if walls_hit.y == 1 {
-                                self.velocity.y = 0.;
-                                velocity.y = 0.;
-                            }
-                        }
-                    }
-                },
-                None => break
-            }
-        }
-        self.position += self.velocity;
-        self.velocity = velocity;
-    }
-
-}
+//Clean up this import stuff
+mod physics;
+use physics::*;
 
 pub struct Object {
     root : NodePointer,
     position : Vec2,
+    grid_length : f32,
     velocity : Vec2,
     rotation : f32, // >:( iykyk
     angular_velocity : f32,
-    grid_length : f32,
+
 }
 
 impl Object {
@@ -125,10 +22,10 @@ impl Object {
         Self {
             root,
             position,
+            grid_length,
             velocity : Vec2::ZERO,
             rotation : 0.0,
             angular_velocity : 0.,
-            grid_length,
         }
     }
 
@@ -136,6 +33,7 @@ impl Object {
         self.grid_length / 2f32.powf(depth as f32)
     }
 
+    //Change to relative position?
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let half_length = self.grid_length/2.;
@@ -156,21 +54,7 @@ impl Object {
         four_points
     }
 
-    fn next_intersection(&self, cell:UVec2, depth:u32, position:Vec2, velocity:Vec2) -> (Vec2, f32, IVec2) {
-        let cell_length = self.cell_length(depth);
-        let quadrant = (velocity.signum() + 0.5).abs().floor();
-        let corner = cell.as_vec2() * cell_length + cell_length * quadrant + self.position - self.grid_length/2.;
-        let ticks = (corner - position) / velocity;
-        let ticks_to_first_hit = ticks.min_element();
-        let walls_hit = if ticks.y < ticks.x {
-            IVec2::new(0, 1)
-        } else if ticks.x < ticks.y {
-            IVec2::new(1, 0)
-        } else { IVec2::ONE };
-        (position + velocity * ticks_to_first_hit, ticks_to_first_hit, walls_hit)
-    }
-
-    //Add a class for this return and slide_check's input?
+    //Add a struct for this return and slide_check's input?
     fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
         let max_zorder = Zorder::from_cell(cell, max_depth);
         let (cell_pointer, real_depth) = graph.read(self.root, &Zorder::path(max_zorder, max_depth));
@@ -178,6 +62,7 @@ impl Object {
         (cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
     }
 
+    //Instead of hardcoding this extract it into a struct containing a list of blocks once we've divided cell_data and geometry in the graph
     fn block_type(&self, index:Index) -> BlockType {
         match *index {
             0 => BlockType::Air,
@@ -193,6 +78,7 @@ impl Object {
         }
     }
 
+    //Change to relative position?
     fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(BlockType, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
         let mut data: [Option<(BlockType, UVec2, u32)>; 4] = [None; 4];
@@ -205,6 +91,7 @@ impl Object {
         data
     }
  
+
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force * Vec2::new(self.rotation.cos(), self.rotation.sin());
     }
@@ -221,6 +108,7 @@ impl Object {
 
 use vec_friendly_drawing::*;
 
+//Give scene ownership of all objects within it (ECS)
 pub struct Scene {
     pub graph : SparseDirectedGraph,
 }
@@ -247,11 +135,7 @@ impl Scene {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object) {
         if moving.velocity.length() != 0. {
-            let mut particle_approximation = Particle {
-                position : moving.position,
-                velocity : moving.velocity,
-                configuration : 0
-            };
+            let mut particle_approximation = Particle::new(moving.position, moving.velocity, 0);
             particle_approximation.march_through(hitting, &self.graph, 5);
             (moving.position, moving.velocity) = (particle_approximation.position, particle_approximation.velocity);
             let drag = 0.99;
