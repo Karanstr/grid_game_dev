@@ -10,24 +10,20 @@ use game::*;
 async fn main() {  
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x, size.y);
-    let mut scene = Scene::new();    
-    let mut world = Object::new(scene.graph.get_root(), Vec2::new(size.x/2., size.y/2.), size.x);
-    let mut player = Object::new(scene.graph.get_root(), Vec2::new(size.x/2., size.y/2.), 10.);
+    let mut world = World::new();    
+    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
+    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 10.);
 
     let speed = 0.1;
     let torque = 0.05;
     let mut operation_depth = 0;
-    let mut cur_color = MAROON;
+    let mut cur_block_index = 0;
     loop {
 
         if is_key_pressed(KeyCode::P) {
-            scene.graph.profile();
+            world.graph.profile();
         } else if is_key_pressed(KeyCode::V) {
-            cur_color = match cur_color {
-                BLACK => MAROON,
-                MAROON => BLACK,
-                _ => WHITE
-            }
+            cur_block_index = (cur_block_index + 1) % 5
         }
 
         //Wow this is ugly, abstract this stuff away into a proper input handler?
@@ -68,13 +64,13 @@ async fn main() {
 
         
         if is_mouse_button_down(MouseButton::Left) {
-            scene.set_cell_with_mouse(&mut world, Vec2::from(mouse_position()), operation_depth, cur_color);
+            world.set_cell_with_mouse(&mut fixed, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index));
         }
        
-        scene.render(&world, true);
-        scene.render(&player, true);
+        world.render(&fixed, true);
+        world.render(&player, true);
         player.draw_facing();
-        scene.move_with_collisions(&mut player, &world);
+        world.move_with_collisions(&mut player, &fixed);
         next_frame().await
     }
 

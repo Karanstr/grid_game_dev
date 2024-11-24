@@ -1,10 +1,11 @@
 use std::f32::consts::PI;
 use macroquad::prelude::*;
-use crate::graph::{Index, NodePointer, SparseDirectedGraph};
-
+use crate::graph::{NodePointer, SparseDirectedGraph};
+pub use crate::graph::Index;
 //Clean up this import stuff
 mod physics;
 use physics::*;
+
 
 pub struct Object {
     root : NodePointer,
@@ -55,37 +56,21 @@ impl Object {
     }
 
     //Add a struct for this return and slide_check's input?
-    fn find_real_node(&self, graph:&SparseDirectedGraph, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
+    fn find_real_node(&self, world:&World, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
         let max_zorder = Zorder::from_cell(cell, max_depth);
-        let (cell_pointer, real_depth) = graph.read(self.root, &Zorder::path(max_zorder, max_depth));
+        let (cell_pointer, real_depth) = world.graph.read(self.root, &Zorder::path(max_zorder, max_depth));
         let zorder = max_zorder >> 2 * (max_depth - real_depth);
         (cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
     }
 
-    //Instead of hardcoding this extract it into a struct containing a list of blocks once we've divided cell_data and geometry in the graph
-    fn block_type(&self, index:Index) -> BlockType {
-        match *index {
-            0 => BlockType::Air,
-            1 => BlockType::Ground,
-            _ => BlockType::Air,
-        }
-    }
-
-    fn on_touch(&self, block:BlockType) -> OnTouch {
-        match block {
-            BlockType::Air => OnTouch::Ignore,
-            BlockType::Ground => OnTouch::Resist(IVec2::ZERO),
-        }
-    }
-
     //Change to relative position?
-    fn get_data_at_position(&self, graph:&SparseDirectedGraph, position:Vec2, max_depth:u32) -> [Option<(BlockType, UVec2, u32)>; 4] {
+    fn get_data_at_position(&self, world:&World, position:Vec2, max_depth:u32) -> [Option<(Index, UVec2, u32)>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
-        let mut data: [Option<(BlockType, UVec2, u32)>; 4] = [None; 4];
+        let mut data: [Option<(Index, UVec2, u32)>; 4] = [None; 4];
         for i in 0 .. 4 {
             if let Some(grid_cell) = max_depth_cells[i] {
-                let (node, real_cell, depth) = self.find_real_node(graph, grid_cell, max_depth);
-                data[i] = Some((self.block_type(node.index), real_cell, depth))
+                let (node, real_cell, depth) = self.find_real_node(world, grid_cell, max_depth);
+                data[i] = Some((node.index, real_cell, depth))
             }
         }
         data
@@ -108,16 +93,17 @@ impl Object {
 
 use vec_friendly_drawing::*;
 
-//Give scene ownership of all objects within it (ECS)
-pub struct Scene {
+pub struct World {
+    pub blocks : BlockPallete,
     pub graph : SparseDirectedGraph,
 }
 
-impl Scene {
+impl World {
 
     pub fn new() -> Self {
         Self {
-            graph : SparseDirectedGraph::new(),
+            blocks : BlockPallete::new(),
+            graph : SparseDirectedGraph::new(8),
         }
     }
 
@@ -127,8 +113,7 @@ impl Scene {
             let cell_length = object.cell_length(depth);
             let grid_cell = Zorder::to_cell(zorder, depth);
             let offset = grid_cell.as_vec2() * cell_length + object.position - object.grid_length/2.;
-            let color = if *index == 0 { BLACK } else if *index == 1 { MAROON } else { WHITE };
-            draw_square(offset, cell_length, color);
+            draw_square(offset, cell_length, self.blocks.blocks[*index].color);
             if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
         }
     }
@@ -136,7 +121,7 @@ impl Scene {
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object) {
         if moving.velocity.length() != 0. {
             let mut particle_approximation = Particle::new(moving.position, moving.velocity, 0);
-            particle_approximation.march_through(hitting, &self.graph, 5);
+            particle_approximation.march_through(hitting, &self, 5);
             (moving.position, moving.velocity) = (particle_approximation.position, particle_approximation.velocity);
             let drag = 0.99;
             moving.velocity *= drag;
@@ -149,16 +134,15 @@ impl Scene {
         moving.angular_velocity = 0.;
     }
 
-    pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, color:Color) {
+    pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
         let block_size = modified.cell_length(depth);
-
         let rel_mouse_pos = mouse_pos - modified.position;
         let unrounded_cell = rel_mouse_pos / block_size;
         let mut edit_cell = IVec2::new(
             round_away_0_pref_pos(unrounded_cell.x),
             round_away_0_pref_pos(unrounded_cell.y)
         );
-        //Clean all this up and find a way to generalize it. Edgecases are the silent killer.
+        //Clean all this up and find a way to generalize it. Edgecases are the mean.
         if depth != 0 {
             let blocks_on_half = 2i32.pow(depth - 1);
             if edit_cell.abs().max_element() > blocks_on_half { return }
@@ -171,34 +155,27 @@ impl Scene {
 
         let path = Zorder::path( Zorder::from_cell(edit_cell.as_uvec2(), depth), depth );
 
-        let child_index = Index( match color {
-            MAROON => 1,
-            BLACK => 0,
-            _ => 0
-        } );
-
-        let new_child = NodePointer::new(child_index, 0b0000);
-
-        if let Ok(root) = self.graph.set_node(modified.root, &path, new_child) {
+        if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
             modified.root = root
         } else { error!("Failed to modify cell. Likely means structure is corrupted.") };
     }
 
 }
 
-//Can only handle up to depth 16 for now without overflowing
+
+//Convert to trait of u32?
 pub struct Zorder;
 impl Zorder {
 
     pub fn to_cell(mut zorder:u32, depth:u32) -> UVec2 {
-    let (mut x, mut y) = (0, 0);
-    for layer in 0 .. depth {
-        x |= (zorder & 0b1) << layer;
-        zorder >>= 1;
-        y |= (zorder & 0b1) << layer;
-        zorder >>= 1;
-    }
-    UVec2::new(x, y)
+        let (mut x, mut y) = (0, 0);
+        for layer in 0 .. depth {
+            x |= (zorder & 0b1) << layer;
+            zorder >>= 1;
+            y |= (zorder & 0b1) << layer;
+            zorder >>= 1;
+        }
+        UVec2::new(x, y)
     }
 
     pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
@@ -244,7 +221,6 @@ impl Zorder {
     }
 
 }
-
 
 fn round_away_0_pref_pos(number:f32) -> i32 {
     if number < 0. {

@@ -11,14 +11,11 @@ mod node_stuff {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct NodePointer { 
         pub index : Index,
-        //Two bits per child
-        pub freq_mask : u8,
     }
     impl NodePointer {
-        pub fn new(index:Index, freq_mask:u8) -> Self {
+        pub fn new(index:Index) -> Self {
             Self {
                 index, 
-                freq_mask
             }
         }
     }
@@ -135,26 +132,27 @@ pub use node_stuff::{NodeHandler, NodePointer};
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
     index_lookup : HashMap<NodeHandler, Index>,
+    pub leaf_count : u8, 
 }
 
 impl SparseDirectedGraph {
 
-    pub fn new() -> Self {
-        let leaf = NodeHandler{
-            children : [NodePointer::new(Index(0), 0); 4]
-        };
-        let solid = NodeHandler {
-            children : [NodePointer::new(Index(1), 0); 4]
-        };
+    pub fn new(leaf_count:u8) -> Self {
         let mut instance = Self {
             nodes : MemHeap::new(),
             index_lookup : HashMap::new(),
+            leaf_count
         };
-        instance.add_node(leaf, true);
-        instance.add_node(solid, true);
+        for i in 0 .. leaf_count {
+            instance.add_node(
+                NodeHandler{
+                    children : [NodePointer::new(Index(i as usize)); 4]
+                }, 
+                true
+            );
+        }
         instance
     }
-
 
     //Private functions used for reading
     fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
@@ -196,7 +194,7 @@ impl SparseDirectedGraph {
                     }
                     self.index_lookup.remove(&node);
                 },
-                Ok(None) => (),
+                Ok(None) | Err(AccessError::ProtectedMemory(_)) => (),
                 Err( error ) => {
                     dbg!(error);
                 }
@@ -213,9 +211,11 @@ impl SparseDirectedGraph {
                 self.index_lookup.insert(node_dup, index);
                 let children = self.node(index).unwrap().children;
                 for child in children {
-                    match self.nodes.add_owner(child.index) {
-                        Ok(_) => (),
-                        Err( error ) => { dbg!(error); }
+                    if child.index != index {
+                        match self.nodes.add_owner(child.index) {
+                            Ok(_) => (),
+                            Err( error ) => { dbg!(error); }
+                        }
                     }
                 }
                 index
@@ -232,13 +232,12 @@ impl SparseDirectedGraph {
         for layer in 1 ..= depth {
             let cur_depth = depth - layer;
             let parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
-            let (parent_node_pointer, new_freq_mask) =  {
+            let parent_node_pointer =  {
                 let mut new_parent = self.node(parent.index)?.clone();
                 new_parent.children[path[cur_depth] as usize] = cur_node_pointer;
-                (new_parent, 0b0000)
+                new_parent
             };
             cur_node_pointer.index = self.add_node(parent_node_pointer, false);
-            cur_node_pointer.freq_mask = new_freq_mask;
         }
         if let Err( error ) = self.nodes.add_owner(cur_node_pointer.index) { dbg!(error); }
         self.dec_owners(root.index);
@@ -284,10 +283,9 @@ impl SparseDirectedGraph {
     }
 
     //Public functions used for root manipulation
-    pub fn get_root(&self) -> NodePointer {
+    pub fn get_root(&self, index:usize) -> NodePointer {
         NodePointer {
-            index : Index(0),
-            freq_mask : 0b0000,
+            index : Index(index),
         }
     }
 
@@ -324,7 +322,7 @@ impl SparseDirectedGraph {
         }
 
         println!("There are {} nodes within the tree, consisting of:", reserved_memory);
-        println!("{} dangling nodes and {} free slots", dangling - 1, free_memory);
+        println!("{} dangling nodes and {} free slots", dangling - self.leaf_count, free_memory);
 
     }
 
