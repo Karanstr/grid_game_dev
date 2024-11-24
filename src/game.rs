@@ -6,8 +6,13 @@ pub use crate::graph::Index;
 mod physics;
 use physics::*;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Events {
+    Wet,
+}
 
 pub struct Object {
+    name : String,
     root : NodePointer,
     position : Vec2,
     grid_length : f32,
@@ -19,8 +24,9 @@ pub struct Object {
 
 impl Object {
 
-    pub fn new(root:NodePointer, position:Vec2, grid_length:f32) -> Self {
+    pub fn new(name:String, root:NodePointer, position:Vec2, grid_length:f32) -> Self {
         Self {
+            name,
             root,
             position,
             grid_length,
@@ -158,6 +164,12 @@ impl World {
         if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
             modified.root = root
         } else { error!("Failed to modify cell. Likely means structure is corrupted.") };
+    }
+
+    pub fn notify(&self, object:&Object, event:Events) {
+        match event {
+            Events::Wet => println!("Something is swimming in {}", object.name)
+        }
     }
 
 }

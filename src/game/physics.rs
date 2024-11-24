@@ -1,12 +1,12 @@
 use macroquad::prelude::*;
-//Clean up this import stuff
-use crate::game::*;
+use super::*;
 
+//Split up collision types from notifications
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OnTouch {
     Ignore,
     Resist(IVec2),
-    // ModifySpeed(f32) //Once I get drag working right this comes back.
+    NotifyWorld( Events )
     //...
 }
 
@@ -47,7 +47,7 @@ impl BlockPallete {
                 Block {
                     name : "Water".to_owned(),
                     index : Index(3),
-                    collision : OnTouch::Ignore,
+                    collision : OnTouch::NotifyWorld(Events::Wet),
                     color : BLUE
                 },
                 Block {
@@ -136,16 +136,17 @@ impl Particle {
             let new_block_index;
             (new_block_index, grid_cell, cur_depth) = data[relevant_cell]?;
             if new_block_index == cur_block_index { continue }
-            return match world.blocks.blocks[*new_block_index].collision {
-                OnTouch::Ignore => Some(OnTouch::Ignore),
+            return Some (match world.blocks.blocks[*new_block_index].collision {
+                OnTouch::Ignore => OnTouch::Ignore,
                 OnTouch::Resist(_) => { //Eventually only collide with a wall if it lines up with the data in resist
-                    Some(OnTouch::Resist(
+                    OnTouch::Resist(
                         if walls_hit.x == walls_hit.y {
                             self.slide_check(world, walls_hit, data)
                         } else { walls_hit }
-                    ))
+                    )
                 },
-            }
+                OnTouch::NotifyWorld( event ) => OnTouch::NotifyWorld( event ),
+            } )
         }
     }
 
@@ -168,6 +169,10 @@ impl Particle {
                                 velocity.y = 0.;
                             }
                         }
+                        OnTouch::NotifyWorld( event) => {
+                            first = false;
+                            world.notify(object, event)
+                        },
                     }
                 },
                 None => break
