@@ -136,9 +136,6 @@ impl World {
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
             let half_length = moving.grid_length / 2.;
-            //Find a way to autogenerate and store this
-            //Replace velocity with ticks_into_projection? (I like this idea)
-            //Only store offset from moving.position, acquiring real position by adding moving.position + moving.velocity * ticks_into_projection
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
@@ -157,13 +154,10 @@ impl World {
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 let mut hit = false;
-                //Find next collision
-                // let mut it_count = 0;
+                let mut it_counter = 0; 
                 loop {
-                    // it_count += 1;
-                    // if it_count == 20 {
-                    //     panic!()
-                    // }
+                    it_counter += 1;
+                    if it_counter > 20 { panic!(); }
                     let cur_corner_index = if hit == false {
                         let mut cur_corner_index = 0;
                         for corner_index in 1 .. corners.len() {
@@ -179,6 +173,8 @@ impl World {
                             if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
                             found = true;
                             cur_corner_index = corner_index;
+                            dbg!(&corners[corner_index]);
+                            dbg!(vel_left_when_hit);
                         }
                         if found {
                             cur_corner_index
@@ -189,27 +185,23 @@ impl World {
 
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
                     let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
-                    if hit_point.ticks_to_hit >= 1. || hit_point.ticks_to_hit < 0. { 
+                    if hit_point.ticks_to_hit > 1. || hit_point.ticks_to_hit < 0. { 
                         corners.swap_remove(cur_corner_index); 
                         if corners.len() == 0 { break } else { continue }
                     }
 
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
                     let new_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
+                    cur_point.velocity -= hit_point.position - cur_point.position;
+                    cur_point.position += hit_point.position;
                     match new_pos_data {
                         Some(data) => {
                             //If we aren't moving into a new kind of block we don't need to do anything?
                             if let Some(old_pos_data) = cur_pos_data {
-                                if old_pos_data.node_pointer == data.node_pointer {
-                                    cur_point.velocity -= hit_point.position - cur_point.position;
-                                    cur_point.position += hit_point.position;
-                                    continue
-                                }
+                                if old_pos_data.node_pointer == data.node_pointer { continue }
                             }
                             match self.blocks.blocks[*data.node_pointer.index].collision {
                                 OnTouch::Ignore => {
-                                    cur_point.velocity -= hit_point.position - cur_point.position;
-                                    cur_point.position += hit_point.position;
                                 }
                                 OnTouch::Resist(possible_hit_walls) => {
                                     hit = true;
@@ -219,18 +211,14 @@ impl World {
                                             cur_point.slide_check(&self, temp_hits, new_full_pos_data)
                                         } else { temp_hits }
                                     };
-                                    vel_left_when_hit = cur_point.velocity - (hit_point.position - cur_point.position);
+                                    vel_left_when_hit = cur_point.velocity;
                                 }
                             }
                         }
                         None => {
                             //We're outside of the grid
-                            cur_point.velocity -= hit_point.position - cur_point.position;
-                            cur_point.position += hit_point.position;
                         }
                     }
-
-                
                 }
                 
                 cur_pos += cur_vel - vel_left_when_hit;
