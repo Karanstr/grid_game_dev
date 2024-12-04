@@ -70,7 +70,7 @@ async fn main() {
         world.render(&fixed, true);
         world.render(&player, true);
         player.draw_facing();
-        world.move_with_collisions(&mut player, &fixed);
+        world.move_with_collisions(&mut player, &fixed, 5);
         next_frame().await
     }
 

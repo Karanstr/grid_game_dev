@@ -6,9 +6,21 @@ pub use crate::graph::Index;
 mod physics;
 use physics::*;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Events {
-    Wet,
+#[derive(Clone, Copy, Debug)]
+pub struct LimPositionData {
+    pub node_pointer : NodePointer,
+    pub cell : UVec2,
+    pub depth : u32
+}
+
+impl LimPositionData {
+    fn new(node_pointer:NodePointer, cell:UVec2, depth:u32) -> Self {
+        Self {
+            node_pointer,
+            cell,
+            depth
+        }
+    }
 }
 
 pub struct Object {
@@ -61,27 +73,24 @@ impl Object {
         four_points
     }
 
-    //Add a struct for this return and slide_check's input?
-    fn find_real_node(&self, world:&World, cell:UVec2, max_depth:u32) -> (NodePointer, UVec2, u32) {
+    fn find_real_node(&self, world:&World, cell:UVec2, max_depth:u32) -> LimPositionData {
         let max_zorder = Zorder::from_cell(cell, max_depth);
         let (cell_pointer, real_depth) = world.graph.read(self.root, &Zorder::path(max_zorder, max_depth));
         let zorder = max_zorder >> 2 * (max_depth - real_depth);
-        (cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
+        LimPositionData::new(cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
     }
 
     //Change to relative position?
-    fn get_data_at_position(&self, world:&World, position:Vec2, max_depth:u32) -> [Option<(Index, UVec2, u32)>; 4] {
+    fn get_data_at_position(&self, world:&World, position:Vec2, max_depth:u32) -> [Option<LimPositionData>; 4] {
         let max_depth_cells = self.coord_to_cell(position, max_depth);
-        let mut data: [Option<(Index, UVec2, u32)>; 4] = [None; 4];
+        let mut data: [Option<LimPositionData>; 4] = [None; 4];
         for i in 0 .. 4 {
             if let Some(grid_cell) = max_depth_cells[i] {
-                let (node, real_cell, depth) = self.find_real_node(world, grid_cell, max_depth);
-                data[i] = Some((node.index, real_cell, depth))
+                data[i] = Some(self.find_real_node(world, grid_cell, max_depth))
             }
         }
         data
     }
- 
 
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force * Vec2::new(self.rotation.cos(), self.rotation.sin());
@@ -124,11 +133,127 @@ impl World {
         }
     }
 
-    pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object) {
+    pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
-            let mut particle_approximation = Particle::new(moving.position, moving.velocity, 0);
-            particle_approximation.march_through(hitting, &self, 5);
-            (moving.position, moving.velocity) = (particle_approximation.position, particle_approximation.velocity);
+            let half_length = moving.grid_length / 2.;
+            //Find a way to autogenerate and store this
+            //Replace velocity with ticks_into_projection? (I like this idea)
+            //Only store offset from moving.position, acquiring real position by adding moving.position + moving.velocity * ticks_into_projection
+            let mut cur_pos = moving.position;
+            let mut cur_vel = moving.velocity;
+            let mut all_walls_hit = IVec2::ZERO;
+            //Find all collisions
+            loop {
+                let mut corners = Vec::from([
+                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, 0), None),
+                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, 1), None),
+                    (Particle::new(cur_pos + Vec2::new(-half_length, half_length), cur_vel, 2), None),
+                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel, 3), None)
+                ]);
+                for (corner, pos_data) in corners.iter_mut() {
+                    *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
+                }          
+    
+                let mut vel_left_when_hit = Vec2::ZERO;
+                let mut walls_hit = IVec2::ZERO;
+                let mut hit = false;
+                //Find next collision
+                // let mut it_count = 0;
+                loop {
+                    // it_count += 1;
+                    // if it_count == 20 {
+                    //     panic!()
+                    // }
+                    let cur_corner_index = if hit == false {
+                        let mut cur_corner_index = 0;
+                        for corner_index in 1 .. corners.len() {
+                            if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
+                            cur_corner_index = corner_index;
+                        }
+                        cur_corner_index
+                    } else {
+                        let mut found = false;
+                        let mut cur_corner_index = 0;
+                        for corner_index in 0 .. corners.len() {
+                            if corners[corner_index].0.velocity.length() <= vel_left_when_hit.length() { continue }
+                            if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
+                            found = true;
+                            cur_corner_index = corner_index;
+                        }
+                        if found {
+                            cur_corner_index
+                        } else {
+                            break
+                        }
+                    };
+
+                    let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
+                    let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
+                    if hit_point.ticks_to_hit >= 1. || hit_point.ticks_to_hit < 0. { 
+                        corners.swap_remove(cur_corner_index); 
+                        if corners.len() == 0 { break } else { continue }
+                    }
+
+                    let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
+                    let new_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
+                    match new_pos_data {
+                        Some(data) => {
+                            //If we aren't moving into a new kind of block we don't need to do anything?
+                            if let Some(old_pos_data) = cur_pos_data {
+                                if old_pos_data.node_pointer == data.node_pointer {
+                                    cur_point.velocity -= hit_point.position - cur_point.position;
+                                    cur_point.position += hit_point.position;
+                                    continue
+                                }
+                            }
+                            match self.blocks.blocks[*data.node_pointer.index].collision {
+                                OnTouch::Ignore => {
+                                    cur_point.velocity -= hit_point.position - cur_point.position;
+                                    cur_point.position += hit_point.position;
+                                }
+                                OnTouch::Resist(possible_hit_walls) => {
+                                    hit = true;
+                                    walls_hit = {
+                                        let temp_hits = possible_hit_walls * hit_point.walls_hit;
+                                        if temp_hits.x == temp_hits.y {
+                                            cur_point.slide_check(&self, temp_hits, new_full_pos_data)
+                                        } else { temp_hits }
+                                    };
+                                    vel_left_when_hit = cur_point.velocity - (hit_point.position - cur_point.position);
+                                }
+                            }
+                        }
+                        None => {
+                            //We're outside of the grid
+                            cur_point.velocity -= hit_point.position - cur_point.position;
+                            cur_point.position += hit_point.position;
+                        }
+                    }
+
+                
+                }
+                
+                cur_pos += cur_vel - vel_left_when_hit;
+                cur_vel = vel_left_when_hit;
+                if walls_hit.x == 1 {
+                    cur_vel.x = 0.;
+                    all_walls_hit.x = 1;
+                }
+                if walls_hit.y == 1 {
+                    cur_vel.y = 0.;
+                    all_walls_hit.y = 1;
+                }
+                if cur_vel.length() == 0. { break }
+                
+            }
+
+            moving.position = cur_pos;
+            if all_walls_hit.x == 1 {
+                moving.velocity.x = 0.;
+            }
+            if all_walls_hit.y == 1 {
+                moving.velocity.y = 0.;
+            }
             let drag = 0.99;
             moving.velocity *= drag;
             let speed_min = 0.005;
@@ -164,12 +289,6 @@ impl World {
         if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
             modified.root = root
         } else { error!("Failed to modify cell. Likely means structure is corrupted.") };
-    }
-
-    pub fn notify(&self, object:&Object, event:Events) {
-        match event {
-            Events::Wet => println!("Something is swimming in {}", object.name)
-        }
     }
 
 }
