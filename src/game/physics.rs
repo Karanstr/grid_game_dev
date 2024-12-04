@@ -71,14 +71,14 @@ pub struct HitPoint {
 pub struct Particle {
     pub position : Vec2,
     pub velocity : Vec2,
-    pub configuration : u8,
+    pub configuration : Configurations,
 }
 
-//Maybe these just go right into scene?
+//Move these into scene and object
 //Eventually replace all these &Object with &Scene, a particle should march through a given scene, hitting any objects in it's path.
 impl Particle {
 
-    pub fn new(position:Vec2, velocity:Vec2, configuration:u8) -> Self {
+    pub fn new(position:Vec2, velocity:Vec2, configuration:Configurations) -> Self {
         Self {
             position,
             velocity,

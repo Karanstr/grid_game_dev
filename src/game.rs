@@ -5,6 +5,15 @@ pub use crate::graph::Index;
 //Clean up this import stuff
 mod physics;
 use physics::*;
+use std::{thread::sleep, time::Duration};
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Configurations {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct LimPositionData {
@@ -100,6 +109,10 @@ impl Object {
         self.angular_velocity += torque
     }
 
+    pub fn set_rotation_DEBUG(&mut self, new_rotation:f32) {
+        self.rotation = new_rotation;
+    }
+
     pub fn draw_facing(&self) {
         draw_vec_line(self.position, self.position + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
     }
@@ -140,12 +153,13 @@ impl World {
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
             //Find all collisions
+            let mut it_count = 0;
             loop {
                 let mut corners = Vec::from([
-                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, 0), None),
-                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, 1), None),
-                    (Particle::new(cur_pos + Vec2::new(-half_length, half_length), cur_vel, 2), None),
-                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel, 3), None)
+                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, Configurations::TopLeft), None),
+                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, Configurations::TopRight), None),
+                    (Particle::new(cur_pos + Vec2::new(-half_length, half_length), cur_vel, Configurations::BottomLeft), None),
+                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel,Configurations::BottomRight), None)
                 ]);
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
@@ -154,10 +168,8 @@ impl World {
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 let mut hit = false;
-                let mut it_counter = 0; 
                 loop {
-                    it_counter += 1;
-                    if it_counter > 20 { panic!(); }
+                    it_count += 1;                 
                     let cur_corner_index = if hit == false {
                         let mut cur_corner_index = 0;
                         for corner_index in 1 .. corners.len() {
@@ -173,17 +185,13 @@ impl World {
                             if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
                             found = true;
                             cur_corner_index = corner_index;
-                            dbg!(&corners[corner_index]);
-                            dbg!(vel_left_when_hit);
                         }
-                        if found {
-                            cur_corner_index
-                        } else {
-                            break
-                        }
+                        if found { cur_corner_index } else { break }
                     };
 
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
+                    // sleep(Duration::from_millis(20));
+                    // draw_centered_square(cur_point.position, 10., Color::from_hex(100*it_count % 16_777_216));
                     let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
                     if hit_point.ticks_to_hit > 1. || hit_point.ticks_to_hit < 0. { 
                         corners.swap_remove(cur_corner_index); 
@@ -191,18 +199,18 @@ impl World {
                     }
 
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
-                    let new_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
+                    let old_pos_data = cur_pos_data.clone();
+                    *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
-                    cur_point.position += hit_point.position;
-                    match new_pos_data {
+                    cur_point.position = hit_point.position;
+                    match cur_pos_data {
                         Some(data) => {
                             //If we aren't moving into a new kind of block we don't need to do anything?
-                            if let Some(old_pos_data) = cur_pos_data {
-                                if old_pos_data.node_pointer == data.node_pointer { continue }
+                            if let Some(old_data) = old_pos_data {
+                                if old_data.node_pointer == data.node_pointer { continue }
                             }
                             match self.blocks.blocks[*data.node_pointer.index].collision {
-                                OnTouch::Ignore => {
-                                }
+                                OnTouch::Ignore => { }
                                 OnTouch::Resist(possible_hit_walls) => {
                                     hit = true;
                                     walls_hit = {
@@ -215,12 +223,11 @@ impl World {
                                 }
                             }
                         }
-                        None => {
+                        None => { 
                             //We're outside of the grid
                         }
                     }
-                }
-                
+                }                
                 cur_pos += cur_vel - vel_left_when_hit;
                 cur_vel = vel_left_when_hit;
                 if walls_hit.x == 1 {
@@ -232,7 +239,6 @@ impl World {
                     all_walls_hit.y = 1;
                 }
                 if cur_vel.length() == 0. { break }
-                
             }
 
             moving.position = cur_pos;
@@ -307,12 +313,12 @@ impl Zorder {
     }
 
     //Don't call if direction.length() == 0
-    pub fn from_configured_direction(direction:Vec2, configuration:u8) -> usize {
+    pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
         let clamped: Vec2 = direction.signum().clamp(Vec2::ZERO, Vec2::ONE);
         if direction.x == 0. {
-            2 * clamped.y as usize | if configuration == 0 || configuration == 2 { 1 } else { 0 }
+            2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
         } else if direction.y == 0. {
-            clamped.x as usize | if configuration == 0 || configuration == 1 { 2 } else { 0 }
+            clamped.x as usize | if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 2 } else { 0 }
         } else {
             2 * clamped.y as usize | clamped.x as usize
         }

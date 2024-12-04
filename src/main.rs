@@ -12,8 +12,7 @@ async fn main() {
     request_new_screen_size(size.x, size.y);
     let mut world = World::new();    
     let mut fixed = Object::new("Planet".to_owned(), world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
-    let mut player = Object::new("Player".to_owned(), world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 10.);
-
+    let mut player = Object::new("Player".to_owned(), world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 50.);
     let speed = 0.1;
     let torque = 0.05;
     let mut operation_depth = 0;
@@ -69,8 +68,8 @@ async fn main() {
        
         world.render(&fixed, true);
         world.render(&player, true);
-        player.draw_facing();
         world.move_with_collisions(&mut player, &fixed, 5);
+        player.draw_facing();
         next_frame().await
     }
 
