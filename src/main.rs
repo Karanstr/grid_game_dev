@@ -11,7 +11,7 @@ async fn main() {
     request_new_screen_size(size.x, size.y);
     let mut world = World::new();    
     let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
-    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 50.);
+    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 64.);
     let speed = 0.2;
     let torque = 0.05;
     let mut operation_depth = 0;
@@ -21,6 +21,8 @@ async fn main() {
             world.graph.profile();
         } else if is_key_pressed(KeyCode::V) {
             cur_block_index = (cur_block_index + 1) % 5
+        } else if is_key_pressed(KeyCode::H) {
+            player.set_rotation(0.);
         }
 
         //Wow this is ugly, abstract this stuff away into a proper input handler?

@@ -67,7 +67,7 @@ pub struct HitPoint {
     pub walls_hit : IVec2
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Particle {
     pub position : Vec2,
     pub velocity : Vec2,
@@ -82,7 +82,7 @@ impl Particle {
         Self {
             position,
             velocity,
-            configuration
+            configuration,
         }
     }
 
@@ -109,32 +109,6 @@ impl Particle {
             ticks_to_hit : ticks_to_first_hit, 
             walls_hit
         }
-    }
-
-    //Figure out this naming
-    pub fn slide_check(&self, world:&World, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
-        //Formalize this with some zorder arithmatic?
-        let (x_slide_check, y_slide_check) = if self.velocity.x < 0. && self.velocity.y < 0. { //(-,-)
-            (2, 1)
-        } else if self.velocity.x < 0. && self.velocity.y > 0. { //(-,+)
-            (0, 3)
-        } else if self.velocity.x > 0. && self.velocity.y < 0. { //(+,-)
-            (3, 0)
-        } else { //(+,+)
-            (1, 2)
-        };
-        let x_block_collision = match position_data[x_slide_check] {
-            Some(pos_data) => world.blocks.blocks[*pos_data.node_pointer.index].collision,
-            None => OnTouch::Resist(IVec2::ONE)
-        };
-        let y_block_collision = match position_data[y_slide_check] {
-            Some(pos_data) => world.blocks.blocks[*pos_data.node_pointer.index].collision,
-            None => OnTouch::Resist(IVec2::ONE)
-        };
-        if x_block_collision != y_block_collision {
-            if let OnTouch::Resist(_) = x_block_collision { IVec2::new(0, 1) }
-            else { IVec2::new(1, 0) }
-        } else { IVec2::ONE }
     }
 
 }

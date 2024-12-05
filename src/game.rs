@@ -58,6 +58,12 @@ impl Object {
         self.grid_length / 2f32.powf(depth as f32)
     }
 
+    fn cell_top_left_corner(&self, zorder:u32, depth:u32) -> Vec2 {
+        let cell_length = self.cell_length(depth);
+        let grid_cell = Zorder::to_cell(zorder, depth);
+        grid_cell.as_vec2() * cell_length + self.position - self.grid_length/2.
+    }
+
     //Change to relative position?
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
@@ -136,13 +142,11 @@ impl World {
     pub fn render(&self, object:&Object, draw_lines:bool) {
         let filled_blocks = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in filled_blocks {
-            let cell_length = object.cell_length(depth);
-            let grid_cell = Zorder::to_cell(zorder, depth);
-            let offset = grid_cell.as_vec2() * cell_length + object.position - object.grid_length/2.;
             match self.index_color(index) {
                 Some(color) => {
-                    draw_square(offset, cell_length, color);
-                    if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
+                    let top_left_corner = object.cell_top_left_corner(zorder, depth);
+                    draw_square(top_left_corner, object.cell_length(depth), color);
+                    if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 1., WHITE) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
@@ -151,41 +155,38 @@ impl World {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
+            dbg!("COLLISION GO");
             let half_length = moving.grid_length / 2.;
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
+            let mut it_count = 0;
             //Find all collisions
             loop {
+                it_count += 1;
+                dbg!(it_count);
                 let mut corners = Vec::from([
-                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, Configurations::TopLeft), None),
-                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, Configurations::TopRight), None),
+                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel,Configurations::BottomRight), None),
                     (Particle::new(cur_pos + Vec2::new(-half_length, half_length), cur_vel, Configurations::BottomLeft), None),
-                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel,Configurations::BottomRight), None)
+                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, Configurations::TopRight), None),
+                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, Configurations::TopLeft), None),
                 ]);
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
-                }      
+                }
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
-                let mut hit = false;
                 loop {
-                    //This is kinda gross.
-                    let cur_corner_index = if hit == false {
-                        let mut cur_corner_index = 0;
-                        for corner_index in 1 .. corners.len() {
-                            if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
-                            cur_corner_index = corner_index;
-                        }
-                        cur_corner_index
-                    } else {
+                    if corners.len() == 0 { break }
+                    let cur_corner_index = {
+                        let mut min_vel = vel_left_when_hit;
+                        let mut cur_corner_index = 100;
                         let mut found = false;
-                        let mut cur_corner_index = 0;
                         for corner_index in 0 .. corners.len() {
-                            if corners[corner_index].0.velocity.length() <= vel_left_when_hit.length() { continue }
-                            if corners[corner_index].0.velocity.length() <= corners[cur_corner_index].0.velocity.length() { continue }
+                            if corners[corner_index].0.velocity.length() <= min_vel.length() { continue }
                             found = true;
                             cur_corner_index = corner_index;
+                            min_vel = corners[cur_corner_index].0.velocity;
                         }
                         if found { cur_corner_index } else { break }
                     };
@@ -193,35 +194,31 @@ impl World {
                     let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
                     if hit_point.ticks_to_hit.abs() >= 1. { 
                         corners.swap_remove(cur_corner_index); 
-                        if corners.len() == 0 { break } else { continue }
+                        continue
                     }
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
-                    let old_pos_data = cur_pos_data.clone();
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
                     cur_point.position = hit_point.position;
-                    match cur_pos_data {
-                        Some(data) => {
-                            //If we aren't moving into a new kind of block we don't need to do anything
-                            if let Some(old_data) = old_pos_data {
-                                if old_data.node_pointer == data.node_pointer { continue }
+                    if let Some(data) = cur_pos_data {
+                        match self.index_collision(data.node_pointer.index) {
+                            Some(OnTouch::Ignore) => {}
+                            Some(OnTouch::Resist(possible_hit_walls)) => {
+                                walls_hit = {
+                                    let no_checks = possible_hit_walls * hit_point.walls_hit;
+                                    if no_checks.x == no_checks.y {
+                                        let slide_check = self.slide_check(&cur_point, new_full_pos_data);
+                                        if slide_check.x == slide_check.y && slide_check.x == 1 {
+                                            self.hang_check(moving, 0, 0, hitting, Zorder::from_cell(data.cell, data.depth), data.depth)
+                                        } else { slide_check }
+                                    } else { no_checks }
+                                };
+                                if walls_hit == IVec2::ZERO { continue }
+                                vel_left_when_hit = cur_point.velocity;
+                                corners.swap_remove(cur_corner_index);
                             }
-                            match self.index_collision(data.node_pointer.index) {
-                                Some(OnTouch::Ignore) => { }
-                                Some(OnTouch::Resist(possible_hit_walls)) => {
-                                    hit = true;
-                                    walls_hit = {
-                                        let temp_hits = possible_hit_walls * hit_point.walls_hit;
-                                        if temp_hits.x == temp_hits.y {
-                                            cur_point.slide_check(&self, new_full_pos_data)
-                                        } else { temp_hits }
-                                    };
-                                    vel_left_when_hit = cur_point.velocity;
-                                }
-                                None => { eprintln!("Attempting to collide with {}, an unregistered block!", *data.node_pointer.index); }
-                            }
+                            None => { eprintln!("Attempting to collide with {}, an unregistered block!", *data.node_pointer.index); }
                         }
-                        None => { /*We're outside of the grid*/ }
                     }
                 }
                 cur_pos += cur_vel - vel_left_when_hit;
@@ -255,6 +252,47 @@ impl World {
         moving.angular_velocity = 0.;
     }
 
+    pub fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
+        //Formalize this with some zorder arithmatic?
+        let (x_slide_check, y_slide_check) = if particle.velocity.x < 0. && particle.velocity.y < 0. { //(-,-)
+            (2, 1)
+        } else if particle.velocity.x < 0. && particle.velocity.y > 0. { //(-,+)
+            (0, 3)
+        } else if particle.velocity.x > 0. && particle.velocity.y < 0. { //(+,-)
+            (3, 0)
+        } else { //(+,+)
+            (1, 2)
+        };
+        let x_block_collision = if let Some(pos_data) = position_data[x_slide_check] {
+            if let Some(collision) = self.index_collision(pos_data.node_pointer.index) {
+                collision
+            } else { OnTouch::Ignore }
+        } else { OnTouch::Ignore };
+        let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
+            if let Some(collision) = self.index_collision(pos_data.node_pointer.index) {
+                collision
+            } else { OnTouch::Ignore }
+        } else { OnTouch::Ignore };
+        IVec2::new(
+            if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
+            if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
+        )
+    }
+
+    //Move zorder and depth into single struct
+    pub fn hang_check(&self, object1:&Object, corner_zorder:u32, corner_depth:u32, object2:&Object, hitting_zorder:u32, hitting_depth:u32) -> IVec2 {
+        let center1 = object1.cell_top_left_corner(corner_zorder, corner_depth) + object1.cell_length(corner_depth)/2.;
+        let center2 = object2.cell_top_left_corner(hitting_zorder, hitting_depth) + object2.cell_length(hitting_depth)/2.;
+        draw_centered_square(center1, 10., RED);
+        draw_centered_square(center2, 10., RED);
+        let offset = (center1 - center2).abs();
+        if offset.x < offset.y {
+            IVec2::new(0, 1)
+        } else if offset.x > offset.y {
+            IVec2::new(1, 0)
+        } else { IVec2::ONE}
+    }
+
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
         let block_size = modified.cell_length(depth);
         let rel_mouse_pos = mouse_pos - modified.position;
@@ -284,9 +322,7 @@ impl World {
     fn index_collision(&self, index:Index) -> Option<OnTouch> {
         if self.blocks.blocks.len() > *index {
             Some(self.blocks.blocks[*index].collision)
-        } else {
-            None
-        }
+        } else { None }
     }
 
     fn index_color(&self, index:Index) -> Option<Color> {
@@ -301,15 +337,13 @@ impl World {
 pub struct Zorder;
 impl Zorder {
 
-    pub fn to_cell(mut zorder:u32, depth:u32) -> UVec2 {
-        let (mut x, mut y) = (0, 0);
+    pub fn to_cell(zorder:u32, depth:u32) -> UVec2 {
+        let mut cell = UVec2::ZERO;
         for layer in 0 .. depth {
-            x |= (zorder & 0b1) << layer;
-            zorder >>= 1;
-            y |= (zorder & 0b1) << layer;
-            zorder >>= 1;
+            cell.x |= (zorder >> (2 * layer) & 0b1) << layer;
+            cell.y |= (zorder >> (2 * layer + 1) & 0b1) << layer;
         }
-        UVec2::new(x, y)
+        cell
     }
 
     pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
