@@ -5,7 +5,6 @@ pub use crate::graph::Index;
 //Clean up this import stuff
 mod physics;
 use physics::*;
-use std::{thread::sleep, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Configurations {
@@ -33,7 +32,6 @@ impl LimPositionData {
 }
 
 pub struct Object {
-    name : String,
     root : NodePointer,
     position : Vec2,
     grid_length : f32,
@@ -45,9 +43,8 @@ pub struct Object {
 
 impl Object {
 
-    pub fn new(name:String, root:NodePointer, position:Vec2, grid_length:f32) -> Self {
+    pub fn new(root:NodePointer, position:Vec2, grid_length:f32) -> Self {
         Self {
-            name,
             root,
             position,
             grid_length,
@@ -109,7 +106,8 @@ impl Object {
         self.angular_velocity += torque
     }
 
-    pub fn set_rotation_DEBUG(&mut self, new_rotation:f32) {
+    #[allow(dead_code)]
+    pub fn set_rotation(&mut self, new_rotation:f32) {
         self.rotation = new_rotation;
     }
 
@@ -124,6 +122,7 @@ use vec_friendly_drawing::*;
 pub struct World {
     pub blocks : BlockPallete,
     pub graph : SparseDirectedGraph,
+    pub frame_count : i128,
 }
 
 impl World {
@@ -132,6 +131,7 @@ impl World {
         Self {
             blocks : BlockPallete::new(),
             graph : SparseDirectedGraph::new(8),
+            frame_count : 0,
         }
     }
 
@@ -153,7 +153,6 @@ impl World {
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
             //Find all collisions
-            let mut it_count = 0;
             loop {
                 let mut corners = Vec::from([
                     (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, Configurations::TopLeft), None),
@@ -163,13 +162,12 @@ impl World {
                 ]);
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
-                }          
-    
+                }      
+                // dbg!(&corners[0]);
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 let mut hit = false;
                 loop {
-                    it_count += 1;                 
                     let cur_corner_index = if hit == false {
                         let mut cur_corner_index = 0;
                         for corner_index in 1 .. corners.len() {
@@ -188,12 +186,9 @@ impl World {
                         }
                         if found { cur_corner_index } else { break }
                     };
-
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
-                    // sleep(Duration::from_millis(20));
-                    // draw_centered_square(cur_point.position, 10., Color::from_hex(100*it_count % 16_777_216));
                     let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
-                    if hit_point.ticks_to_hit > 1. || hit_point.ticks_to_hit < 0. { 
+                    if hit_point.ticks_to_hit >= 1. || hit_point.ticks_to_hit < 0. { 
                         corners.swap_remove(cur_corner_index); 
                         if corners.len() == 0 { break } else { continue }
                     }
@@ -203,11 +198,19 @@ impl World {
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
                     cur_point.position = hit_point.position;
+                    dbg!(&cur_point);
+                    dbg!(&old_pos_data);
+                    dbg!(&cur_pos_data);
+                    dbg!(self.frame_count);
                     match cur_pos_data {
                         Some(data) => {
                             //If we aren't moving into a new kind of block we don't need to do anything?
                             if let Some(old_data) = old_pos_data {
-                                if old_data.node_pointer == data.node_pointer { continue }
+                                if old_data.node_pointer == data.node_pointer { 
+                                    // if *data.node_pointer.index == 1 { panic!() } else { 
+                                        continue 
+                                    // }
+                                }
                             }
                             match self.blocks.blocks[*data.node_pointer.index].collision {
                                 OnTouch::Ignore => { }
@@ -216,10 +219,11 @@ impl World {
                                     walls_hit = {
                                         let temp_hits = possible_hit_walls * hit_point.walls_hit;
                                         if temp_hits.x == temp_hits.y {
-                                            cur_point.slide_check(&self, temp_hits, new_full_pos_data)
+                                            cur_point.slide_check(&self, new_full_pos_data)
                                         } else { temp_hits }
                                     };
                                     vel_left_when_hit = cur_point.velocity;
+                                    dbg!(vel_left_when_hit);
                                 }
                             }
                         }
@@ -227,7 +231,7 @@ impl World {
                             //We're outside of the grid
                         }
                     }
-                }                
+                }
                 cur_pos += cur_vel - vel_left_when_hit;
                 cur_vel = vel_left_when_hit;
                 if walls_hit.x == 1 {
@@ -238,6 +242,7 @@ impl World {
                     cur_vel.y = 0.;
                     all_walls_hit.y = 1;
                 }
+                dbg!(walls_hit);
                 if cur_vel.length() == 0. { break }
             }
 
@@ -312,7 +317,6 @@ impl Zorder {
         zorder
     }
 
-    //Don't call if direction.length() == 0
     pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
         let clamped: Vec2 = direction.signum().clamp(Vec2::ZERO, Vec2::ONE);
         if direction.x == 0. {

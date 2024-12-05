@@ -112,7 +112,7 @@ impl Particle {
     }
 
     //Figure out this naming
-    pub fn slide_check(&self, world:&World, mut walls_hit:IVec2, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
+    pub fn slide_check(&self, world:&World, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
         //Formalize this with some zorder arithmatic?
         let (x_slide_check, y_slide_check) = if self.velocity.x < 0. && self.velocity.y < 0. { //(-,-)
             (2, 1)
@@ -132,10 +132,9 @@ impl Particle {
             None => OnTouch::Resist(IVec2::ONE)
         };
         if x_block_collision != y_block_collision {
-            if let OnTouch::Resist(_) = x_block_collision { walls_hit.x = 0 }
-            if let OnTouch::Resist(_) = y_block_collision { walls_hit.y = 0 }
-        }
-        walls_hit
+            if let OnTouch::Resist(_) = x_block_collision { IVec2::new(0, 1) }
+            else { IVec2::new(1, 0) }
+        } else { IVec2::ONE }
     }
 
 }

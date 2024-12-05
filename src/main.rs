@@ -1,5 +1,4 @@
 use macroquad::prelude::*;
-
 mod graph;
 
 mod game;
@@ -11,16 +10,17 @@ async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x, size.y);
     let mut world = World::new();    
-    let mut fixed = Object::new("Planet".to_owned(), world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
-    let mut player = Object::new("Player".to_owned(), world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 50.);
+    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
+    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 50.);
+    // player.set_rotation_DEBUG(PI*5./4.);
     let speed = 0.1;
     let torque = 0.05;
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     loop {
-
+        world.frame_count += 1;
         if is_key_pressed(KeyCode::P) {
-            world.graph.profile();
+            // world.graph.profile();
         } else if is_key_pressed(KeyCode::V) {
             cur_block_index = (cur_block_index + 1) % 5
         }
