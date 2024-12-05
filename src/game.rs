@@ -122,7 +122,6 @@ use vec_friendly_drawing::*;
 pub struct World {
     pub blocks : BlockPallete,
     pub graph : SparseDirectedGraph,
-    pub frame_count : i128,
 }
 
 impl World {
@@ -131,7 +130,6 @@ impl World {
         Self {
             blocks : BlockPallete::new(),
             graph : SparseDirectedGraph::new(8),
-            frame_count : 0,
         }
     }
 
@@ -167,6 +165,7 @@ impl World {
                 let mut walls_hit = IVec2::ZERO;
                 let mut hit = false;
                 loop {
+                    //This is kinda gross.
                     let cur_corner_index = if hit == false {
                         let mut cur_corner_index = 0;
                         for corner_index in 1 .. corners.len() {
@@ -191,7 +190,6 @@ impl World {
                         corners.swap_remove(cur_corner_index); 
                         if corners.len() == 0 { break } else { continue }
                     }
-
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
                     let old_pos_data = cur_pos_data.clone();
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
@@ -199,7 +197,7 @@ impl World {
                     cur_point.position = hit_point.position;
                     match cur_pos_data {
                         Some(data) => {
-                            //If we aren't moving into a new kind of block we don't need to do anything?
+                            //If we aren't moving into a new kind of block we don't need to do anything
                             if let Some(old_data) = old_pos_data {
                                 if old_data.node_pointer == data.node_pointer { continue }
                             }
@@ -217,9 +215,7 @@ impl World {
                                 }
                             }
                         }
-                        None => { 
-                            //We're outside of the grid
-                        }
+                        None => { /*We're outside of the grid*/ }
                     }
                 }
                 cur_pos += cur_vel - vel_left_when_hit;
@@ -282,7 +278,6 @@ impl World {
 }
 
 
-//Convert to trait of u32?
 pub struct Zorder;
 impl Zorder {
 
@@ -321,6 +316,7 @@ impl Zorder {
         zorder >> (2 * (depth - layer)) & 0b11
     }
 
+    #[allow(dead_code)]
     pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> Option<u32> {
         for layer in 1 ..= depth {
             if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
