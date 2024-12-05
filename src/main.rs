@@ -6,7 +6,7 @@ use game::*;
 
 
 #[macroquad::main("Window")]
-async fn main() {  
+async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x, size.y);
     let mut world = World::new();    
@@ -17,7 +17,6 @@ async fn main() {
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     loop {
-        // world.frame_count += 1;
         if is_key_pressed(KeyCode::P) {
             world.graph.profile();
         } else if is_key_pressed(KeyCode::V) {

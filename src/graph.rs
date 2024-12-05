@@ -194,10 +194,8 @@ impl SparseDirectedGraph {
                     }
                     self.index_lookup.remove(&node);
                 },
-                Ok(None) | Err(AccessError::ProtectedMemory(_)) => (),
-                Err( error ) => {
-                    dbg!(error);
-                }
+                Err( error ) => { self.handle_access_error(error) }
+                Ok(None) => {},
             }
         }
     }
@@ -214,11 +212,20 @@ impl SparseDirectedGraph {
                     if child.index != index {
                         match self.nodes.add_owner(child.index) {
                             Ok(_) => (),
-                            Err( error ) => { dbg!(error); }
+                            Err( error ) => { self.handle_access_error(error); }
                         }
                     }
                 }
                 index
+            }
+        }
+    }
+
+    fn handle_access_error(&self, error:AccessError) {
+        match error {
+            AccessError::ProtectedMemory(index) if *index < self.leaf_count as usize => {}
+            error => {
+                dbg!(error);
             }
         }
     }
@@ -239,7 +246,7 @@ impl SparseDirectedGraph {
             };
             cur_node_pointer.index = self.add_node(parent_node_pointer, false);
         }
-        if let Err( error ) = self.nodes.add_owner(cur_node_pointer.index) { dbg!(error); }
+        if let Err( error ) = self.nodes.add_owner(cur_node_pointer.index) { self.handle_access_error(error) }
         self.dec_owners(root.index);
         Ok ( cur_node_pointer )
     }

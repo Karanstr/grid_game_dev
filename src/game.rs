@@ -139,8 +139,13 @@ impl World {
             let cell_length = object.cell_length(depth);
             let grid_cell = Zorder::to_cell(zorder, depth);
             let offset = grid_cell.as_vec2() * cell_length + object.position - object.grid_length/2.;
-            draw_square(offset, cell_length, self.blocks.blocks[*index].color);
-            if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
+            match self.index_color(index) {
+                Some(color) => {
+                    draw_square(offset, cell_length, color);
+                    if draw_lines { outline_square(offset, cell_length, 1., WHITE) }
+                }
+                None => { eprintln!("Failed to draw {}, unregistered block", *index) }
+            }
         }
     }
 
@@ -201,9 +206,9 @@ impl World {
                             if let Some(old_data) = old_pos_data {
                                 if old_data.node_pointer == data.node_pointer { continue }
                             }
-                            match self.blocks.blocks[*data.node_pointer.index].collision {
-                                OnTouch::Ignore => { }
-                                OnTouch::Resist(possible_hit_walls) => {
+                            match self.index_collision(data.node_pointer.index) {
+                                Some(OnTouch::Ignore) => { }
+                                Some(OnTouch::Resist(possible_hit_walls)) => {
                                     hit = true;
                                     walls_hit = {
                                         let temp_hits = possible_hit_walls * hit_point.walls_hit;
@@ -213,6 +218,7 @@ impl World {
                                     };
                                     vel_left_when_hit = cur_point.velocity;
                                 }
+                                None => { eprintln!("Attempting to collide with {}, an unregistered block!", *data.node_pointer.index); }
                             }
                         }
                         None => { /*We're outside of the grid*/ }
@@ -273,6 +279,20 @@ impl World {
         if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
             modified.root = root
         } else { error!("Failed to modify cell. Likely means structure is corrupted.") };
+    }
+
+    fn index_collision(&self, index:Index) -> Option<OnTouch> {
+        if self.blocks.blocks.len() > *index {
+            Some(self.blocks.blocks[*index].collision)
+        } else {
+            None
+        }
+    }
+
+    fn index_color(&self, index:Index) -> Option<Color> {
+        if self.blocks.blocks.len() > *index {
+            Some(self.blocks.blocks[*index].color)
+        } else { None }
     }
 
 }
