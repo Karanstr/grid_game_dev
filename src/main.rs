@@ -12,13 +12,12 @@ async fn main() {
     let mut world = World::new();    
     let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
     let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 50.);
-    // player.set_rotation_DEBUG(PI*5./4.);
-    let speed = 0.1;
+    let speed = 0.5;
     let torque = 0.05;
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     loop {
-        world.frame_count += 1;
+        // world.frame_count += 1;
         if is_key_pressed(KeyCode::P) {
             // world.graph.profile();
         } else if is_key_pressed(KeyCode::V) {

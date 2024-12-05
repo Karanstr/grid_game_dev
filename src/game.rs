@@ -163,7 +163,6 @@ impl World {
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
                 }      
-                // dbg!(&corners[0]);
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 let mut hit = false;
@@ -188,7 +187,7 @@ impl World {
                     };
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
                     let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
-                    if hit_point.ticks_to_hit >= 1. || hit_point.ticks_to_hit < 0. { 
+                    if hit_point.ticks_to_hit.abs() >= 1. { 
                         corners.swap_remove(cur_corner_index); 
                         if corners.len() == 0 { break } else { continue }
                     }
@@ -198,19 +197,11 @@ impl World {
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
                     cur_point.position = hit_point.position;
-                    dbg!(&cur_point);
-                    dbg!(&old_pos_data);
-                    dbg!(&cur_pos_data);
-                    dbg!(self.frame_count);
                     match cur_pos_data {
                         Some(data) => {
                             //If we aren't moving into a new kind of block we don't need to do anything?
                             if let Some(old_data) = old_pos_data {
-                                if old_data.node_pointer == data.node_pointer { 
-                                    // if *data.node_pointer.index == 1 { panic!() } else { 
-                                        continue 
-                                    // }
-                                }
+                                if old_data.node_pointer == data.node_pointer { continue }
                             }
                             match self.blocks.blocks[*data.node_pointer.index].collision {
                                 OnTouch::Ignore => { }
@@ -223,7 +214,6 @@ impl World {
                                         } else { temp_hits }
                                     };
                                     vel_left_when_hit = cur_point.velocity;
-                                    dbg!(vel_left_when_hit);
                                 }
                             }
                         }
@@ -242,7 +232,6 @@ impl World {
                     cur_vel.y = 0.;
                     all_walls_hit.y = 1;
                 }
-                dbg!(walls_hit);
                 if cur_vel.length() == 0. { break }
             }
 
