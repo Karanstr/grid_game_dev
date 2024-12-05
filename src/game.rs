@@ -3,33 +3,8 @@ use macroquad::prelude::*;
 use crate::graph::{NodePointer, SparseDirectedGraph};
 pub use crate::graph::Index;
 //Clean up this import stuff
-mod physics;
-use physics::*;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Configurations {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct LimPositionData {
-    pub node_pointer : NodePointer,
-    pub cell : UVec2,
-    pub depth : u32
-}
-
-impl LimPositionData {
-    fn new(node_pointer:NodePointer, cell:UVec2, depth:u32) -> Self {
-        Self {
-            node_pointer,
-            cell,
-            depth
-        }
-    }
-}
+mod collision_utils;
+use collision_utils::*;
 
 pub struct Object {
     root : NodePointer,
@@ -38,7 +13,6 @@ pub struct Object {
     velocity : Vec2,
     rotation : f32, // >:( iykyk
     angular_velocity : f32,
-
 }
 
 impl Object {
@@ -112,9 +86,13 @@ impl Object {
         self.angular_velocity += torque
     }
 
-    #[allow(dead_code)]
     pub fn set_rotation(&mut self, new_rotation:f32) {
         self.rotation = new_rotation;
+    }
+
+    #[allow(dead_code)]
+    pub fn set_position(&mut self, new_position:Vec2) {
+        self.position = new_position;
     }
 
     pub fn draw_facing(&self) {
@@ -165,11 +143,28 @@ impl World {
             loop {
                 it_count += 1;
                 dbg!(it_count);
+                //Hard code this eventually
                 let mut corners = Vec::from([
-                    (Particle::new(cur_pos + Vec2::new(half_length, half_length), cur_vel,Configurations::BottomRight), None),
-                    (Particle::new(cur_pos + Vec2::new(-half_length, half_length), cur_vel, Configurations::BottomLeft), None),
-                    (Particle::new(cur_pos + Vec2::new(half_length, -half_length), cur_vel, Configurations::TopRight), None),
-                    (Particle::new(cur_pos + Vec2::new(-half_length, -half_length), cur_vel, Configurations::TopLeft), None),
+                    (Particle{
+                        position : cur_pos + Vec2::new(-half_length, -half_length), 
+                        velocity: cur_vel, 
+                        configuration : Configurations::TopLeft
+                    }, None ),
+                    (Particle{
+                        position : cur_pos + Vec2::new(half_length, -half_length), 
+                        velocity: cur_vel, 
+                        configuration : Configurations::TopRight
+                    }, None ),
+                    (Particle{
+                        position : cur_pos + Vec2::new(-half_length, half_length), 
+                        velocity: cur_vel, 
+                        configuration : Configurations::BottomLeft
+                    }, None ),
+                    (Particle{
+                        position : cur_pos + Vec2::new(half_length, half_length), 
+                        velocity: cur_vel, 
+                        configuration : Configurations::BottomRight
+                    }, None ),
                 ]);
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
@@ -191,7 +186,7 @@ impl World {
                         if found { cur_corner_index } else { break }
                     };
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
-                    let hit_point = cur_point.next_intersection(hitting, *cur_pos_data);
+                    let hit_point = self.next_intersection(cur_point, hitting, *cur_pos_data);
                     if hit_point.ticks_to_hit.abs() >= 1. { 
                         corners.swap_remove(cur_corner_index); 
                         continue
@@ -250,6 +245,30 @@ impl World {
         moving.rotation += moving.angular_velocity;
         moving.rotation %= 2.*PI;
         moving.angular_velocity = 0.;
+    }
+
+    //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
+    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {
+        let corner = match pos_data {
+            Some(data) => {
+                let cell_length = object.cell_length(data.depth);
+                let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
+                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
+            }
+            None => { object.position + object.grid_length*(-particle.velocity).signum() }
+        };
+        let ticks = (corner - particle.position) / particle.velocity;
+        let ticks_to_first_hit = ticks.min_element();
+        let walls_hit = if ticks.y < ticks.x {
+            IVec2::new(0, 1)
+        } else if ticks.x < ticks.y {
+            IVec2::new(1, 0)
+        } else { IVec2::ONE };
+        HitPoint {
+            position : particle.position + particle.velocity * ticks_to_first_hit, 
+            ticks_to_hit : ticks_to_first_hit, 
+            walls_hit
+        }
     }
 
     pub fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
@@ -333,7 +352,6 @@ impl World {
 
 }
 
-
 pub struct Zorder;
 impl Zorder {
 
@@ -398,7 +416,7 @@ fn round_away_0_pref_pos(number:f32) -> i32 {
     }
     else {
         //We don't want to return 0 when we're trying to avoid 0
-        //And the name of the function is prefer_positive, so..
+        //and the name of the function is prefer_positive, so..
         1 
     }
 }

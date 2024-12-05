@@ -1,7 +1,5 @@
-use macroquad::prelude::*;
 use super::*;
 
-//Split up collision types from notifications
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OnTouch {
     Ignore,
@@ -67,49 +65,34 @@ pub struct HitPoint {
     pub walls_hit : IVec2
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Particle {
     pub position : Vec2,
     pub velocity : Vec2,
     pub configuration : Configurations,
 }
 
-//Move these into scene and object
-//Eventually replace all these &Object with &Scene, a particle should march through a given scene, hitting any objects in it's path.
-impl Particle {
-
-    pub fn new(position:Vec2, velocity:Vec2, configuration:Configurations) -> Self {
-        Self {
-            position,
-            velocity,
-            configuration,
-        }
-    }
-
-    pub fn next_intersection(&self, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {
-        let corner = match pos_data {
-            Some(data) => {
-                let cell_length = object.cell_length(data.depth);
-                let quadrant = (self.velocity.signum() + 0.5).abs().floor();
-                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
-            }
-            None => {
-                object.position + object.grid_length*(-self.velocity).signum()
-            }
-        };
-        let ticks = (corner - self.position) / self.velocity;
-        let ticks_to_first_hit = ticks.min_element();
-        let walls_hit = if ticks.y < ticks.x {
-            IVec2::new(0, 1)
-        } else if ticks.x < ticks.y {
-            IVec2::new(1, 0)
-        } else { IVec2::ONE };
-        HitPoint {
-            position : self.position + self.velocity * ticks_to_first_hit, 
-            ticks_to_hit : ticks_to_first_hit, 
-            walls_hit
-        }
-    }
-
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Configurations {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct LimPositionData {
+    pub node_pointer : NodePointer,
+    pub cell : UVec2,
+    pub depth : u32
+}
+
+impl LimPositionData {
+    pub fn new(node_pointer:NodePointer, cell:UVec2, depth:u32) -> Self {
+        Self {
+            node_pointer,
+            cell,
+            depth
+        }
+    }
+}
