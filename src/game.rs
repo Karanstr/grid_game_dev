@@ -133,7 +133,6 @@ impl World {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
-            dbg!("COLLISION GO");
             let half_length = moving.grid_length / 2.;
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
@@ -141,9 +140,6 @@ impl World {
             let mut it_count = 0;
             //Find all collisions
             loop {
-                it_count += 1;
-                dbg!(it_count);
-                //Hard code this eventually
                 let mut corners = Vec::from([
                     (Particle{
                         position : cur_pos + Vec2::new(-half_length, -half_length), 
@@ -187,7 +183,8 @@ impl World {
                     };
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
                     let hit_point = self.next_intersection(cur_point, hitting, *cur_pos_data);
-                    if hit_point.ticks_to_hit.abs() >= 1. { 
+                    draw_centered_square(hit_point.position, 5., ORANGE);
+                    if hit_point.ticks_to_hit >= 1. { 
                         corners.swap_remove(cur_corner_index); 
                         continue
                     }
@@ -226,6 +223,10 @@ impl World {
                     cur_vel.y = 0.;
                     all_walls_hit.y = 1;
                 }
+                it_count += 1;
+                if it_count > 20 {
+                    panic!();
+                }
                 if cur_vel.length() == 0. { break }
             }
 
@@ -248,26 +249,53 @@ impl World {
     }
 
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {
-        let corner = match pos_data {
+    //Wow this sucks. Clean this up at some point please.
+    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {  
+        match pos_data {
             Some(data) => {
                 let cell_length = object.cell_length(data.depth);
                 let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
-                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
+                let corner = data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.;
+                draw_centered_square(corner, 10., DARKBLUE);
+                let ticks = ((corner - particle.position) / particle.velocity).abs();
+                let ticks_to_first_hit = ticks.min_element();
+                let walls_hit = if ticks.y < ticks.x {
+                    IVec2::new(0, 1)
+                } else if ticks.x < ticks.y {
+                    IVec2::new(1, 0)
+                } else { IVec2::ONE };
+                HitPoint {
+                    position : particle.position + particle.velocity * ticks_to_first_hit, 
+                    ticks_to_hit : ticks_to_first_hit, 
+                    walls_hit
+                }
             }
-            None => { object.position + object.grid_length*(-particle.velocity).signum() }
-        };
-        let ticks = (corner - particle.position) / particle.velocity;
-        let ticks_to_first_hit = ticks.min_element();
-        let walls_hit = if ticks.y < ticks.x {
-            IVec2::new(0, 1)
-        } else if ticks.x < ticks.y {
-            IVec2::new(1, 0)
-        } else { IVec2::ONE };
-        HitPoint {
-            position : particle.position + particle.velocity * ticks_to_first_hit, 
-            ticks_to_hit : ticks_to_first_hit, 
-            walls_hit
+            None => {
+                let quadrant = particle.velocity.signum();
+                let half_length = object.grid_length/2.;
+                let corner = object.position + half_length*-quadrant;
+                let top_left = object.position - half_length;
+                let bottom_right = object.position + half_length;
+                draw_centered_square(corner, 10., DARKBLUE);
+                let ticks = ((corner - particle.position) / particle.velocity).abs();
+                let (ticks_to_wall_hit, walls_hit) = if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
+                    (
+                        ticks.max_element(),
+                        if ticks.y < ticks.x { IVec2::new(1, 0) } else if ticks.x < ticks.y { IVec2::new(0, 1) } else { IVec2::ONE }
+                    )
+                } else {
+                    (
+                        ticks.min_element(),
+                        if ticks.y < ticks.x { IVec2::new(0, 1) } else if ticks.x < ticks.y { IVec2::new(1, 0) } else { IVec2::ONE }
+                    )
+                };
+                HitPoint {
+                    position : particle.position + particle.velocity * ticks_to_wall_hit, 
+                    ticks_to_hit : ticks_to_wall_hit, 
+                    walls_hit
+                }
+
+            }
         }
     }
 
