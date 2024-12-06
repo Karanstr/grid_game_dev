@@ -62,7 +62,6 @@ impl BlockPallete {
 pub struct HitPoint {
     pub position : Vec2,
     pub ticks_to_hit : f32,
-    pub walls_hit : IVec2
 }
 
 #[derive(Debug)]

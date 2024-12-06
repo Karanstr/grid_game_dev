@@ -32,10 +32,9 @@ impl Object {
         self.grid_length / 2f32.powf(depth as f32)
     }
 
-    fn cell_top_left_corner(&self, zorder:u32, depth:u32) -> Vec2 {
+    fn cell_top_left_corner(&self, cell:UVec2, depth:u32) -> Vec2 {
         let cell_length = self.cell_length(depth);
-        let grid_cell = Zorder::to_cell(zorder, depth);
-        grid_cell.as_vec2() * cell_length + self.position - self.grid_length/2.
+        cell.as_vec2() * cell_length + self.position - self.grid_length/2.
     }
 
     //Change to relative position?
@@ -122,7 +121,7 @@ impl World {
         for (zorder, depth, index) in filled_blocks {
             match self.index_color(index) {
                 Some(color) => {
-                    let top_left_corner = object.cell_top_left_corner(zorder, depth);
+                    let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                     draw_square(top_left_corner, object.cell_length(depth), color);
                     if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 1., WHITE) }
                 }
@@ -133,6 +132,7 @@ impl World {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
+            dbg!("Collision!");
             let half_length = moving.grid_length / 2.;
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
@@ -197,11 +197,12 @@ impl World {
                             Some(OnTouch::Ignore) => {}
                             Some(OnTouch::Resist(possible_hit_walls)) => {
                                 walls_hit = {
-                                    let no_checks = possible_hit_walls * hit_point.walls_hit;
+                                    let no_checks = possible_hit_walls * self.wall_check(hit_point.position, hitting, data.cell, data.depth);
+                                    dbg!(no_checks);
                                     if no_checks.x == no_checks.y {
                                         let slide_check = self.slide_check(&cur_point, new_full_pos_data);
                                         if slide_check.x == slide_check.y && slide_check.x == 1 {
-                                            self.hang_check(moving, 0, 0, hitting, Zorder::from_cell(data.cell, data.depth), data.depth)
+                                            self.hang_check(moving, UVec2::new(0, 0), 0, hitting, data.cell, data.depth)
                                         } else { slide_check }
                                     } else { no_checks }
                                 };
@@ -264,10 +265,10 @@ impl World {
                 } else if ticks.x < ticks.y {
                     IVec2::new(1, 0)
                 } else { IVec2::ONE };
+                let new_position = particle.position + particle.velocity * ticks_to_first_hit;
                 HitPoint {
-                    position : particle.position + particle.velocity * ticks_to_first_hit, 
+                    position : new_position, 
                     ticks_to_hit : ticks_to_first_hit, 
-                    walls_hit
                 }
             }
             None => {
@@ -278,28 +279,22 @@ impl World {
                 let bottom_right = object.position + half_length;
                 draw_centered_square(corner, 10., DARKBLUE);
                 let ticks = ((corner - particle.position) / particle.velocity).abs();
-                let (ticks_to_wall_hit, walls_hit) = if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
-                    (
-                        ticks.max_element(),
-                        if ticks.y < ticks.x { IVec2::new(1, 0) } else if ticks.x < ticks.y { IVec2::new(0, 1) } else { IVec2::ONE }
-                    )
+                //This feels so excessive
+                let ticks_to_wall_hit= if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
+                    ticks.max_element()
                 } else {
-                    (
-                        ticks.min_element(),
-                        if ticks.y < ticks.x { IVec2::new(0, 1) } else if ticks.x < ticks.y { IVec2::new(1, 0) } else { IVec2::ONE }
-                    )
+                    ticks.min_element()
                 };
                 HitPoint {
                     position : particle.position + particle.velocity * ticks_to_wall_hit, 
                     ticks_to_hit : ticks_to_wall_hit, 
-                    walls_hit
                 }
 
             }
         }
     }
 
-    pub fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
+    fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
         //Formalize this with some zorder arithmatic?
         let (x_slide_check, y_slide_check) = if particle.velocity.x < 0. && particle.velocity.y < 0. { //(-,-)
             (2, 1)
@@ -327,9 +322,9 @@ impl World {
     }
 
     //Move zorder and depth into single struct
-    pub fn hang_check(&self, object1:&Object, corner_zorder:u32, corner_depth:u32, object2:&Object, hitting_zorder:u32, hitting_depth:u32) -> IVec2 {
-        let center1 = object1.cell_top_left_corner(corner_zorder, corner_depth) + object1.cell_length(corner_depth)/2.;
-        let center2 = object2.cell_top_left_corner(hitting_zorder, hitting_depth) + object2.cell_length(hitting_depth)/2.;
+    fn hang_check(&self, object1:&Object, corner_cell:UVec2, corner_depth:u32, object2:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
+        let center1 = object1.cell_top_left_corner(corner_cell, corner_depth) + object1.cell_length(corner_depth)/2.;
+        let center2 = object2.cell_top_left_corner(hitting_cell, hitting_depth) + object2.cell_length(hitting_depth)/2.;
         draw_centered_square(center1, 10., RED);
         draw_centered_square(center2, 10., RED);
         let offset = (center1 - center2).abs();
@@ -338,6 +333,19 @@ impl World {
         } else if offset.x > offset.y {
             IVec2::new(1, 0)
         } else { IVec2::ONE}
+    }
+
+    fn wall_check(&self, hitting_point:Vec2, hitting_object:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
+        let rel_cell_pos = hitting_cell.as_vec2() * hitting_object.cell_length(hitting_depth) + hitting_object.cell_length(hitting_depth)/2.;
+        let block_center = hitting_object.position - hitting_object.grid_length/2. + rel_cell_pos;
+        let offset = (hitting_point - block_center).abs();
+        if offset.x < offset.y {
+            IVec2::new(0, 1)
+        } else if offset.y < offset.x {
+            IVec2::new(1, 0)
+        } else {
+            IVec2::ONE
+        }
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
