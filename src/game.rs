@@ -196,16 +196,7 @@ impl World {
                         match self.index_collision(data.node_pointer.index) {
                             Some(OnTouch::Ignore) => {}
                             Some(OnTouch::Resist(possible_hit_walls)) => {
-                                walls_hit = {
-                                    let no_checks = possible_hit_walls * self.wall_check(hit_point.position, hitting, data.cell, data.depth);
-                                    dbg!(no_checks);
-                                    if no_checks.x == no_checks.y {
-                                        let slide_check = self.slide_check(&cur_point, new_full_pos_data);
-                                        if slide_check.x == slide_check.y && slide_check.x == 1 {
-                                            self.hang_check(moving, UVec2::new(0, 0), 0, hitting, data.cell, data.depth)
-                                        } else { slide_check }
-                                    } else { no_checks }
-                                };
+                                walls_hit = possible_hit_walls * self.walls_hit(&cur_point, new_full_pos_data, moving, hitting, data.cell, data.depth);
                                 if walls_hit == IVec2::ZERO { continue }
                                 vel_left_when_hit = cur_point.velocity;
                                 corners.swap_remove(cur_corner_index);
@@ -228,9 +219,9 @@ impl World {
                 if it_count > 20 {
                     panic!();
                 }
+                dbg!(cur_vel);
                 if cur_vel.length() == 0. { break }
             }
-
             moving.position = cur_pos;
             if all_walls_hit.x == 1 {
                 moving.velocity.x = 0.;
@@ -250,48 +241,33 @@ impl World {
     }
 
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    //Wow this sucks. Clean this up at some point please.
     pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {  
-        match pos_data {
+        let half_length = object.grid_length/2.;
+        let corner = match pos_data {
             Some(data) => {
                 let cell_length = object.cell_length(data.depth);
                 let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
-                let corner = data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.;
-                draw_centered_square(corner, 10., DARKBLUE);
-                let ticks = ((corner - particle.position) / particle.velocity).abs();
-                let ticks_to_first_hit = ticks.min_element();
-                let walls_hit = if ticks.y < ticks.x {
-                    IVec2::new(0, 1)
-                } else if ticks.x < ticks.y {
-                    IVec2::new(1, 0)
-                } else { IVec2::ONE };
-                let new_position = particle.position + particle.velocity * ticks_to_first_hit;
-                HitPoint {
-                    position : new_position, 
-                    ticks_to_hit : ticks_to_first_hit, 
-                }
+                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
             }
             None => {
                 let quadrant = particle.velocity.signum();
-                let half_length = object.grid_length/2.;
-                let corner = object.position + half_length*-quadrant;
-                let top_left = object.position - half_length;
-                let bottom_right = object.position + half_length;
-                draw_centered_square(corner, 10., DARKBLUE);
-                let ticks = ((corner - particle.position) / particle.velocity).abs();
-                //This feels so excessive
-                let ticks_to_wall_hit= if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
-                    ticks.max_element()
-                } else {
-                    ticks.min_element()
-                };
-                HitPoint {
-                    position : particle.position + particle.velocity * ticks_to_wall_hit, 
-                    ticks_to_hit : ticks_to_wall_hit, 
-                }
-
+                object.position + half_length*-quadrant
             }
+        };
+        let top_left = object.position - half_length;
+        let bottom_right = object.position + half_length;
+        draw_centered_square(corner, 10., DARKBLUE);
+        let ticks = ((corner - particle.position) / particle.velocity).abs();
+        let ticks_to_wall_hit = if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
+            ticks.max_element()
+        } else {
+            ticks.min_element()
+        };
+        HitPoint {
+            position : particle.position + particle.velocity * ticks_to_wall_hit, 
+            ticks_to_hit : ticks_to_wall_hit, 
         }
+
     }
 
     fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
@@ -306,15 +282,14 @@ impl World {
             (1, 2)
         };
         let x_block_collision = if let Some(pos_data) = position_data[x_slide_check] {
-            if let Some(collision) = self.index_collision(pos_data.node_pointer.index) {
-                collision
-            } else { OnTouch::Ignore }
+            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
         let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
-            if let Some(collision) = self.index_collision(pos_data.node_pointer.index) {
-                collision
-            } else { OnTouch::Ignore }
+            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
+        dbg!(particle);
+        dbg!(x_block_collision);
+        dbg!(y_block_collision);
         IVec2::new(
             if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
             if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
@@ -335,17 +310,24 @@ impl World {
         } else { IVec2::ONE}
     }
 
-    fn wall_check(&self, hitting_point:Vec2, hitting_object:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
+    fn walls_hit(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4], moving_object:&Object, hitting_object:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
         let rel_cell_pos = hitting_cell.as_vec2() * hitting_object.cell_length(hitting_depth) + hitting_object.cell_length(hitting_depth)/2.;
         let block_center = hitting_object.position - hitting_object.grid_length/2. + rel_cell_pos;
-        let offset = (hitting_point - block_center).abs();
-        if offset.x < offset.y {
+        let offset = (particle.position - block_center).abs();
+        let unchecked_walls = if offset.x < offset.y {
             IVec2::new(0, 1)
         } else if offset.y < offset.x {
             IVec2::new(1, 0)
         } else {
             IVec2::ONE
-        }
+        };
+        if unchecked_walls.x == unchecked_walls.y && particle.velocity.x != 0. && particle.velocity.y != 0. {
+            let slide_check = self.slide_check(particle, position_data);
+            if slide_check.x == slide_check.y && slide_check.x == 1 {
+                self.hang_check(moving_object, UVec2::new(0, 0), 0, hitting_object, hitting_cell, hitting_depth)
+            } else { slide_check }
+        } else { unchecked_walls }
+
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
