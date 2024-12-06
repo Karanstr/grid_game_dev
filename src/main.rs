@@ -8,9 +8,9 @@ use game::*;
 #[macroquad::main("Window")]
 async fn main() {
     let size = Vec2::new(512., 512.);
-    request_new_screen_size(size.x, size.y);
+    request_new_screen_size(size.x+200., size.y+200.);
     let mut world = World::new();    
-    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2., size.y/2.), size.x);
+    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x);
     let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 64.);
     let speed = 0.2;
     let torque = 0.05;

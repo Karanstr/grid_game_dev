@@ -42,16 +42,15 @@ impl Object {
         let mut four_points = [None; 4];
         let half_length = self.grid_length/2.;
         let cell_length = self.cell_length(depth);
-        let top_left = self.position - half_length;
-        let bottom_right = self.position + half_length;
         let offset = 0.01;
         for i in 0 .. 4 {
             let direction = Vec2::new(
                 if i & 0b1 == 1 { 1. } else { -1. },
                 if i & 0b10 == 0b10 { 1. } else { -1. }
             );
+            let top_left = self.position - half_length;
             let cur_point = point - top_left + offset * direction;
-            four_points[i] = if cur_point.clamp(top_left, bottom_right) == cur_point {
+            four_points[i] = if cur_point.clamp(Vec2::ZERO, Vec2::splat(self.grid_length)) == cur_point {
                 Some( (cur_point / cell_length).floor().as_uvec2() )
             } else { None }
         }
@@ -137,9 +136,9 @@ impl World {
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
-            let mut it_count = 0;
             //Find all collisions
             loop {
+                let mut it_count = 0;
                 let mut corners = Vec::from([
                     (Particle{
                         position : cur_pos + Vec2::new(-half_length, -half_length), 
@@ -168,6 +167,8 @@ impl World {
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 loop {
+                    it_count += 1;
+                    if it_count > 20 { panic!() }
                     if corners.len() == 0 { break }
                     let cur_corner_index = {
                         let mut min_vel = vel_left_when_hit;
@@ -188,6 +189,7 @@ impl World {
                         corners.swap_remove(cur_corner_index); 
                         continue
                     }
+                    dbg!(&cur_point);
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
@@ -215,11 +217,6 @@ impl World {
                     cur_vel.y = 0.;
                     all_walls_hit.y = 1;
                 }
-                it_count += 1;
-                if it_count > 20 {
-                    panic!();
-                }
-                dbg!(cur_vel);
                 if cur_vel.length() == 0. { break }
             }
             moving.position = cur_pos;
@@ -250,6 +247,7 @@ impl World {
                 data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
             }
             None => {
+                dbg!("Outside");
                 let quadrant = particle.velocity.signum();
                 object.position + half_length*-quadrant
             }
@@ -287,9 +285,6 @@ impl World {
         let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
             self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
-        dbg!(particle);
-        dbg!(x_block_collision);
-        dbg!(y_block_collision);
         IVec2::new(
             if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
             if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
