@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use macroquad::prelude::*;
 mod graph;
 
@@ -9,7 +11,7 @@ use game::*;
 async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x+200., size.y+200.);
-    let mut world = World::new();    
+    let mut world = World::new();
     let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x);
     let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 64.);
     let speed = 0.2;
@@ -23,6 +25,8 @@ async fn main() {
             cur_block_index = (cur_block_index + 1) % 5
         } else if is_key_pressed(KeyCode::H) {
             player.set_rotation(0.);
+        } else if is_key_pressed(KeyCode::R) {
+            player.set_rotation(PI/4.);
         }
 
         //Wow this is ugly, abstract this stuff away into a proper input handler?

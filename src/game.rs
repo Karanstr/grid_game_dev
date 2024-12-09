@@ -122,7 +122,7 @@ impl World {
                 Some(color) => {
                     let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                     draw_square(top_left_corner, object.cell_length(depth), color);
-                    if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 1., WHITE) }
+                    if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 2., WHITE) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
@@ -131,7 +131,6 @@ impl World {
 
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
-            dbg!("Collision!");
             let half_length = moving.grid_length / 2.;
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
@@ -168,7 +167,7 @@ impl World {
                 let mut walls_hit = IVec2::ZERO;
                 loop {
                     it_count += 1;
-                    if it_count > 20 { panic!() }
+                    // if it_count > 20 { panic!() }
                     if corners.len() == 0 { break }
                     let cur_corner_index = {
                         let mut min_vel = vel_left_when_hit;
@@ -189,7 +188,6 @@ impl World {
                         corners.swap_remove(cur_corner_index); 
                         continue
                     }
-                    dbg!(&cur_point);
                     let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
                     *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
@@ -247,23 +245,30 @@ impl World {
                 data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
             }
             None => {
-                dbg!("Outside");
                 let quadrant = particle.velocity.signum();
                 object.position + half_length*-quadrant
             }
         };
+        dbg!(corner);
+        dbg!(particle);
         let top_left = object.position - half_length;
         let bottom_right = object.position + half_length;
         draw_centered_square(corner, 10., DARKBLUE);
         let ticks = ((corner - particle.position) / particle.velocity).abs();
-        let ticks_to_wall_hit = if particle.position.x != clamp(particle.position.x, top_left.x, bottom_right.x) && particle.position.y != clamp(particle.position.y, top_left.y, bottom_right.y) {
-            ticks.max_element()
-        } else {
-            ticks.min_element()
+        dbg!(ticks);
+        let within_x_bounds = particle.position.x == clamp(particle.position.x, top_left.x, bottom_right.x);
+        let within_y_bounds = particle.position.y == clamp(particle.position.y, top_left.y, bottom_right.y);
+        //I really hate edge cases.
+        let ticks_to_hit = {
+            if within_x_bounds || within_y_bounds {
+                if !(within_x_bounds && within_y_bounds) && ticks.min_element() == 0. {
+                    ticks.max_element()
+                } else { ticks.min_element() }
+            } else { ticks.max_element() }
         };
         HitPoint {
-            position : particle.position + particle.velocity * ticks_to_wall_hit, 
-            ticks_to_hit : ticks_to_wall_hit, 
+            position : particle.position + particle.velocity * ticks_to_hit, 
+            ticks_to_hit, 
         }
 
     }
