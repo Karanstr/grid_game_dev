@@ -71,6 +71,38 @@ pub struct Particle {
     pub configuration : Configurations,
 }
 
+impl Particle {
+    //Add configuration for no configuration, in which all walls are hittable?
+    pub fn hittable_walls(&self) -> IVec2 {
+        match self.configuration {
+            Configurations::TopLeft => {
+                IVec2::new(
+                    if self.velocity.x < 0. { 1 } else { 0 },
+                    if self.velocity.y < 0. { 1 } else { 0 }
+                )
+            }
+            Configurations::TopRight => {
+                IVec2::new(
+                    if self.velocity.x > 0. { 1 } else { 0 },
+                    if self.velocity.y < 0. { 1 } else { 0 }
+                )
+            }
+            Configurations::BottomLeft => {
+                IVec2::new(
+                    if self.velocity.x < 0. { 1 } else { 0 },
+                    if self.velocity.y > 0. { 1 } else { 0 }
+                )
+            }
+            Configurations::BottomRight => {
+                IVec2::new(
+                    if self.velocity.x > 0. { 1 } else { 1 },
+                    if self.velocity.y > 0. { 1 } else { 1 }
+                )
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Configurations {
     TopLeft,

@@ -11,7 +11,7 @@ pub struct Object {
     position : Vec2,
     grid_length : f32,
     velocity : Vec2,
-    rotation : f32, // >:( iykyk
+    rotation : f32,
     angular_velocity : f32,
 }
 
@@ -77,8 +77,12 @@ impl Object {
     }
 
     pub fn apply_linear_force(&mut self, force:Vec2) {
-        self.velocity += force * Vec2::new(self.rotation.cos(), self.rotation.sin());
+        self.velocity += force;
         self.remove_neglible_vel()
+    }
+
+    pub fn apply_forward_force(&mut self, force:Vec2) {
+        self.apply_linear_force(force * Vec2::from_angle(self.rotation));
     }
 
     fn remove_neglible_vel(&mut self) {
@@ -193,20 +197,24 @@ impl World {
                         corners.swap_remove(cur_corner_index); 
                         continue
                     }
-                    let new_full_pos_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
-                    *cur_pos_data = new_full_pos_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
+                    let position_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
+                    *cur_pos_data = position_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
                     cur_point.position = hit_point.position;
                     if let Some(data) = cur_pos_data {
                         match self.index_collision(data.node_pointer.index) {
                             Some(OnTouch::Ignore) => {}
-                            Some(OnTouch::Resist(possible_hit_walls)) => {
-                                walls_hit = possible_hit_walls * self.walls_hit(&cur_point, new_full_pos_data, moving, hitting, data.cell, data.depth);
-                                if walls_hit == IVec2::ZERO { continue }
-                                vel_left_when_hit = cur_point.velocity;
-                                corners.swap_remove(cur_corner_index);
+                            Some(OnTouch::Resist(possiblly_hit_walls)) => {
+                                match possiblly_hit_walls * cur_point.hittable_walls() * self.slide_check(&cur_point, position_data) {
+                                    no_walls_hit if no_walls_hit == IVec2::ZERO => { continue }
+                                    some_walls_hit => {
+                                        walls_hit = some_walls_hit;
+                                        vel_left_when_hit = cur_point.velocity;
+                                        corners.swap_remove(cur_corner_index);
+                                    }
+                                }
                             }
-                            None => { eprintln!("Attempting to collide with {}, an unregistered block!", *data.node_pointer.index); }
+                            None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
                         }
                     }
                 }
@@ -223,15 +231,10 @@ impl World {
                 if cur_vel.length() == 0. { break }
             }
             moving.position = cur_pos;
-            if all_walls_hit.x == 1 {
-                moving.velocity.x = 0.;
-            }
-            if all_walls_hit.y == 1 {
-                moving.velocity.y = 0.;
-            }
-            let drag = 0.99;
-            moving.velocity *= drag;
-            moving.remove_neglible_vel();
+            if all_walls_hit.x == 1 { moving.velocity.x = 0. }
+            if all_walls_hit.y == 1 { moving.velocity.y = 0. }
+            let drag_multiplier = -0.01;
+            moving.apply_linear_force(moving.velocity * drag_multiplier);
         }
         moving.rotation += moving.angular_velocity;
         moving.rotation %= 2.*PI;
@@ -295,46 +298,6 @@ impl World {
             if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
             if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
         )
-    }
-
-    //Move zorder and depth into single struct
-    fn hang_check(&self, object1:&Object, corner_cell:UVec2, corner_depth:u32, object2:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
-        let center1 = object1.cell_top_left_corner(corner_cell, corner_depth) + object1.cell_length(corner_depth)/2.;
-        let center2 = object2.cell_top_left_corner(hitting_cell, hitting_depth) + object2.cell_length(hitting_depth)/2.;
-        draw_centered_square(center1, 10., RED);
-        draw_centered_square(center2, 10., RED);
-        let offset = (center1 - center2).abs();
-        if offset.x < offset.y {
-            IVec2::new(0, 1)
-        } else if offset.x > offset.y {
-            IVec2::new(1, 0)
-        } else { IVec2::ONE}
-    }
-
-    fn walls_hit(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4], moving_object:&Object, hitting_object:&Object, hitting_cell:UVec2, hitting_depth:u32) -> IVec2 {
-        let rel_cell_pos = hitting_cell.as_vec2() * hitting_object.cell_length(hitting_depth) + hitting_object.cell_length(hitting_depth)/2.;
-        let block_center = hitting_object.position - hitting_object.grid_length/2. + rel_cell_pos;
-        let offset = (particle.position - block_center).abs();
-        let unchecked_walls = if offset.x < offset.y {
-            IVec2::new(0, 1)
-        } else if offset.y < offset.x {
-            IVec2::new(1, 0)
-        } else {
-            IVec2::ONE
-        };
-        let mut checked_walls = if unchecked_walls.x == unchecked_walls.y && particle.velocity.x != 0. && particle.velocity.y != 0. {
-            let slide_check = self.slide_check(particle, position_data);
-            if slide_check.x == slide_check.y && slide_check.x == 1 {
-                self.hang_check(moving_object, UVec2::new(0, 0), 0, hitting_object, hitting_cell, hitting_depth)
-            } else { slide_check }
-        } else { unchecked_walls };
-        if particle.velocity.x == 0. {
-            checked_walls.x = 0
-        };
-        if particle.velocity.y == 0. {
-            checked_walls.y = 0
-        };
-        checked_walls
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
