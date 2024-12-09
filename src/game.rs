@@ -78,6 +78,14 @@ impl Object {
 
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force * Vec2::new(self.rotation.cos(), self.rotation.sin());
+        self.remove_neglible_vel()
+    }
+
+    fn remove_neglible_vel(&mut self) {
+        let speed_min = 0.005;
+        if self.velocity.x.abs() < speed_min { self.velocity.x = 0. }
+        if self.velocity.y.abs() < speed_min { self.velocity.y = 0. }
+
     }
 
     pub fn apply_rotational_force(&mut self, torque:f32) {
@@ -137,7 +145,6 @@ impl World {
             let mut all_walls_hit = IVec2::ZERO;
             //Find all collisions
             loop {
-                let mut it_count = 0;
                 let mut corners = Vec::from([
                     (Particle{
                         position : cur_pos + Vec2::new(-half_length, -half_length), 
@@ -166,8 +173,6 @@ impl World {
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 loop {
-                    it_count += 1;
-                    // if it_count > 20 { panic!() }
                     if corners.len() == 0 { break }
                     let cur_corner_index = {
                         let mut min_vel = vel_left_when_hit;
@@ -226,9 +231,7 @@ impl World {
             }
             let drag = 0.99;
             moving.velocity *= drag;
-            let speed_min = 0.005;
-            if moving.velocity.x.abs() < speed_min { moving.velocity.x = 0. }
-            if moving.velocity.y.abs() < speed_min { moving.velocity.y = 0. }
+            moving.remove_neglible_vel();
         }
         moving.rotation += moving.angular_velocity;
         moving.rotation %= 2.*PI;
@@ -238,7 +241,11 @@ impl World {
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
     pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {  
         let half_length = object.grid_length/2.;
-        let corner = match pos_data {
+        let top_left = object.position - half_length;
+        let bottom_right = object.position + half_length;
+        let within_x_bounds = particle.position.x == clamp(particle.position.x, top_left.x, bottom_right.x);
+        let within_y_bounds = particle.position.y == clamp(particle.position.y, top_left.y, bottom_right.y);
+        let boundary_corner = match pos_data {
             Some(data) => {
                 let cell_length = object.cell_length(data.depth);
                 let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
@@ -248,29 +255,23 @@ impl World {
                 let quadrant = particle.velocity.signum();
                 object.position + half_length*-quadrant
             }
-        };
-        dbg!(corner);
-        dbg!(particle);
-        let top_left = object.position - half_length;
-        let bottom_right = object.position + half_length;
-        draw_centered_square(corner, 10., DARKBLUE);
-        let ticks = ((corner - particle.position) / particle.velocity).abs();
-        dbg!(ticks);
-        let within_x_bounds = particle.position.x == clamp(particle.position.x, top_left.x, bottom_right.x);
-        let within_y_bounds = particle.position.y == clamp(particle.position.y, top_left.y, bottom_right.y);
+        };     
+        draw_centered_square(boundary_corner, 10., DARKBLUE);
+        let ticks = ((boundary_corner - particle.position) / particle.velocity).abs();
         //I really hate edge cases.
         let ticks_to_hit = {
             if within_x_bounds || within_y_bounds {
                 if !(within_x_bounds && within_y_bounds) && ticks.min_element() == 0. {
                     ticks.max_element()
-                } else { ticks.min_element() }
+                } else {
+                    ticks.min_element()
+                }
             } else { ticks.max_element() }
         };
         HitPoint {
             position : particle.position + particle.velocity * ticks_to_hit, 
             ticks_to_hit, 
         }
-
     }
 
     fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
@@ -321,13 +322,19 @@ impl World {
         } else {
             IVec2::ONE
         };
-        if unchecked_walls.x == unchecked_walls.y && particle.velocity.x != 0. && particle.velocity.y != 0. {
+        let mut checked_walls = if unchecked_walls.x == unchecked_walls.y && particle.velocity.x != 0. && particle.velocity.y != 0. {
             let slide_check = self.slide_check(particle, position_data);
             if slide_check.x == slide_check.y && slide_check.x == 1 {
                 self.hang_check(moving_object, UVec2::new(0, 0), 0, hitting_object, hitting_cell, hitting_depth)
             } else { slide_check }
-        } else { unchecked_walls }
-
+        } else { unchecked_walls };
+        if particle.velocity.x == 0. {
+            checked_walls.x = 0
+        };
+        if particle.velocity.y == 0. {
+            checked_walls.y = 0
+        };
+        checked_walls
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
