@@ -95,8 +95,8 @@ impl Particle {
             }
             Configurations::BottomRight => {
                 IVec2::new(
-                    if self.velocity.x > 0. { 1 } else { 1 },
-                    if self.velocity.y > 0. { 1 } else { 1 }
+                    if self.velocity.x > 0. { 1 } else { 0 },
+                    if self.velocity.y > 0. { 1 } else { 0 }
                 )
             }
         }

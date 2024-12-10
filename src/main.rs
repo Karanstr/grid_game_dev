@@ -27,6 +27,8 @@ async fn main() {
             player.set_rotation(0.);
         } else if is_key_pressed(KeyCode::R) {
             player.set_rotation(PI/2.);
+        } else if is_key_pressed(KeyCode::T) {
+            player.set_rotation(PI/4.);
         }
 
         //Wow this is ugly, abstract this stuff away into a proper input handler?

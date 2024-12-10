@@ -76,6 +76,21 @@ impl Object {
         data
     }
 
+    fn bound_check(&self, position:Vec2) -> (BVec2, BVec2) {
+        let top_left = self.position - self.grid_length/2.;
+        let bottom_right = self.position + self.grid_length/2.;
+        (
+            BVec2::new(
+                if position.x < top_left.x || position.x > bottom_right.x { false } else { true },
+                if position.y < top_left.y || position.y > bottom_right.y { false } else { true }
+            ),
+            BVec2::new(
+                if position.x == top_left.x || position.x == bottom_right.x { true } else { false },
+                if position.y == top_left.y || position.y == bottom_right.y { true } else { false }
+            )
+        )
+    }
+
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force;
         self.remove_neglible_vel()
@@ -100,7 +115,6 @@ impl Object {
         self.rotation = new_rotation;
     }
 
-    #[allow(dead_code)]
     pub fn set_position(&mut self, new_position:Vec2) {
         self.position = new_position;
     }
@@ -141,39 +155,44 @@ impl World {
         }
     }
 
+    //Eventually write actual code for this
+    pub fn get_corners(&self, object:&Object, cur_pos:Vec2, cur_vel:Vec2) -> Vec<(Particle, Option<LimPositionData>)> {
+        let half_length = object.grid_length/2.;
+        Vec::from([
+            (Particle{
+                position : cur_pos + Vec2::new(-half_length, -half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::TopLeft
+            }, None ),
+            (Particle{
+                position : cur_pos + Vec2::new(half_length, -half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::TopRight
+            }, None ),
+            (Particle{
+                position : cur_pos + Vec2::new(-half_length, half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::BottomLeft
+            }, None ),
+            (Particle{
+                position : cur_pos + Vec2::new(half_length, half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::BottomRight
+            }, None ),
+        ])
+    }
+
     pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
-            let half_length = moving.grid_length / 2.;
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
             //Find all collisions
             loop {
-                let mut corners = Vec::from([
-                    (Particle{
-                        position : cur_pos + Vec2::new(-half_length, -half_length), 
-                        velocity: cur_vel, 
-                        configuration : Configurations::TopLeft
-                    }, None ),
-                    (Particle{
-                        position : cur_pos + Vec2::new(half_length, -half_length), 
-                        velocity: cur_vel, 
-                        configuration : Configurations::TopRight
-                    }, None ),
-                    (Particle{
-                        position : cur_pos + Vec2::new(-half_length, half_length), 
-                        velocity: cur_vel, 
-                        configuration : Configurations::BottomLeft
-                    }, None ),
-                    (Particle{
-                        position : cur_pos + Vec2::new(half_length, half_length), 
-                        velocity: cur_vel, 
-                        configuration : Configurations::BottomRight
-                    }, None ),
-                ]);
+                let mut corners = self.get_corners(moving, cur_pos, cur_vel);
                 for (corner, pos_data) in corners.iter_mut() {
                     *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
-                }
+                }        
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
                 loop {
@@ -191,12 +210,20 @@ impl World {
                         if found { cur_corner_index } else { break }
                     };
                     let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
-                    let hit_point = self.next_intersection(cur_point, hitting, *cur_pos_data);
-                    draw_centered_square(hit_point.position, 5., ORANGE);
-                    if hit_point.ticks_to_hit >= 1. { 
-                        corners.swap_remove(cur_corner_index); 
-                        continue
-                    }
+                    let hit_point = match self.next_intersection(cur_point, hitting, *cur_pos_data) {
+                        Some(hit) => {
+                            draw_centered_square(hit.position, 5., ORANGE);
+                            if hit.ticks_to_hit >= 1. { 
+                                corners.swap_remove(cur_corner_index); 
+                                continue
+                            };
+                            hit
+                        }
+                        None => {
+                            corners.swap_remove(cur_corner_index); 
+                            continue
+                        }
+                    };
                     let position_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
                     *cur_pos_data = position_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
@@ -204,9 +231,15 @@ impl World {
                     if let Some(data) = cur_pos_data {
                         match self.index_collision(data.node_pointer.index) {
                             Some(OnTouch::Ignore) => {}
-                            Some(OnTouch::Resist(possiblly_hit_walls)) => {
-                                match possiblly_hit_walls * cur_point.hittable_walls() * self.slide_check(&cur_point, position_data) {
-                                    no_walls_hit if no_walls_hit == IVec2::ZERO => { continue }
+                            Some(OnTouch::Resist(possibly_hit_walls)) => {
+                                match possibly_hit_walls * cur_point.hittable_walls() * self.slide_check(&cur_point, position_data) {
+                                    no_walls_hit if no_walls_hit == IVec2::ZERO => { 
+                                        if let Configurations::TopLeft = cur_point.configuration {
+                                            dbg!(self.slide_check(&cur_point, position_data));
+                                            dbg!(&cur_point);
+                                        }
+                                        continue 
+                                    }
                                     some_walls_hit => {
                                         walls_hit = some_walls_hit;
                                         vel_left_when_hit = cur_point.velocity;
@@ -230,7 +263,8 @@ impl World {
                 }
                 if cur_vel.length() == 0. { break }
             }
-            moving.position = cur_pos;
+            moving.set_position(cur_pos);
+            //Make setters for this instead of directly assigning?
             if all_walls_hit.x == 1 { moving.velocity.x = 0. }
             if all_walls_hit.y == 1 { moving.velocity.y = 0. }
             let drag_multiplier = -0.01;
@@ -242,38 +276,36 @@ impl World {
     }
 
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> HitPoint {  
+    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
         let half_length = object.grid_length/2.;
-        let top_left = object.position - half_length;
-        let bottom_right = object.position + half_length;
-        let within_x_bounds = particle.position.x == clamp(particle.position.x, top_left.x, bottom_right.x);
-        let within_y_bounds = particle.position.y == clamp(particle.position.y, top_left.y, bottom_right.y);
+        let (within_bounds, on_bounds) = object.bound_check(particle.position);
         let boundary_corner = match pos_data {
             Some(data) => {
                 let cell_length = object.cell_length(data.depth);
                 let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
-                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - object.grid_length/2.
+                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - half_length
             }
             None => {
                 let quadrant = particle.velocity.signum();
-                object.position + half_length*-quadrant
+                object.position + half_length * -quadrant
             }
-        };     
-        draw_centered_square(boundary_corner, 10., DARKBLUE);
-        let ticks = ((boundary_corner - particle.position) / particle.velocity).abs();
-        //I really hate edge cases.
-        let ticks_to_hit = {
-            if within_x_bounds || within_y_bounds {
-                if !(within_x_bounds && within_y_bounds) && ticks.min_element() == 0. {
-                    ticks.max_element()
-                } else {
-                    ticks.min_element()
-                }
-            } else { ticks.max_element() }
         };
-        HitPoint {
-            position : particle.position + particle.velocity * ticks_to_hit, 
-            ticks_to_hit, 
+        let ticks = ((boundary_corner - particle.position) / particle.velocity).abs();
+        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. {
+            ticks.max_element()
+        } else if on_bounds.x && on_bounds.y && particle.hittable_walls() != IVec2::ONE {
+            return None
+        } else {
+            ticks.min_element() 
+        };
+
+        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() {
+            None
+        } else {
+            Some(HitPoint {
+                position : particle.position + particle.velocity * ticks_to_hit, 
+                ticks_to_hit, 
+            }) 
         }
     }
 
@@ -294,6 +326,11 @@ impl World {
         let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
             self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
+        if x_block_collision == y_block_collision {
+            if let OnTouch::Resist(_) = x_block_collision {
+                return IVec2::ONE
+            }
+        }
         IVec2::new(
             if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
             if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
