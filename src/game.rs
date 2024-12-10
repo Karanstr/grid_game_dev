@@ -310,6 +310,7 @@ impl World {
     }
 
     fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
+        if particle.velocity.x == 0. || particle.velocity.y == 0. { return IVec2::ONE }
         //Formalize this with some zorder arithmatic?
         let (x_slide_check, y_slide_check) = if particle.velocity.x < 0. && particle.velocity.y < 0. { //(-,-)
             (2, 1)
@@ -326,11 +327,6 @@ impl World {
         let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
             self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
-        if x_block_collision == y_block_collision {
-            if let OnTouch::Resist(_) = x_block_collision {
-                return IVec2::ONE
-            }
-        }
         IVec2::new(
             if let OnTouch::Resist(_) = y_block_collision { 0 } else { 1 },
             if let OnTouch::Resist(_) = x_block_collision { 0 } else { 1 },
