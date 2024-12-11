@@ -3,7 +3,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OnTouch {
     Ignore,
-    Resist(IVec2),
+    Resist(BVec2),
     //...
 }
 
@@ -32,13 +32,13 @@ impl BlockPallete {
                 Block {
                     name : "Grass".to_owned(),
                     index : Index(1),
-                    collision : OnTouch::Resist(IVec2::ONE),
+                    collision : OnTouch::Resist(BVec2::TRUE),
                     color : GREEN
                 },
                 Block {
                     name : "Dirt".to_owned(),
                     index : Index(2),
-                    collision : OnTouch::Resist(IVec2::ONE),
+                    collision : OnTouch::Resist(BVec2::TRUE),
                     color : BROWN
                 },
                 Block {
@@ -50,7 +50,7 @@ impl BlockPallete {
                 Block {
                     name : "Metal".to_owned(),
                     index : Index(4),
-                    collision : OnTouch::Resist(IVec2::ONE),
+                    collision : OnTouch::Resist(BVec2::TRUE),
                     color : GRAY
                 }
             ]
@@ -67,40 +67,69 @@ pub struct HitPoint {
 #[derive(Debug, Clone)]
 pub struct Particle {
     pub position : Vec2,
-    pub velocity : Vec2,
+    pub rem_displacement : Vec2,
+    pub position_data : Option<LimPositionData>,
     pub configuration : Configurations,
 }
 
 impl Particle {
+
+    pub fn new(position:Vec2, rem_displacement:Vec2, configuration:Configurations) -> Self {
+        Self {
+            position,
+            rem_displacement,
+            position_data : None,
+            configuration
+        }
+    }
+
     //Add configuration for no configuration, in which all walls are hittable?
-    pub fn hittable_walls(&self) -> IVec2 {
+    pub fn hittable_walls(&self) -> BVec2 {
         match self.configuration {
             Configurations::TopLeft => {
-                IVec2::new(
-                    if self.velocity.x < 0. { 1 } else { 0 },
-                    if self.velocity.y < 0. { 1 } else { 0 }
+                BVec2::new(
+                    if self.rem_displacement.x < 0. { true } else { false },
+                    if self.rem_displacement.y < 0. { true } else { false }
                 )
             }
             Configurations::TopRight => {
-                IVec2::new(
-                    if self.velocity.x > 0. { 1 } else { 0 },
-                    if self.velocity.y < 0. { 1 } else { 0 }
+                BVec2::new(
+                    if self.rem_displacement.x > 0. { true } else { false },
+                    if self.rem_displacement.y < 0. { true } else { false }
                 )
             }
             Configurations::BottomLeft => {
-                IVec2::new(
-                    if self.velocity.x < 0. { 1 } else { 0 },
-                    if self.velocity.y > 0. { 1 } else { 0 }
+                BVec2::new(
+                    if self.rem_displacement.x < 0. { true } else { false },
+                    if self.rem_displacement.y > 0. { true } else { false }
                 )
             }
             Configurations::BottomRight => {
-                IVec2::new(
-                    if self.velocity.x > 0. { 1 } else { 0 },
-                    if self.velocity.y > 0. { 1 } else { 0 }
+                BVec2::new(
+                    if self.rem_displacement.x > 0. { true } else { false },
+                    if self.rem_displacement.y > 0. { true } else { false }
                 )
             }
         }
     }
+
+    pub fn mag_slide_check(&self) -> BVec2 {
+        let abs_vel = self.rem_displacement.abs();
+        if abs_vel.y < abs_vel.x { 
+            BVec2::new(false, true)
+        } else if abs_vel.x < abs_vel.y {
+            BVec2::new(true, false)
+        } else {
+            BVec2::TRUE
+        }
+    }
+
+    pub fn move_to(&mut self, new_position:Vec2, full_pos_data:[Option<LimPositionData>; 4]) {
+        self.rem_displacement -= new_position - self.position;
+        self.position = new_position;
+        self.position_data = full_pos_data[Zorder::from_configured_direction(self.rem_displacement, self.configuration)];
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
