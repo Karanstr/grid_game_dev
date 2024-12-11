@@ -195,7 +195,7 @@ impl World {
         let mut action = OnTouch::Ignore;
         while let Some(mut cur_corner) = corners.pop_front() {
             if cur_corner.rem_displacement.length() <= vel_left_when_action.length() { break }
-            
+
             let hit_point = match self.next_intersection(&cur_corner, hitting, cur_corner.position_data) {
                 Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
                 _ => { continue }
@@ -211,6 +211,16 @@ impl World {
                         let hit_walls = possibly_hit_walls & cur_corner.hittable_walls() & self.slide_check(&cur_corner, position_data);
                         if hit_walls != BVec2::FALSE {
                             action = OnTouch::Resist(
+                                if hit_walls != BVec2::TRUE { hit_walls } else { cur_corner.mag_slide_check() }
+                            );
+                            vel_left_when_action = cur_corner.rem_displacement;
+                            continue
+                        }
+                    }
+                    Some(OnTouch::Bounce(possibly_hit_walls)) => {
+                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls() & self.slide_check(&cur_corner, position_data);
+                        if hit_walls != BVec2::FALSE {
+                            action = OnTouch::Bounce(
                                 if hit_walls != BVec2::TRUE { hit_walls } else { cur_corner.mag_slide_check() }
                             );
                             vel_left_when_action = cur_corner.rem_displacement;
@@ -234,7 +244,7 @@ impl World {
         if moving.velocity.length() != 0. {
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
-            let mut all_walls_hit = BVec2::FALSE;
+            let mut modifier = Vec2::ONE;
             //Find all actions
             while cur_vel.length() > 0. {
                 let (next_action, remaining_vel) = self.find_next_action(moving, hitting, cur_pos, cur_vel, max_depth);
@@ -243,17 +253,32 @@ impl World {
                 match next_action {
                     OnTouch::Ignore => {}
                     OnTouch::Resist(walls_hit) => {
-                        all_walls_hit |= walls_hit;
-                        if walls_hit.x { cur_vel.x = 0. }
-                        if walls_hit.y { cur_vel.y = 0. }
+                        if walls_hit.x { 
+                            cur_vel.x = 0.;
+                            modifier.x = 0.;
+                        }
+                        if walls_hit.y { 
+                            cur_vel.y = 0.;
+                            modifier.y = 0.;
+                        }
                     }
+                    OnTouch::Bounce(walls_hit) => {
+                        if walls_hit.x { 
+                            cur_vel.x *= -1.;
+                            modifier.x *= -1.;
+                        }
+                        if walls_hit.y { 
+                            cur_vel.y *= -1.;
+                            modifier.y *= -1.;
+                        }
+                    }
+
                 }
             }
             moving.position = cur_pos;
-            if all_walls_hit.x { moving.velocity.x = 0. }
-            if all_walls_hit.y { moving.velocity.y = 0. }
+            moving.velocity *= modifier;
             let drag_multiplier = -0.01;
-            moving.apply_linear_force(moving.velocity * drag_multiplier);
+            // moving.apply_linear_force(moving.velocity * drag_multiplier);
         }
         moving.rotation += moving.angular_velocity;
         moving.rotation %= 2.*PI;
@@ -315,7 +340,7 @@ impl World {
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
         let shifted_point = mouse_pos - modified.position + modified.grid_length/2.;
-        if shifted_point.min_element() < 0. || shifted_point.max_element() > modified.grid_length {
+        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.grid_length {
             return Err("Attempting to edit beyond object domain".to_owned())
         }
         let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;

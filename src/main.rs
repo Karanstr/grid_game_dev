@@ -54,6 +54,7 @@ async fn main() {
             operation_depth = 0;
         }
 
+        /*
         if is_key_down(KeyCode::A) {
             player.apply_rotational_force(-torque);
         }
@@ -66,6 +67,18 @@ async fn main() {
         if is_key_down(KeyCode::S) {
             player.apply_forward_force(-Vec2::splat(speed));
         }
+        */
+
+        if is_key_down(KeyCode::A) {
+            player.apply_linear_force(Vec2::new(-speed, 0.));
+        }
+        if is_key_down(KeyCode::D) {
+            player.apply_linear_force(Vec2::new(speed, 0.));
+        }
+        if is_key_pressed(KeyCode::Space) {
+            player.apply_linear_force(Vec2::new(0., -8.));
+        }
+        player.apply_linear_force(Vec2::new(0., 0.1));
 
         if is_mouse_button_down(MouseButton::Left) {
             if let Err(message) = world.set_cell_with_mouse(&mut fixed, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {

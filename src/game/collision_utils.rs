@@ -4,6 +4,7 @@ use super::*;
 pub enum OnTouch {
     Ignore,
     Resist(BVec2),
+    Bounce(BVec2),
     //...
 }
 
@@ -44,7 +45,7 @@ impl BlockPallete {
                 Block {
                     name : "Water".to_owned(),
                     index : Index(3),
-                    collision : OnTouch::Ignore,
+                    collision : OnTouch::Bounce(BVec2::TRUE),
                     color : BLUE
                 },
                 Block {
