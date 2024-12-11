@@ -101,14 +101,14 @@ impl Object {
                 Configurations::TopLeft
             ),
             Particle::new(
-                cur_pos + Vec2::new(half_length, -half_length),
-                cur_vel,
-                Configurations::TopRight
-            ),
-            Particle::new(
                 cur_pos + Vec2::new(-half_length, half_length),
                 cur_vel,
                 Configurations::BottomLeft
+            ),
+            Particle::new(
+                cur_pos + Vec2::new(half_length, -half_length),
+                cur_vel,
+                Configurations::TopRight
             ),
             Particle::new(
                 cur_pos + Vec2::new(half_length, half_length),
@@ -255,11 +255,11 @@ impl World {
                     OnTouch::Resist(walls_hit) => {
                         if walls_hit.x { 
                             cur_vel.x = 0.;
-                            modifier.x = 0.;
+                            modifier.x *= 0.;
                         }
                         if walls_hit.y { 
                             cur_vel.y = 0.;
-                            modifier.y = 0.;
+                            modifier.y *= 0.;
                         }
                     }
                     OnTouch::Bounce(walls_hit) => {
@@ -278,7 +278,7 @@ impl World {
             moving.position = cur_pos;
             moving.velocity *= modifier;
             let drag_multiplier = -0.01;
-            // moving.apply_linear_force(moving.velocity * drag_multiplier);
+            moving.apply_linear_force(moving.velocity * drag_multiplier);
         }
         moving.rotation += moving.angular_velocity;
         moving.rotation %= 2.*PI;
