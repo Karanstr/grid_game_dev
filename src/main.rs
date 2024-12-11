@@ -68,7 +68,9 @@ async fn main() {
         }
 
         if is_mouse_button_down(MouseButton::Left) {
-            world.set_cell_with_mouse(&mut fixed, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index));
+            if let Err(message) = world.set_cell_with_mouse(&mut fixed, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+                eprintln!("{message}");
+            }
         }
        
         world.render(&fixed, true);

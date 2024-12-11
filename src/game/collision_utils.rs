@@ -64,7 +64,7 @@ pub struct HitPoint {
     pub ticks_to_hit : f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Particle {
     pub position : Vec2,
     pub velocity : Vec2,

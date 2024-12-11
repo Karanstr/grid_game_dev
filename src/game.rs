@@ -1,4 +1,5 @@
 use std::f32::consts::PI;
+use std::collections::VecDeque;
 use macroquad::prelude::*;
 use crate::graph::{NodePointer, SparseDirectedGraph};
 pub use crate::graph::Index;
@@ -91,6 +92,32 @@ impl Object {
         )
     }
 
+    fn get_aabb_corners(&self, cur_pos:Vec2, cur_vel:Vec2) -> Vec<Particle> {
+        let half_length = self.grid_length/2.;
+        Vec::from([
+            Particle{
+                position : cur_pos + Vec2::new(-half_length, -half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::TopLeft
+            },
+            Particle{
+                position : cur_pos + Vec2::new(half_length, -half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::TopRight
+            },
+            Particle{
+                position : cur_pos + Vec2::new(-half_length, half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::BottomLeft
+            },
+            Particle{
+                position : cur_pos + Vec2::new(half_length, half_length), 
+                velocity: cur_vel, 
+                configuration : Configurations::BottomRight
+            },
+        ])
+    }
+
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force;
         self.remove_neglible_vel()
@@ -113,10 +140,6 @@ impl Object {
 
     pub fn set_rotation(&mut self, new_rotation:f32) {
         self.rotation = new_rotation;
-    }
-
-    pub fn set_position(&mut self, new_position:Vec2) {
-        self.position = new_position;
     }
 
     pub fn draw_facing(&self) {
@@ -155,101 +178,65 @@ impl World {
         }
     }
 
-    //Eventually write actual code for this
-    pub fn get_corners(&self, object:&Object, cur_pos:Vec2, cur_vel:Vec2) -> Vec<(Particle, Option<LimPositionData>)> {
-        let half_length = object.grid_length/2.;
-        Vec::from([
-            (Particle{
-                position : cur_pos + Vec2::new(-half_length, -half_length), 
-                velocity: cur_vel, 
-                configuration : Configurations::TopLeft
-            }, None ),
-            (Particle{
-                position : cur_pos + Vec2::new(half_length, -half_length), 
-                velocity: cur_vel, 
-                configuration : Configurations::TopRight
-            }, None ),
-            (Particle{
-                position : cur_pos + Vec2::new(-half_length, half_length), 
-                velocity: cur_vel, 
-                configuration : Configurations::BottomLeft
-            }, None ),
-            (Particle{
-                position : cur_pos + Vec2::new(half_length, half_length), 
-                velocity: cur_vel, 
-                configuration : Configurations::BottomRight
-            }, None ),
-        ])
+    fn cull_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32) -> VecDeque<(Particle, Option<LimPositionData>)> {
+        let mut corners = VecDeque::new();
+        for corner in 0 .. unculled_corners.len() {
+            if unculled_corners[corner].hittable_walls() == IVec2::ZERO { continue }
+            corners.push_back((
+                unculled_corners[corner].clone(),
+                hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].velocity, unculled_corners[corner].configuration)]
+            ));
+        }
+        corners
     }
 
-    pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
+    fn find_next_action(&self) {
+
+    }
+
+    pub fn move_with_collisions(&self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
             let mut all_walls_hit = IVec2::ZERO;
             //Find all collisions
-            loop {
-                let mut corners = self.get_corners(moving, cur_pos, cur_vel);
-                for (corner, pos_data) in corners.iter_mut() {
-                    *pos_data = hitting.get_data_at_position(&self, corner.position, max_depth)[Zorder::from_configured_direction(-corner.velocity, corner.configuration)];
-                }        
+            while cur_vel.length() > 0. {
                 let mut vel_left_when_hit = Vec2::ZERO;
                 let mut walls_hit = IVec2::ZERO;
-                loop {
-                    if corners.len() == 0 { break }
-                    let cur_corner_index = {
-                        let mut min_vel = vel_left_when_hit;
-                        let mut cur_corner_index = 100;
-                        let mut found = false;
-                        for corner_index in 0 .. corners.len() {
-                            if corners[corner_index].0.velocity.length() <= min_vel.length() { continue }
-                            found = true;
-                            cur_corner_index = corner_index;
-                            min_vel = corners[cur_corner_index].0.velocity;
-                        }
-                        if found { cur_corner_index } else { break }
-                    };
-                    let (cur_point, cur_pos_data) = &mut corners[cur_corner_index];
-                    let hit_point = match self.next_intersection(cur_point, hitting, *cur_pos_data) {
-                        Some(hit) => {
-                            draw_centered_square(hit.position, 5., ORANGE);
-                            if hit.ticks_to_hit >= 1. { 
-                                corners.swap_remove(cur_corner_index); 
-                                continue
-                            };
-                            hit
-                        }
-                        None => {
-                            corners.swap_remove(cur_corner_index); 
-                            continue
-                        }
+                let mut corners = self.cull_corners(hitting, moving.get_aabb_corners(cur_pos, cur_vel), max_depth);  
+                while corners.len() != 0 {
+                    let (mut cur_point, mut cur_pos_data) = corners.pop_front().unwrap();
+                    if cur_point.velocity.length() <= vel_left_when_hit.length() { break }
+                    let hit_point = match self.next_intersection(&cur_point, hitting, cur_pos_data) {
+                        Some(hit) if hit.ticks_to_hit < 1. => { hit }
+                        _ => { continue }
                     };
                     let position_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
-                    *cur_pos_data = position_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
+                    cur_pos_data = position_data[Zorder::from_configured_direction(cur_point.velocity, cur_point.configuration)];
                     cur_point.velocity -= hit_point.position - cur_point.position;
                     cur_point.position = hit_point.position;
                     if let Some(data) = cur_pos_data {
                         match self.index_collision(data.node_pointer.index) {
-                            Some(OnTouch::Ignore) => {}
+                            Some(OnTouch::Ignore) => { }
                             Some(OnTouch::Resist(possibly_hit_walls)) => {
                                 match possibly_hit_walls * cur_point.hittable_walls() * self.slide_check(&cur_point, position_data) {
-                                    no_walls_hit if no_walls_hit == IVec2::ZERO => { 
-                                        if let Configurations::TopLeft = cur_point.configuration {
-                                            dbg!(self.slide_check(&cur_point, position_data));
-                                            dbg!(&cur_point);
-                                        }
-                                        continue 
-                                    }
+                                    no_walls_hit if no_walls_hit == IVec2::ZERO => {  }
                                     some_walls_hit => {
                                         walls_hit = some_walls_hit;
                                         vel_left_when_hit = cur_point.velocity;
-                                        corners.swap_remove(cur_corner_index);
+                                        continue
                                     }
                                 }
                             }
                             None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
                         }
                     }
+                    let mut index = corners.len();
+                    for (corner, _) in corners.iter().rev() {
+                        if corner.velocity.length() >= cur_point.velocity.length() { break }
+                        index -= 1;
+                    }
+                    corners.insert(index, (cur_point, cur_pos_data));
                 }
                 cur_pos += cur_vel - vel_left_when_hit;
                 cur_vel = vel_left_when_hit;
@@ -261,10 +248,8 @@ impl World {
                     cur_vel.y = 0.;
                     all_walls_hit.y = 1;
                 }
-                if cur_vel.length() == 0. { break }
             }
-            moving.set_position(cur_pos);
-            //Make setters for this instead of directly assigning?
+            moving.position = cur_pos;
             if all_walls_hit.x == 1 { moving.velocity.x = 0. }
             if all_walls_hit.y == 1 { moving.velocity.y = 0. }
             let drag_multiplier = -0.01;
@@ -276,7 +261,7 @@ impl World {
     }
 
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    pub fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
+    fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
         let half_length = object.grid_length/2.;
         let (within_bounds, on_bounds) = object.bound_check(particle.position);
         let boundary_corner = match pos_data {
@@ -285,28 +270,23 @@ impl World {
                 let quadrant = (particle.velocity.signum() + 0.5).abs().floor();
                 data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - half_length
             }
-            None => {
-                let quadrant = particle.velocity.signum();
-                object.position + half_length * -quadrant
-            }
+            None => { object.position + half_length * -particle.velocity.signum() }
         };
         let ticks = ((boundary_corner - particle.position) / particle.velocity).abs();
         let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. {
             ticks.max_element()
         } else if on_bounds.x && on_bounds.y && particle.hittable_walls() != IVec2::ONE {
             return None
-        } else {
+        } else { 
             ticks.min_element() 
         };
+        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None } 
 
-        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() {
-            None
-        } else {
-            Some(HitPoint {
-                position : particle.position + particle.velocity * ticks_to_hit, 
-                ticks_to_hit, 
-            }) 
-        }
+        Some(HitPoint {
+            position : particle.position + particle.velocity * ticks_to_hit, 
+            ticks_to_hit, 
+        })
+
     }
 
     fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> IVec2 {
@@ -333,30 +313,17 @@ impl World {
         )
     }
 
-    pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) {
-        let block_size = modified.cell_length(depth);
-        let rel_mouse_pos = mouse_pos - modified.position;
-        let unrounded_cell = rel_mouse_pos / block_size;
-        let mut edit_cell = IVec2::new(
-            round_away_0_pref_pos(unrounded_cell.x),
-            round_away_0_pref_pos(unrounded_cell.y)
-        );
-        //Clean all this up and find a way to generalize it. Edgecases are the mean.
-        if depth != 0 {
-            let blocks_on_half = 2i32.pow(depth - 1);
-            if edit_cell.abs().max_element() > blocks_on_half { return }
-            edit_cell += blocks_on_half;
-            if edit_cell.x > blocks_on_half { edit_cell.x -= 1 }
-            if edit_cell.y > blocks_on_half { edit_cell.y -= 1 }    
-        } else {
-            edit_cell = IVec2::ZERO
+    pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
+        let shifted_point = mouse_pos - modified.position + modified.grid_length/2.;
+        if shifted_point.min_element() < 0. || shifted_point.max_element() > modified.grid_length {
+            return Err("Attempting to edit beyond object domain".to_owned())
         }
-
-        let path = Zorder::path( Zorder::from_cell(edit_cell.as_uvec2(), depth), depth );
-
+        let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
+        let path = Zorder::path( Zorder::from_cell(cell, depth), depth );
         if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
-            modified.root = root
-        } else { error!("Failed to modify cell. Likely means structure is corrupted.") };
+            modified.root = root;
+            Ok(())
+        } else { Err("Failed to modify cell. Likely means structure is corrupted.".to_owned()) }
     }
 
     fn index_collision(&self, index:Index) -> Option<OnTouch> {
@@ -427,19 +394,6 @@ impl Zorder {
         steps
     }
 
-}
-
-fn round_away_0_pref_pos(number:f32) -> i32 {
-    if number < 0. {
-        number.floor() as i32
-    } else if number > 0. {
-        number.ceil() as i32
-    }
-    else {
-        //We don't want to return 0 when we're trying to avoid 0
-        //and the name of the function is prefer_positive, so..
-        1 
-    }
 }
 
 #[allow(dead_code)]
