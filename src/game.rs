@@ -226,10 +226,17 @@ impl World {
                 match self.index_collision(data.node_pointer.index) {
                     Some(OnTouch::Ignore) => { }
                     Some(OnTouch::Resist(possibly_hit_walls)) => {
-                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls() & self.slide_check(&cur_corner, position_data);
-                        if hit_walls != BVec2::FALSE {
+                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls();
+                        let checked_walls = { 
+                            if hit_walls == BVec2::TRUE {
+                                self.slide_check(&cur_corner, position_data)
+                            } else { 
+                                hit_walls 
+                            }
+                        };
+                        if checked_walls != BVec2::FALSE {
                             action = OnTouch::Resist(
-                                if hit_walls != BVec2::TRUE { hit_walls } else { cur_corner.mag_slide_check() }
+                                if checked_walls != BVec2::TRUE { checked_walls } else { cur_corner.mag_slide_check() }
                             );
                             vel_left_when_action = cur_corner.rem_displacement;
                             continue
@@ -312,7 +319,6 @@ impl World {
     }
 
     fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> BVec2 {
-        if particle.rem_displacement.x == 0. || particle.rem_displacement.y == 0. { return BVec2::TRUE }
         //Formalize this with some zorder arithmatic?
         let (x_slide_check, y_slide_check) = if particle.rem_displacement.x < 0. && particle.rem_displacement.y < 0. { //(-,-)
             (2, 1)
