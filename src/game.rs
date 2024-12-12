@@ -367,40 +367,45 @@ impl World {
     }
 
     //Doesn't currently account for OnTouch::Resist having configurable walls
-    pub fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> [bool; 4] {
-        dbg!(cell_zorder, cell_depth);
-        let mut exposed_corners = [true, true, true, true];
+    pub fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> u8 {
+        let mut exposed_mask = 0b1111;
         let checks = [
-            (IVec2::new(-1, -1), 0b11, Configurations::TopLeft),
-            (IVec2::new(1, -1), 0b10, Configurations::TopRight),
-            (IVec2::new(-1, 1), 0b01, Configurations::BottomLeft),
-            (IVec2::new(1, 1), 0b00, Configurations::BottomRight),
-            (IVec2::new(1, 0), 0b10, Configurations::TopRight),
-            (IVec2::new(1, 0), 0b00, Configurations::BottomRight),
-            (IVec2::new(-1, 0), 0b11, Configurations::TopLeft),
-            (IVec2::new(-1, 0), 0b01, Configurations::BottomLeft),
-            (IVec2::new(0, -1), 0b11, Configurations::TopLeft),
-            (IVec2::new(0, -1), 0b10, Configurations::TopRight),
-            (IVec2::new(0, 1), 0b01, Configurations::BottomLeft),
-            (IVec2::new(0, 1), 0b00, Configurations::BottomRight),
+            (IVec2::new(-1, 0), Configurations::TopLeft),
+            (IVec2::new(0, -1), Configurations::TopLeft),
+            (IVec2::new(-1, -1), Configurations::TopLeft),
+            (IVec2::new(1, 0), Configurations::TopRight),
+            (IVec2::new(0, -1), Configurations::TopRight),
+            (IVec2::new(1, -1), Configurations::TopRight),
+            (IVec2::new(-1, 0), Configurations::BottomLeft),
+            (IVec2::new(0, 1), Configurations::BottomLeft),
+            (IVec2::new(-1, 1), Configurations::BottomLeft),
+            (IVec2::new(1, 0), Configurations::BottomRight),
+            (IVec2::new(0, 1), Configurations::BottomRight),
+            (IVec2::new(1, 1), Configurations::BottomRight),
         ];
-
-        for (offset, direction, rel_corner) in checks {
-            let mut check_zorder = if let Some(zorder) = Zorder::step_cartesianly(cell_zorder, cell_depth, offset) {
-                zorder
-            } else { continue };
-            for _ in 0 .. max_depth - cell_depth {
-                check_zorder = check_zorder << 2 | direction
-            }
-            let path = Zorder::path(check_zorder, max_depth);
-            let (node_pointer, _) = self.graph.read(root, &path);
-            if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
-                if walls != BVec2::TRUE { continue }
-                exposed_corners[rel_corner.to_index()] = false;
+        for i in 0 .. 4 {
+            for j in 0 .. 3 {
+                let (offset, config) = checks[i*3 + j];
+                let mut check_zorder = {
+                    if let Some(zorder) = Zorder::step_cartesianly(cell_zorder, cell_depth, offset) {
+                        zorder
+                    } else { 
+                        continue 
+                    }
+                };
+                for _ in 0 .. max_depth - cell_depth {
+                    check_zorder = check_zorder << 2 | (3 - config.to_index()) as u32
+                }
+                let path = Zorder::path(check_zorder, max_depth);
+                let (node_pointer, _) = self.graph.read(root, &path);
+                if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
+                    if walls != BVec2::TRUE { continue }
+                    exposed_mask -= 1 << i;
+                    break
+                }
             }
         }
-
-        exposed_corners
+        exposed_mask
     }
 
 

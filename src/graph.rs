@@ -5,6 +5,7 @@ pub use vec_mem_heap::{Index, AccessError};
 
 
 pub struct Zorder;
+#[allow(dead_code)]
 impl Zorder {
     pub fn to_cell(zorder:u32, depth:u32) -> UVec2 {
         let mut cell = UVec2::ZERO;
@@ -37,7 +38,6 @@ impl Zorder {
         zorder >> (2 * (depth - layer)) & 0b11
     }
 
-    #[allow(dead_code)]
     pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> Option<u32> {
         for layer in 1 ..= depth {
             if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
