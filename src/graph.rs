@@ -1,7 +1,61 @@
 use std::collections::HashMap;
 use vec_mem_heap::{MemHeap, Ownership};
+use macroquad::math::{UVec2, IVec2};
 pub use vec_mem_heap::{Index, AccessError};
 
+
+pub struct Zorder;
+impl Zorder {
+    pub fn to_cell(zorder:u32, depth:u32) -> UVec2 {
+        let mut cell = UVec2::ZERO;
+        for layer in 0 .. depth {
+            cell.x |= (zorder >> (2 * layer) & 0b1) << layer;
+            cell.y |= (zorder >> (2 * layer + 1) & 0b1) << layer;
+        }
+        cell
+    }
+
+    pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
+        let mut zorder = 0;
+        for layer in (0 .. depth).rev() {
+            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
+            zorder = (zorder << 2) | step;
+        }
+        zorder
+    }
+
+    pub fn step_cartesianly(start_zorder:u32, depth:u32, steps:IVec2) -> Option<u32> {
+        let cell = Self::to_cell(start_zorder, depth);
+        let end_cell = cell.as_ivec2() + steps;
+        if end_cell.min_element() < 0 || end_cell.max_element() >= 2u32.pow(depth) as i32 {
+            return None
+        }
+        Some(Self::from_cell(UVec2::new(end_cell.x as u32, end_cell.y as u32), depth))
+    }
+
+    pub fn read(zorder:u32, layer:u32, depth:u32) -> u32 {
+        zorder >> (2 * (depth - layer)) & 0b11
+    }
+
+    #[allow(dead_code)]
+    pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> Option<u32> {
+        for layer in 1 ..= depth {
+            if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
+                return Some(layer)
+            }
+        }
+        None    
+    }
+
+    pub fn path(zorder:u32, depth:u32) -> Vec<u32> {
+        let mut steps:Vec<u32> = Vec::with_capacity(depth as usize);
+        for layer in 1 ..= depth {
+            steps.push(Self::read(zorder, layer, depth));
+        }
+        steps
+    }
+
+}
 
 mod node_stuff {
     use super::Index;
@@ -286,17 +340,12 @@ impl SparseDirectedGraph {
         leaves
     }
 
-    pub fn find_corners(&self, root:NodePointer) {
-        
-    }
-
     //Public functions used for root manipulation
     pub fn get_root(&self, index:usize) -> NodePointer {
         NodePointer {
             index : Index(index),
         }
     }
-
 
     pub fn profile(&self) {
         println!("---------- STATUS ----------");

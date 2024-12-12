@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 use std::collections::VecDeque;
 use macroquad::prelude::*;
-use crate::graph::{NodePointer, SparseDirectedGraph};
+use crate::graph::{NodePointer, SparseDirectedGraph, Zorder};
 pub use crate::graph::Index;
 //Clean up this import stuff
 mod collision_utils;
@@ -366,29 +366,48 @@ impl World {
         } else { None }
     }
 
+    //Doesn't currently account for OnTouch::Resist having configurable walls
+    pub fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> [bool; 4] {
+        dbg!(cell_zorder, cell_depth);
+        let mut exposed_corners = [true, true, true, true];
+        let checks = [
+            (IVec2::new(-1, -1), 0b11, Configurations::TopLeft),
+            (IVec2::new(1, -1), 0b10, Configurations::TopRight),
+            (IVec2::new(-1, 1), 0b01, Configurations::BottomLeft),
+            (IVec2::new(1, 1), 0b00, Configurations::BottomRight),
+            (IVec2::new(1, 0), 0b10, Configurations::TopRight),
+            (IVec2::new(1, 0), 0b00, Configurations::BottomRight),
+            (IVec2::new(-1, 0), 0b11, Configurations::TopLeft),
+            (IVec2::new(-1, 0), 0b01, Configurations::BottomLeft),
+            (IVec2::new(0, -1), 0b11, Configurations::TopLeft),
+            (IVec2::new(0, -1), 0b10, Configurations::TopRight),
+            (IVec2::new(0, 1), 0b01, Configurations::BottomLeft),
+            (IVec2::new(0, 1), 0b00, Configurations::BottomRight),
+        ];
+
+        for (offset, direction, rel_corner) in checks {
+            let mut check_zorder = if let Some(zorder) = Zorder::step_cartesianly(cell_zorder, cell_depth, offset) {
+                zorder
+            } else { continue };
+            for _ in 0 .. max_depth - cell_depth {
+                check_zorder = check_zorder << 2 | direction
+            }
+            let path = Zorder::path(check_zorder, max_depth);
+            let (node_pointer, _) = self.graph.read(root, &path);
+            if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
+                if walls != BVec2::TRUE { continue }
+                exposed_corners[rel_corner.to_index()] = false;
+            }
+        }
+
+        exposed_corners
+    }
+
+
 }
 
-pub struct Zorder;
+
 impl Zorder {
-
-    pub fn to_cell(zorder:u32, depth:u32) -> UVec2 {
-        let mut cell = UVec2::ZERO;
-        for layer in 0 .. depth {
-            cell.x |= (zorder >> (2 * layer) & 0b1) << layer;
-            cell.y |= (zorder >> (2 * layer + 1) & 0b1) << layer;
-        }
-        cell
-    }
-
-    pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
-        let mut zorder = 0;
-        for layer in (0 .. depth).rev() {
-            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
-            zorder = (zorder << 2) | step;
-        }
-        zorder
-    }
-
     pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
         let clamped: Vec2 = direction.signum().clamp(Vec2::ZERO, Vec2::ONE);
         if direction.x == 0. {
@@ -399,30 +418,8 @@ impl Zorder {
             2 * clamped.y as usize | clamped.x as usize
         }
     }
-
-    pub fn read(zorder:u32, layer:u32, depth:u32) -> u32 {
-        zorder >> (2 * (depth - layer)) & 0b11
-    }
-
-    #[allow(dead_code)]
-    pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> Option<u32> {
-        for layer in 1 ..= depth {
-            if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
-                return Some(layer)
-            }
-        }
-        None    
-    }
-
-    pub fn path(zorder:u32, depth:u32) -> Vec<u32> {
-        let mut steps:Vec<u32> = Vec::with_capacity(depth as usize);
-        for layer in 1 ..= depth {
-            steps.push(Self::read(zorder, layer, depth));
-        }
-        steps
-    }
-
 }
+
 
 #[allow(dead_code)]
 mod vec_friendly_drawing {
@@ -446,6 +443,4 @@ mod vec_friendly_drawing {
     }
 
 }
-
-
 

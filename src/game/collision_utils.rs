@@ -139,6 +139,17 @@ pub enum Configurations {
     BottomRight
 }
 
+impl Configurations {
+    pub fn to_index(&self) -> usize {
+        match self {
+            Configurations::TopLeft => { 0 }
+            Configurations::TopRight => { 1 }
+            Configurations::BottomLeft => { 2 }
+            Configurations::BottomRight => { 3 }
+        } 
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct LimPositionData {
     pub node_pointer : NodePointer,
