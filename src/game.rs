@@ -153,6 +153,7 @@ use vec_friendly_drawing::*;
 pub struct World {
     pub blocks : BlockPallete,
     pub graph : SparseDirectedGraph,
+    pub points_to_draw : Vec<(Vec2, Color, i32)>
 }
 
 impl World {
@@ -161,10 +162,27 @@ impl World {
         Self {
             blocks : BlockPallete::new(),
             graph : SparseDirectedGraph::new(8),
+            points_to_draw : Vec::new(),
         }
     }
 
-    pub fn render(&self, object:&Object, draw_lines:bool) {
+    pub fn render_cache(&mut self) {
+        let mut new_points = Vec::new();
+        for (point, color, time) in self.points_to_draw.iter_mut() {
+            draw_centered_square(*point, 10., *color);
+            let new_time = *time - 1;
+            if new_time != 0 {
+                new_points.push((*point, *color, new_time))
+            }
+        }
+        self.points_to_draw = new_points;
+    }
+
+    fn push_to_render_cache(&mut self, point:Vec2, color:Color, ticks:i32) {
+        self.points_to_draw.push((point, color, ticks));
+    }
+
+    pub fn render(&self, object:&mut Object, draw_lines:bool) {
         let filled_blocks = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in filled_blocks {
             match self.index_color(index) {
@@ -189,7 +207,7 @@ impl World {
         corners
     }
 
-    fn find_next_action(&self, moving:&Object, hitting:&Object, cur_pos: Vec2, cur_vel: Vec2, max_depth:u32) -> (OnTouch, Vec2) {
+    fn find_next_action(&mut self, moving:&Object, hitting:&Object, cur_pos: Vec2, cur_vel: Vec2, max_depth:u32) -> (OnTouch, Vec2) {
         let mut corners = self.cull_and_fill_corners(hitting, moving.get_aabb_corners(cur_pos, cur_vel), max_depth);  
         let mut vel_left_when_action = Vec2::ZERO;
         let mut action = OnTouch::Ignore;
@@ -216,17 +234,7 @@ impl World {
                             vel_left_when_action = cur_corner.rem_displacement;
                             continue
                         }
-                    }
-                    Some(OnTouch::Bounce(possibly_hit_walls)) => {
-                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls() & self.slide_check(&cur_corner, position_data);
-                        if hit_walls != BVec2::FALSE {
-                            action = OnTouch::Bounce(
-                                if hit_walls != BVec2::TRUE { hit_walls } else { cur_corner.mag_slide_check() }
-                            );
-                            vel_left_when_action = cur_corner.rem_displacement;
-                            continue
-                        }
-                    }
+                    } 
                     None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
                 }
             }
@@ -240,7 +248,7 @@ impl World {
         (action, vel_left_when_action)
     }
 
-    pub fn move_with_collisions(&self, moving:&mut Object, hitting:&Object, max_depth:u32) {
+    pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
         if moving.velocity.length() != 0. {
             let mut cur_pos = moving.position;
             let mut cur_vel = moving.velocity;
@@ -262,17 +270,6 @@ impl World {
                             modifier.y *= 0.;
                         }
                     }
-                    OnTouch::Bounce(walls_hit) => {
-                        if walls_hit.x { 
-                            cur_vel.x *= -1.;
-                            modifier.x *= -1.;
-                        }
-                        if walls_hit.y { 
-                            cur_vel.y *= -1.;
-                            modifier.y *= -1.;
-                        }
-                    }
-
                 }
             }
             moving.position = cur_pos;
@@ -286,7 +283,7 @@ impl World {
     }
 
     //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
+    fn next_intersection(&mut self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
         let half_length = object.grid_length/2.;
         let (within_bounds, on_bounds) = object.bound_check(particle.position);
         let boundary_corner = match pos_data {
@@ -306,7 +303,7 @@ impl World {
             ticks.min_element() 
         };
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None } 
-
+        self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
         Some(HitPoint {
             position : particle.position + particle.rem_displacement * ticks_to_hit, 
             ticks_to_hit, 

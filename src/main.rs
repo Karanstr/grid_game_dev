@@ -86,10 +86,11 @@ async fn main() {
             }
         }
        
-        world.render(&fixed, true);
-        world.render(&player, true);
+        world.render(&mut fixed, true);
+        world.render(&mut player, true);
         world.move_with_collisions(&mut player, &fixed, 5);
         player.draw_facing();
+        world.render_cache();
         next_frame().await
     }
 

@@ -4,7 +4,6 @@ use super::*;
 pub enum OnTouch {
     Ignore,
     Resist(BVec2),
-    Bounce(BVec2),
     //...
 }
 
@@ -45,7 +44,7 @@ impl BlockPallete {
                 Block {
                     name : "Water".to_owned(),
                     index : Index(3),
-                    collision : OnTouch::Bounce(BVec2::TRUE),
+                    collision : OnTouch::Resist(BVec2::new(true, false)),
                     color : BLUE
                 },
                 Block {
@@ -84,7 +83,6 @@ impl Particle {
         }
     }
 
-    //Add configuration for no configuration, in which all walls are hittable?
     pub fn hittable_walls(&self) -> BVec2 {
         match self.configuration {
             Configurations::TopLeft => {

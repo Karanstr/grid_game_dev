@@ -260,7 +260,6 @@ impl SparseDirectedGraph {
         } else { panic!("Trail is broken again") }
     }
 
-    //Add cyclicity here.
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(u32, u32, Index)> {
         //Arbitrary limit
         let maximum_render_depth = 10;
@@ -289,29 +288,16 @@ impl SparseDirectedGraph {
         leaves
     }
 
+    pub fn find_corners(&self, root:NodePointer) {
+        
+    }
+
     //Public functions used for root manipulation
     pub fn get_root(&self, index:usize) -> NodePointer {
         NodePointer {
             index : Index(index),
         }
     }
-
-    /*
-    //Figure these two out with the new system
-    pub fn _raise_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.set_node_child(self.empty_root(), path, root)?;
-        self.nodes.add_owner(new_root)?;
-        self.nodes.remove_owner(root)?;
-        Ok(new_root)
-    }
-
-    pub fn _lower_root_domain(&mut self, root:Index, path:&Path2D) -> Result<Index, AccessError> {
-        let new_root = self.read_destination(root, path)?.index;
-        self.nodes.add_owner(new_root)?;
-        self.nodes.remove_owner(root)?;
-        Ok(new_root)
-    }
-    */
 
 
     pub fn profile(&self) {
