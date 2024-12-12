@@ -8,7 +8,7 @@ mod collision_utils;
 use collision_utils::*;
 
 pub struct Object {
-    root : NodePointer,
+    pub root : NodePointer,
     position : Vec2,
     grid_length : f32,
     velocity : Vec2,
@@ -183,8 +183,8 @@ impl World {
     }
 
     pub fn render(&self, object:&mut Object, draw_lines:bool) {
-        let filled_blocks = self.graph.dfs_leaves(object.root);
-        for (zorder, depth, index) in filled_blocks {
+        let blocks = self.graph.dfs_leaves(object.root);
+        for (zorder, depth, index) in blocks {
             match self.index_color(index) {
                 Some(color) => {
                     let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
@@ -295,12 +295,12 @@ impl World {
             None => { object.position + half_length * -particle.rem_displacement.signum() }
         };
         let ticks = ((boundary_corner - particle.position) / particle.rem_displacement).abs();
-        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. {
+        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. || (!within_bounds.x && !within_bounds.y) {
             ticks.max_element()
         } else if on_bounds.x && on_bounds.y && particle.hittable_walls() != BVec2::TRUE {
             return None
         } else { 
-            ticks.min_element() 
+            ticks.min_element()
         };
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None } 
         self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);

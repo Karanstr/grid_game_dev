@@ -210,9 +210,8 @@ impl SparseDirectedGraph {
                 let children = self.node(index).unwrap().children;
                 for child in children {
                     if child.index != index {
-                        match self.nodes.add_owner(child.index) {
-                            Ok(_) => (),
-                            Err( error ) => { self.handle_access_error(error); }
+                        if let Err( error) = self.nodes.add_owner(child.index) {
+                            self.handle_access_error(error);
                         }
                     }
                 }
@@ -262,26 +261,25 @@ impl SparseDirectedGraph {
 
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(u32, u32, Index)> {
         //Arbitrary limit
-        let maximum_render_depth = 10;
+        let maximum_depth = 10;
         //              zorder, depth, index
         let mut leaves = Vec::new();
         let mut stack = Vec::new();
         //       node_pointer, depth, zorder
         stack.push((root, 0u32, 0u32));
 
-        while stack.len() != 0 {
-            let (node, layers_deep, zorder) = stack.pop().unwrap();
+        while let Some((node, layers_deep, zorder)) = stack.pop() {
             let children = self.node(node.index).unwrap().children;
             //If we're cycling
             if children[0].index == node.index {
                 leaves.push((zorder, layers_deep, children[0].index));
                 continue
             }
-            if layers_deep + 1 > maximum_render_depth { 
+            if layers_deep + 1 > maximum_depth { 
                 println!("Graph exceeds depth limit at index {}", *node.index);
                 continue
             }
-            for i in 0 .. 4 {
+            for i in (0 .. 4).rev() {
                 stack.push((children[i], layers_deep + 1, (zorder << 2) | i as u32));
             }
         }

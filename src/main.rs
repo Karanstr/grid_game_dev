@@ -20,7 +20,8 @@ async fn main() {
     let mut cur_block_index = 0;
     loop {
         if is_key_pressed(KeyCode::P) {
-            world.graph.profile();
+            // world.graph.profile();
+            dbg!(world.graph.dfs_leaves(fixed.root));
         } else if is_key_pressed(KeyCode::V) {
             cur_block_index = (cur_block_index + 1) % 5
         } else if is_key_pressed(KeyCode::H) {
@@ -85,7 +86,6 @@ async fn main() {
                 eprintln!("{message}");
             }
         }
-       
         world.render(&mut fixed, true);
         world.render(&mut player, true);
         world.move_with_collisions(&mut player, &fixed, 5);
