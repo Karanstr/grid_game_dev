@@ -81,6 +81,11 @@ async fn main() {
                 eprintln!("{message}");
             }
         }
+        if is_mouse_button_down(MouseButton::Right) {
+            if let Err(message) = world.set_cell_with_mouse(&mut player, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+                eprintln!("{message}");
+            }
+        }
 
 
         world.render(&mut fixed, true);
@@ -88,6 +93,7 @@ async fn main() {
         world.move_with_collisions(&mut player, &fixed, 5);
         player.draw_facing();
         world.render_cache();
+        world.render_corners(&fixed, 5);
         next_frame().await
     }
 

@@ -313,6 +313,7 @@ impl SparseDirectedGraph {
         } else { panic!("Trail is broken again") }
     }
 
+    //Returns(zorder, depth, index)
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(u32, u32, Index)> {
         //Arbitrary limit
         let maximum_depth = 10;

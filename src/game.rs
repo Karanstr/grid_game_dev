@@ -188,7 +188,9 @@ impl World {
             match self.index_color(index) {
                 Some(color) => {
                     let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
-                    draw_square(top_left_corner, object.cell_length(depth), color);
+                    if color != BLACK {
+                        draw_square(top_left_corner, object.cell_length(depth), color)
+                    }
                     if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 2., WHITE) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
@@ -208,7 +210,7 @@ impl World {
     }
 
     fn find_next_action(&mut self, moving:&Object, hitting:&Object, cur_pos: Vec2, cur_vel: Vec2, max_depth:u32) -> (OnTouch, Vec2) {
-        let mut corners = self.cull_and_fill_corners(hitting, moving.get_aabb_corners(cur_pos, cur_vel), max_depth);  
+        let mut corners = self.cull_and_fill_corners(hitting, self.formatted_exposed_corners(moving, max_depth, cur_pos, cur_vel), max_depth);  
         let mut vel_left_when_action = Vec2::ZERO;
         let mut action = OnTouch::Ignore;
         while let Some(mut cur_corner) = corners.pop_front() {
@@ -366,26 +368,25 @@ impl World {
         } else { None }
     }
 
-    //Doesn't currently account for OnTouch::Resist having configurable walls
-    pub fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> u8 {
+    fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> u8 {
         let mut exposed_mask = 0b1111;
         let checks = [
-            (IVec2::new(-1, 0), Configurations::TopLeft),
-            (IVec2::new(0, -1), Configurations::TopLeft),
-            (IVec2::new(-1, -1), Configurations::TopLeft),
-            (IVec2::new(1, 0), Configurations::TopRight),
-            (IVec2::new(0, -1), Configurations::TopRight),
-            (IVec2::new(1, -1), Configurations::TopRight),
-            (IVec2::new(-1, 0), Configurations::BottomLeft),
-            (IVec2::new(0, 1), Configurations::BottomLeft),
-            (IVec2::new(-1, 1), Configurations::BottomLeft),
-            (IVec2::new(1, 0), Configurations::BottomRight),
-            (IVec2::new(0, 1), Configurations::BottomRight),
-            (IVec2::new(1, 1), Configurations::BottomRight),
+            (IVec2::new(-1, 0), 0b01), //Top Left
+            (IVec2::new(0, -1), 0b10),
+            (IVec2::new(-1, -1), 0b11),
+            (IVec2::new(1, 0), 0b00), //Top Right
+            (IVec2::new(0, -1), 0b11),
+            (IVec2::new(1, -1), 0b10),
+            (IVec2::new(-1, 0), 0b11), //Bottom Left
+            (IVec2::new(0, 1), 0b00),
+            (IVec2::new(-1, 1), 0b01),
+            (IVec2::new(1, 0), 0b10), //Bottom Right
+            (IVec2::new(0, 1), 0b01),
+            (IVec2::new(1, 1), 0b00),
         ];
         for i in 0 .. 4 {
             for j in 0 .. 3 {
-                let (offset, config) = checks[i*3 + j];
+                let (offset, direction) = checks[i*3 + j];
                 let mut check_zorder = {
                     if let Some(zorder) = Zorder::step_cartesianly(cell_zorder, cell_depth, offset) {
                         zorder
@@ -393,8 +394,9 @@ impl World {
                         continue 
                     }
                 };
+                //This logic is incorrect.
                 for _ in 0 .. max_depth - cell_depth {
-                    check_zorder = check_zorder << 2 | (3 - config.to_index()) as u32
+                    check_zorder = check_zorder << 2 | direction
                 }
                 let path = Zorder::path(check_zorder, max_depth);
                 let (node_pointer, _) = self.graph.read(root, &path);
@@ -408,6 +410,73 @@ impl World {
         exposed_mask
     }
 
+    fn formatted_exposed_corners(&self, object:&Object, max_depth:u32, cur_pos: Vec2, cur_vel: Vec2) -> Vec<Particle> {
+        let leaves = self.graph.dfs_leaves(object.root);
+        let mut corners = Vec::new();
+        for (zorder, depth, index) in leaves {
+            if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
+                let corner_mask = self.exposed_corners(object.root, zorder, depth, max_depth);
+                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.position + cur_pos;
+                let cell_length = object.cell_length(depth);
+                if corner_mask & 1 != 0 {
+                    corners.push(Particle::new(
+                        top_left_corner,
+                        cur_vel,
+                        Configurations::TopLeft
+                    ));
+                    draw_centered_square(top_left_corner, 10., YELLOW);
+                }
+                if corner_mask & 0b10 != 0 {
+                    corners.push(Particle::new(
+                        top_left_corner + Vec2::new(cell_length, 0.),
+                        cur_vel,
+                        Configurations::TopRight
+                    ));
+                    draw_centered_square(top_left_corner + Vec2::new(cell_length, 0.), 10., YELLOW);
+                }
+                if corner_mask & 0b100 != 0 {
+                    corners.push(Particle::new(
+                        top_left_corner + Vec2::new(0., cell_length),
+                        cur_vel,
+                        Configurations::BottomLeft
+                    ));
+                    draw_centered_square(top_left_corner + Vec2::new(0., cell_length), 10., YELLOW);
+                }
+                if corner_mask & 0b1000 != 0 {
+                    corners.push(Particle::new(
+                        top_left_corner + cell_length,
+                        cur_vel,
+                        Configurations::BottomRight
+                    ));
+                    draw_centered_square(top_left_corner + cell_length, 10., YELLOW);
+                }
+            }
+        }
+        corners
+    }
+
+    pub fn render_corners(&self, object:&Object, max_depth:u32) {
+        let leaves = self.graph.dfs_leaves(object.root);
+        for (zorder, depth, index) in leaves {
+            if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
+                let corner_mask = self.exposed_corners(object.root, zorder, depth, max_depth);
+                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
+                let cell_length = object.cell_length(depth);
+                if corner_mask & 1 != 0 {
+                    draw_centered_square(top_left_corner, 10., YELLOW);
+                }
+                if corner_mask & 0b10 != 0 {
+                    draw_centered_square(top_left_corner + Vec2::new(cell_length, 0.), 10., YELLOW);
+                }
+                if corner_mask & 0b100 != 0 {
+                    draw_centered_square(top_left_corner + Vec2::new(0., cell_length), 10., YELLOW);
+                }
+                if corner_mask & 0b1000 != 0 {
+                    draw_centered_square(top_left_corner + cell_length, 10., YELLOW);
+                }
+            }
+        }
+    }
 
 }
 
