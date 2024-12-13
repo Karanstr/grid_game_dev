@@ -90,10 +90,14 @@ async fn main() {
 
         world.render(&mut fixed, true);
         world.render(&mut player, true);
-        world.move_with_collisions(&mut player, &fixed, 5);
         player.draw_facing();
         world.render_cache();
+        world.render_corners(&player, 5);
         world.render_corners(&fixed, 5);
+        outline_circle(player.position, player.radius()+player.velocity.abs().max_element()*10., 2., WHITE);
+        outline_circle(fixed.position, fixed.radius(), 2., WHITE);
+
+        world.move_with_collisions(&mut player, &fixed, 5);
         next_frame().await
     }
 

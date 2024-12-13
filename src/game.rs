@@ -9,9 +9,9 @@ use collision_utils::*;
 
 pub struct Object {
     pub root : NodePointer,
-    position : Vec2,
-    grid_length : f32,
-    velocity : Vec2,
+    pub position : Vec2,
+    pub grid_length : f32,
+    pub velocity : Vec2,
     rotation : f32,
     angular_velocity : f32,
 }
@@ -27,6 +27,10 @@ impl Object {
             rotation : 0.0,
             angular_velocity : 0.,
         }
+    }
+
+    pub fn radius(&self) -> f32 {
+        Vec2::splat(self.grid_length/2.).length()
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
@@ -92,32 +96,6 @@ impl Object {
         )
     }
 
-    fn get_aabb_corners(&self, cur_pos:Vec2, cur_vel:Vec2) -> Vec<Particle> {
-        let half_length = self.grid_length/2.;
-        Vec::from([
-            Particle::new(
-                cur_pos + Vec2::new(-half_length, -half_length),
-                cur_vel,
-                Configurations::TopLeft
-            ),
-            Particle::new(
-                cur_pos + Vec2::new(-half_length, half_length),
-                cur_vel,
-                Configurations::BottomLeft
-            ),
-            Particle::new(
-                cur_pos + Vec2::new(half_length, -half_length),
-                cur_vel,
-                Configurations::TopRight
-            ),
-            Particle::new(
-                cur_pos + Vec2::new(half_length, half_length),
-                cur_vel,
-                Configurations::BottomRight
-            ),
-        ])
-    }
-
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force;
         self.remove_neglible_vel()
@@ -148,7 +126,7 @@ impl Object {
 
 }
 
-use vec_friendly_drawing::*;
+pub use vec_friendly_drawing::*;
 
 pub struct World {
     pub blocks : BlockPallete,
@@ -203,6 +181,13 @@ impl World {
         for corner in 0 .. unculled_corners.len() {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
             let mut culled_corner = unculled_corners[corner].clone();
+            let mult = 10.;
+            draw_vec_circle(culled_corner.position, 5., DARKPURPLE);
+            if (hitting.position - culled_corner.position).length() >= hitting.radius() + culled_corner.rem_displacement.abs().max_element()*mult { 
+                outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*mult, 2., WHITE);
+                continue 
+            }
+            outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*mult, 2., GREEN);
             culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
             corners.push_back(culled_corner);
         }
@@ -424,7 +409,6 @@ impl World {
                         cur_vel,
                         Configurations::TopLeft
                     ));
-                    draw_centered_square(top_left_corner, 10., YELLOW);
                 }
                 if corner_mask & 0b10 != 0 {
                     corners.push(Particle::new(
@@ -432,7 +416,6 @@ impl World {
                         cur_vel,
                         Configurations::TopRight
                     ));
-                    draw_centered_square(top_left_corner + Vec2::new(cell_length, 0.), 10., YELLOW);
                 }
                 if corner_mask & 0b100 != 0 {
                     corners.push(Particle::new(
@@ -440,7 +423,6 @@ impl World {
                         cur_vel,
                         Configurations::BottomLeft
                     ));
-                    draw_centered_square(top_left_corner + Vec2::new(0., cell_length), 10., YELLOW);
                 }
                 if corner_mask & 0b1000 != 0 {
                     corners.push(Particle::new(
@@ -448,7 +430,6 @@ impl World {
                         cur_vel,
                         Configurations::BottomRight
                     ));
-                    draw_centered_square(top_left_corner + cell_length, 10., YELLOW);
                 }
             }
         }
@@ -463,16 +444,16 @@ impl World {
                 let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                 let cell_length = object.cell_length(depth);
                 if corner_mask & 1 != 0 {
-                    draw_centered_square(top_left_corner, 10., YELLOW);
+                    draw_vec_circle(top_left_corner, 5., YELLOW);
                 }
                 if corner_mask & 0b10 != 0 {
-                    draw_centered_square(top_left_corner + Vec2::new(cell_length, 0.), 10., YELLOW);
+                    draw_vec_circle(top_left_corner + Vec2::new(cell_length, 0.), 5., YELLOW);
                 }
                 if corner_mask & 0b100 != 0 {
-                    draw_centered_square(top_left_corner + Vec2::new(0., cell_length), 10., YELLOW);
+                    draw_vec_circle(top_left_corner + Vec2::new(0., cell_length), 5., YELLOW);
                 }
                 if corner_mask & 0b1000 != 0 {
-                    draw_centered_square(top_left_corner + cell_length, 10., YELLOW);
+                    draw_vec_circle(top_left_corner + cell_length, 5., YELLOW);
                 }
             }
         }
@@ -510,6 +491,20 @@ mod vec_friendly_drawing {
 
     pub fn outline_square(position:Vec2, length:f32, line_width:f32, color:Color) {
         draw_rectangle_lines(position.x, position.y, length, length, line_width, color);
+    }
+    
+    pub fn outline_centered_square(position:Vec2, length:f32, line_width:f32, color:Color) {
+        let real_pos = position - length/2.;
+        draw_rectangle_lines(real_pos.x, real_pos.y, length, length, line_width, color);
+    }
+
+    pub fn draw_vec_circle(position:Vec2, radius:f32, color:Color) {
+        draw_circle(position.x, position.y, radius, color);
+    }
+
+    pub fn outline_circle(position:Vec2, radius:f32, line_width:f32, color:Color) {
+        draw_circle_lines(position.x, position.y, radius, line_width, color);
+
     }
 
     pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
