@@ -29,8 +29,8 @@ impl Object {
         }
     }
 
-    pub fn radius(&self) -> f32 {
-        Vec2::splat(self.grid_length/2.).length()
+    pub fn effective_radius(&self, vel_multiplier:f32) -> f32 {
+        Vec2::splat(self.grid_length/2.).length() + self.velocity.abs().max_element()*vel_multiplier
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
@@ -176,158 +176,6 @@ impl World {
         }
     }
 
-    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32) -> VecDeque<Particle> {
-        let mut corners = VecDeque::new();
-        for corner in 0 .. unculled_corners.len() {
-            if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
-            let mut culled_corner = unculled_corners[corner].clone();
-            let mult = 10.;
-            draw_vec_circle(culled_corner.position, 5., DARKPURPLE);
-            if (hitting.position - culled_corner.position).length() >= hitting.radius() + culled_corner.rem_displacement.abs().max_element()*mult { 
-                outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*mult, 2., WHITE);
-                continue 
-            }
-            outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*mult, 2., GREEN);
-            culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
-            corners.push_back(culled_corner);
-        }
-        corners
-    }
-
-    fn find_next_action(&mut self, moving:&Object, hitting:&Object, cur_pos: Vec2, cur_vel: Vec2, max_depth:u32) -> (OnTouch, Vec2) {
-        let mut corners = self.cull_and_fill_corners(hitting, self.formatted_exposed_corners(moving, max_depth, cur_pos, cur_vel), max_depth);  
-        let mut vel_left_when_action = Vec2::ZERO;
-        let mut action = OnTouch::Ignore;
-        while let Some(mut cur_corner) = corners.pop_front() {
-            if cur_corner.rem_displacement.length() <= vel_left_when_action.length() { break }
-
-            let hit_point = match self.next_intersection(&cur_corner, hitting, cur_corner.position_data) {
-                Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
-                _ => { continue }
-            };
-
-            let position_data = hitting.get_data_at_position(&self, hit_point.position, max_depth);
-            cur_corner.move_to(hit_point.position, position_data);
-
-            if let Some(data) = cur_corner.position_data {
-                match self.index_collision(data.node_pointer.index) {
-                    Some(OnTouch::Ignore) => { }
-                    Some(OnTouch::Resist(possibly_hit_walls)) => {
-                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls();
-                        let checked_walls = { 
-                            if hit_walls == BVec2::TRUE {
-                                self.slide_check(&cur_corner, position_data)
-                            } else { 
-                                hit_walls 
-                            }
-                        };
-                        if checked_walls != BVec2::FALSE {
-                            action = OnTouch::Resist(
-                                if checked_walls != BVec2::TRUE { checked_walls } else { cur_corner.mag_slide_check() }
-                            );
-                            vel_left_when_action = cur_corner.rem_displacement;
-                            continue
-                        }
-                    } 
-                    None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
-                }
-            }
-            let mut index = corners.len();
-            for corner in corners.iter().rev() {
-                if corner.rem_displacement.length() >= cur_corner.rem_displacement.length() { break }
-                index -= 1;
-            }
-            corners.insert(index, cur_corner);
-        }
-        (action, vel_left_when_action)
-    }
-
-    pub fn move_with_collisions(&mut self, moving:&mut Object, hitting:&Object, max_depth:u32) {
-        if moving.velocity.length() != 0. {
-            let mut cur_pos = moving.position;
-            let mut cur_vel = moving.velocity;
-            let mut modifier = Vec2::ONE;
-            //Find all actions
-            while cur_vel.length() > 0. {
-                let (next_action, remaining_vel) = self.find_next_action(moving, hitting, cur_pos, cur_vel, max_depth);
-                cur_pos += cur_vel - remaining_vel;
-                cur_vel = remaining_vel;
-                match next_action {
-                    OnTouch::Ignore => {}
-                    OnTouch::Resist(walls_hit) => {
-                        if walls_hit.x { 
-                            cur_vel.x = 0.;
-                            modifier.x *= 0.;
-                        }
-                        if walls_hit.y { 
-                            cur_vel.y = 0.;
-                            modifier.y *= 0.;
-                        }
-                    }
-                }
-            }
-            moving.position = cur_pos;
-            moving.velocity *= modifier;
-            let drag_multiplier = -0.01;
-            moving.apply_linear_force(moving.velocity * drag_multiplier);
-        }
-        moving.rotation += moving.angular_velocity;
-        moving.rotation %= 2.*PI;
-        moving.angular_velocity = 0.;
-    }
-
-    //Eventually remove all these &Objects, a particle should march through the world hitting any objects in it's path.
-    fn next_intersection(&mut self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
-        let half_length = object.grid_length/2.;
-        let (within_bounds, on_bounds) = object.bound_check(particle.position);
-        let boundary_corner = match pos_data {
-            Some(data) => {
-                let cell_length = object.cell_length(data.depth);
-                let quadrant = (particle.rem_displacement.signum() + 0.5).abs().floor();
-                data.cell.as_vec2() * cell_length + cell_length * quadrant + object.position - half_length
-            }
-            None => { object.position + half_length * -particle.rem_displacement.signum() }
-        };
-        let ticks = ((boundary_corner - particle.position) / particle.rem_displacement).abs();
-        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. || (!within_bounds.x && !within_bounds.y) {
-            ticks.max_element()
-        } else if on_bounds.x && on_bounds.y && particle.hittable_walls() != BVec2::TRUE {
-            return None
-        } else { 
-            ticks.min_element()
-        };
-        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None } 
-        self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
-        Some(HitPoint {
-            position : particle.position + particle.rem_displacement * ticks_to_hit, 
-            ticks_to_hit, 
-        })
-
-    }
-
-    fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> BVec2 {
-        //Formalize this with some zorder arithmatic?
-        let (x_slide_check, y_slide_check) = if particle.rem_displacement.x < 0. && particle.rem_displacement.y < 0. { //(-,-)
-            (2, 1)
-        } else if particle.rem_displacement.x < 0. && particle.rem_displacement.y > 0. { //(-,+)
-            (0, 3)
-        } else if particle.rem_displacement.x > 0. && particle.rem_displacement.y < 0. { //(+,-)
-            (3, 0)
-        } else { //(+,+)
-            (1, 2)
-        };
-        let x_block_collision = if let Some(pos_data) = position_data[x_slide_check] {
-            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
-        } else { OnTouch::Ignore };
-        let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
-            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
-        } else { OnTouch::Ignore };
-        BVec2::new(
-            !matches!(y_block_collision, OnTouch::Resist(_)),
-            !matches!(x_block_collision, OnTouch::Resist(_)),
-        )
-    }
-
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
         let shifted_point = mouse_pos - modified.position + modified.grid_length/2.;
         if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.grid_length {
@@ -459,8 +307,209 @@ impl World {
         }
     }
 
+
+    pub fn two_way_collisions(&mut self, object1:&mut Object, object2:&mut Object, max_depth:u32, multiplier:f32) {
+        if within_range(object1, object2, multiplier) {
+            let mut relative_velocity= object1.velocity - object2.velocity;
+            let mut modifier = Vec2::ONE;
+            while relative_velocity.length() != 0. {
+                let corners = [
+                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.position, relative_velocity), max_depth, multiplier),
+                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.position, -relative_velocity), max_depth, multiplier)
+                ];
+                let (action, rem_rel_vel, corner_hit) = self.find_next_action([object1, object2], corners, max_depth);
+                object1.position += relative_velocity - rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
+                relative_velocity = rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
+                if let OnTouch::Resist(walls_hit) = action {
+                    if walls_hit.x {
+                        relative_velocity.x = 0.;
+                        modifier.x = 0.
+                    }
+                    if walls_hit.y {
+                        relative_velocity.y = 0.;
+                        modifier.y = 0.;
+                    }
+                    object1.velocity *= modifier;
+                    object2.velocity *= modifier;
+                }
+            }
+        } else {
+            object1.position += object1.velocity;
+            object2.position += object2.velocity;
+        }
+        let drag_multiplier = -0.01;
+        object1.apply_linear_force(object1.velocity * drag_multiplier);
+        object2.apply_linear_force(object2.velocity * drag_multiplier);
+        //make this a method?
+        object1.rotation += object1.angular_velocity;
+        object1.rotation %= 2.*PI;
+        object1.angular_velocity = 0.;
+        object2.rotation += object2.angular_velocity;
+        object2.rotation %= 2.*PI;
+        object2.angular_velocity = 0.;
+    }
+
+    //The self reference is mutable only so next_intersection can draw a bunch of squares
+    fn find_next_action(&mut self, objects:[&mut Object; 2], mut corners:[VecDeque<Particle>; 2], max_depth:u32) -> (OnTouch, Vec2, usize) {
+        let mut rel_vel_remaining = Vec2::ZERO;
+        let mut action = OnTouch::Ignore;
+        let mut object_hit = 0;
+        loop {
+            let (mut cur_corner, hitting_index) = {
+                if !corners[0].is_empty() && !corners[1].is_empty() {  
+                    if corners[0][0].rem_displacement.length() > corners[1][0].rem_displacement.length() {
+                        (corners[0].pop_back().unwrap(), 1)
+                    } else {
+                        (corners[1].pop_back().unwrap(), 0)
+                    }
+                } else if !corners[0].is_empty() {
+                    (corners[0].pop_back().unwrap(), 1)
+                } else if !corners[1].is_empty() {
+                    (corners[1].pop_back().unwrap(), 0)
+                } else { break } //No more corners
+            };
+            if cur_corner.rem_displacement.length() <= rel_vel_remaining.length() { break }
+            
+            let hit_point = match self.next_intersection(&cur_corner, objects[hitting_index], cur_corner.position_data) {
+                Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
+                _ => { continue }
+            };
+            let position_data = objects[hitting_index].get_data_at_position(&self, hit_point.position, max_depth);
+            cur_corner.move_to(hit_point.position, position_data);
+            if let Some(data) = cur_corner.position_data {
+                match self.index_collision(data.node_pointer.index) {
+                    Some(OnTouch::Ignore) => { }
+                    Some(OnTouch::Resist(possibly_hit_walls)) => {
+                        let hit_walls = possibly_hit_walls & cur_corner.hittable_walls();
+                        let checked_walls = { 
+                            if hit_walls == BVec2::TRUE {
+                                self.slide_check(&cur_corner, position_data)
+                            } else { 
+                                hit_walls 
+                            }
+                        };
+                        if checked_walls != BVec2::FALSE {
+                            action = OnTouch::Resist(
+                                if checked_walls != BVec2::TRUE { checked_walls } else { cur_corner.mag_slide_check() }
+                            );
+                            rel_vel_remaining = cur_corner.rem_displacement;
+                            object_hit = hitting_index;
+                            continue
+                        }
+                    } 
+                    None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
+                }
+            }
+            let corner_pool_idx = hitting_index.abs_diff(1);
+            let mut index = corners[corner_pool_idx].len();
+            for corner in corners[corner_pool_idx].iter().rev() {
+                if corner.rem_displacement.length() >= cur_corner.rem_displacement.length() { break }
+                index -= 1;
+            }
+            corners[corner_pool_idx].insert(index, cur_corner);
+        }
+        (action, rel_vel_remaining, object_hit)
+    }
+
+    fn next_intersection(&mut self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
+        let half_length = object.grid_length/2.;
+        let top_left = object.position - half_length;
+        let bottom_right = object.position + half_length;
+        let within_bounds = BVec2::new(
+            particle.position.x >= top_left.x && particle.position.x <= bottom_right.x,
+            particle.position.y >= top_left.y && particle.position.y <= bottom_right.y,
+        );
+    
+        let (cell, depth) = match pos_data {
+            Some(data) => { (data.cell.as_vec2(), data.depth) }
+            None => {
+                let mut cell = Vec2::ZERO;
+                if particle.position.x <= top_left.x {
+                    if particle.rem_displacement.x > 0. { cell.x = -1. } else { return None }
+                } else if particle.position.x >= bottom_right.x {
+                    if particle.rem_displacement.x < 0. { cell.x = 1. } else { return None }
+                }
+                if particle.position.y <= top_left.y {
+                    if particle.rem_displacement.y > 0. { cell.y = -1. } else { return None }
+                } else if particle.position.y >= bottom_right.y {
+                    if particle.rem_displacement.y < 0. { cell.y = 1. } else { return None }
+                }
+                (cell, 0)
+            }
+        };
+
+        let quadrant = (particle.rem_displacement.signum() + 0.5).abs().floor();
+        let cell_length = object.cell_length(depth);
+        let boundary_corner = cell * cell_length + cell_length * quadrant + top_left;
+        
+        let ticks = ((boundary_corner - particle.position) / particle.rem_displacement).abs();  
+        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. || (!within_bounds.x && !within_bounds.y) {
+            ticks.max_element()
+        } else { ticks.min_element() };
+
+        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
+        self.push_to_render_cache(boundary_corner, ORANGE, 10);
+        self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
+        Some(HitPoint {
+            position : particle.position + particle.rem_displacement * ticks_to_hit, 
+            ticks_to_hit, 
+        })
+
+    }
+
+    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> VecDeque<Particle> {
+        let mut corners = VecDeque::new();
+        for corner in 0 .. unculled_corners.len() {
+            if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
+            let mut culled_corner = unculled_corners[corner].clone();
+            draw_vec_circle(culled_corner.position, 5., DARKPURPLE);
+            if !circles_overlap(hitting.position, hitting.effective_radius(multiplier), culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier) { 
+                outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier, 2., WHITE);
+                continue 
+            }
+            outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier, 2., GREEN);
+            culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
+            corners.push_back(culled_corner);
+        }
+        corners
+    }
+   
+    fn slide_check(&self, particle:&Particle, position_data:[Option<LimPositionData>; 4]) -> BVec2 {
+        //Formalize this with some zorder arithmatic?
+        let (x_slide_check, y_slide_check) = if particle.rem_displacement.x < 0. && particle.rem_displacement.y < 0. { //(-,-)
+            (2, 1)
+        } else if particle.rem_displacement.x < 0. && particle.rem_displacement.y > 0. { //(-,+)
+            (0, 3)
+        } else if particle.rem_displacement.x > 0. && particle.rem_displacement.y < 0. { //(+,-)
+            (3, 0)
+        } else { //(+,+)
+            (1, 2)
+        };
+        let x_block_collision = if let Some(pos_data) = position_data[x_slide_check] {
+            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
+        } else { OnTouch::Ignore };
+        let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
+            self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
+        } else { OnTouch::Ignore };
+        BVec2::new(
+            !matches!(y_block_collision, OnTouch::Resist(_)),
+            !matches!(x_block_collision, OnTouch::Resist(_)),
+        )
+    }
+
 }
 
+pub fn within_range(object1:&Object, object2:&Object, multiplier:f32) -> bool {
+    let obj1_rad = object1.effective_radius(multiplier);
+    let obj2_rad = object2.effective_radius(multiplier);
+    outline_circle(object1.position, obj1_rad, 2., WHITE);
+    outline_circle(object2.position, obj2_rad, 2., WHITE);
+    circles_overlap(object1.position, obj1_rad, object2.position, obj2_rad)
+}
+
+fn circles_overlap(point1:Vec2, rad1:f32, point2:Vec2, rad2:f32) -> bool {
+    (point1 - point2).length() < rad1 + rad2
+}
 
 impl Zorder {
     pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {

@@ -44,7 +44,7 @@ impl BlockPallete {
                 Block {
                     name : "Water".to_owned(),
                     index : Index(3),
-                    collision : OnTouch::Resist(BVec2::new(true, false)),
+                    collision : OnTouch::Ignore,
                     color : BLUE
                 },
                 Block {
