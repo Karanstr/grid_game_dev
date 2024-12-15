@@ -7,6 +7,9 @@ pub use crate::graph::Index;
 mod collision_utils;
 use collision_utils::*;
 
+//Use Serde for serialization
+//Turn rendercache into an independent struct
+
 pub struct Object {
     pub root : NodePointer,
     pub position : Vec2,
@@ -415,14 +418,18 @@ impl World {
                 (cell, 0)
             }
         };
-        let quadrant = (particle.rem_displacement.signum() + 0.5).abs().floor();
+        let quadrant = particle.rem_displacement.signum().max(Vec2::ZERO);
         let cell_length = object.cell_length(depth);
         let boundary_corner = cell * cell_length + cell_length * quadrant + top_left;
         
         let ticks = ((boundary_corner - particle.position) / particle.rem_displacement).abs();  
-        let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. || (!within_bounds.x && !within_bounds.y) {
-            ticks.max_element()
-        } else { ticks.min_element() };
+        let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
+            (false, false) => { ticks.max_element() },
+            (true, false) if ticks.x == 0. => { ticks.y },
+            (false, true) if ticks.y == 0. => { ticks.x },
+            _ => { ticks.min_element() },
+        };
+
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
         self.push_to_render_cache(boundary_corner, ORANGE, 10);
         self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
@@ -430,7 +437,6 @@ impl World {
             position : particle.position + particle.rem_displacement * ticks_to_hit, 
             ticks_to_hit, 
         })
-
     }
 
     fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> BinaryHeap<Particle> {

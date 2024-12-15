@@ -218,7 +218,7 @@ impl SparseDirectedGraph {
     }
 
     //Add cyclicity here
-    fn get_trail(&self, root:NodePointer, path:&Vec<u32>) -> Vec<NodePointer>  {
+    fn get_trail(&self, root:NodePointer, path:&[u32]) -> Vec<NodePointer>  {
         let mut trail = vec![root];
         for step in 0 .. path.len() {
             let parent = trail[step];
@@ -285,7 +285,7 @@ impl SparseDirectedGraph {
 
     //Public functions used for writing
     //Add cyclicity here.
-    pub fn set_node(&mut self, root:NodePointer, path:&Vec<u32>, new_node:NodePointer) -> Result<NodePointer, AccessError> {
+    pub fn set_node(&mut self, root:NodePointer, path:&[u32], new_node:NodePointer) -> Result<NodePointer, AccessError> {
         let trail = self.get_trail(root, path);
         let mut cur_node_pointer = new_node;
         let depth = path.len();
@@ -306,7 +306,7 @@ impl SparseDirectedGraph {
 
 
     //Public functions used for reading
-    pub fn read(&self, root:NodePointer, path:&Vec<u32>) -> (NodePointer, u32) {
+    pub fn read(&self, root:NodePointer, path:&[u32]) -> (NodePointer, u32) {
         let trail = self.get_trail(root, path);
         if let Some(node_pointer) = trail.last() {
             (*node_pointer, trail.len() as u32 - 1)

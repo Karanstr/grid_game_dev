@@ -8,6 +8,7 @@ pub enum OnTouch {
     //...
 }
 
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
     pub name : String,
@@ -15,6 +16,7 @@ pub struct Block {
     pub collision : OnTouch,
     pub color : Color
 }
+
 
 pub struct BlockPallete {
     pub blocks : Vec<Block>
@@ -59,11 +61,13 @@ impl BlockPallete {
     }
 }
 
+
 #[derive(Debug)]
 pub struct HitPoint {
     pub position : Vec2,
     pub ticks_to_hit : f32,
 }
+
 
 #[derive(Debug, Clone)]
 pub struct Particle {
@@ -73,8 +77,6 @@ pub struct Particle {
     pub configuration : Configurations,
 }
 
-
-// Add these trait implementations
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.rem_displacement.length_squared().partial_cmp(&other.rem_displacement.length_squared())
@@ -154,6 +156,7 @@ impl Particle {
 
 }
 
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Configurations {
     TopLeft,
@@ -161,6 +164,7 @@ pub enum Configurations {
     BottomLeft,
     BottomRight
 }
+
 
 #[derive(Clone, Copy, Debug)]
 pub struct LimPositionData {
