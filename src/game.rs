@@ -342,14 +342,14 @@ impl World {
             let (mut cur_corner, hitting_index) = {
                 if !corners[0].is_empty() && !corners[1].is_empty() {  
                     if corners[0][0].rem_displacement.length() > corners[1][0].rem_displacement.length() {
-                        (corners[0].pop_back().unwrap(), 1)
+                        (corners[0].pop_front().unwrap(), 1)
                     } else {
-                        (corners[1].pop_back().unwrap(), 0)
+                        (corners[1].pop_front().unwrap(), 0)
                     }
                 } else if !corners[0].is_empty() {
-                    (corners[0].pop_back().unwrap(), 1)
+                    (corners[0].pop_front().unwrap(), 1)
                 } else if !corners[1].is_empty() {
-                    (corners[1].pop_back().unwrap(), 0)
+                    (corners[1].pop_front().unwrap(), 0)
                 } else { break } //No more corners
             };
             if cur_corner.rem_displacement.length() <= rel_vel_remaining.length() { break }
@@ -406,7 +406,6 @@ impl World {
         let (cell, depth) = match pos_data {
             Some(data) => { (data.cell.as_vec2(), data.depth) }
             None => {
-                dbg!(particle.rem_displacement);
                 let mut cell = Vec2::ZERO;
                 if particle.position.x <= top_left.x {
                     if particle.rem_displacement.x > 0. { cell.x = -1. } else { return None }
