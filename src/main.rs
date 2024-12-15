@@ -18,9 +18,10 @@ async fn main() {
     let torque = 0.08;
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
+    let mut save = world.graph.save_object_json(fixed.root);
     loop {
 
-        //Profiling and player speed-reorientation
+        //Profiling and player speed-reorientation and save/load
         {
             if is_key_pressed(KeyCode::P) {
                 world.graph.profile();
@@ -32,8 +33,15 @@ async fn main() {
                 player.set_rotation(PI/2.);
             } else if is_key_pressed(KeyCode::T) {
                 player.set_rotation(PI/4.);
+            } else if is_key_pressed(KeyCode::K) {
+                save = world.graph.save_object_json(fixed.root);
+            } else if is_key_pressed(KeyCode::L) {
+                let new_root = world.graph.load_object_json(save.clone());
+                let old_root = fixed.root;
+                fixed.root = new_root;
+                world.graph.swap_root(old_root, new_root);
             }
-        }
+        } 
 
         //Handle depth changing
         {

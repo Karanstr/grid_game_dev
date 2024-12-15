@@ -7,7 +7,6 @@ pub use crate::graph::Index;
 mod collision_utils;
 use collision_utils::*;
 
-//Use Serde for serialization
 //Turn rendercache into an independent struct
 
 pub struct Object {
