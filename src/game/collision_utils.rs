@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,6 +72,28 @@ pub struct Particle {
     pub position_data : Option<LimPositionData>,
     pub configuration : Configurations,
 }
+
+
+// Add these trait implementations
+impl PartialOrd for Particle {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.rem_displacement.length_squared().partial_cmp(&other.rem_displacement.length_squared())
+    }
+}
+
+impl Ord for Particle {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialEq for Particle {
+    fn eq(&self, other: &Self) -> bool {
+        self.rem_displacement.length_squared() == other.rem_displacement.length_squared()
+    }
+}
+
+impl Eq for Particle {} 
 
 impl Particle {
 

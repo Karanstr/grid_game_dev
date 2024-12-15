@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use std::collections::VecDeque;
+use std::collections::BinaryHeap;
 use macroquad::prelude::*;
 use crate::graph::{NodePointer, SparseDirectedGraph, Zorder};
 pub use crate::graph::Index;
@@ -296,7 +296,7 @@ impl World {
         if within_range(object1, object2, multiplier) {
             let mut relative_velocity= object1.velocity - object2.velocity;
             let mut modifier = Vec2::ONE;
-            while relative_velocity.length() != 0. {
+            while relative_velocity.length_squared() != 0. {
                 let corners = [
                     self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.position, relative_velocity), max_depth, multiplier),
                     self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.position, -relative_velocity), max_depth, multiplier)
@@ -334,25 +334,25 @@ impl World {
     }
 
     //The self reference is mutable only so next_intersection can draw a bunch of squares
-    fn find_next_action(&mut self, objects:[&mut Object; 2], mut corners:[VecDeque<Particle>; 2], max_depth:u32) -> (OnTouch, Vec2, usize) {
+    fn find_next_action(&mut self, objects:[&mut Object; 2], mut corners:[BinaryHeap<Particle>; 2], max_depth:u32) -> (OnTouch, Vec2, usize) {
         let mut rel_vel_remaining = Vec2::ZERO;
         let mut action = OnTouch::Ignore;
         let mut object_hit = 0;
         loop {
             let (mut cur_corner, hitting_index) = {
                 if !corners[0].is_empty() && !corners[1].is_empty() {  
-                    if corners[0][0].rem_displacement.length() > corners[1][0].rem_displacement.length() {
-                        (corners[0].pop_front().unwrap(), 1)
+                    if corners[0].peek().unwrap() > corners[1].peek().unwrap() {
+                        (corners[0].pop().unwrap(), 1)
                     } else {
-                        (corners[1].pop_front().unwrap(), 0)
+                        (corners[1].pop().unwrap(), 0)
                     }
                 } else if !corners[0].is_empty() {
-                    (corners[0].pop_front().unwrap(), 1)
+                    (corners[0].pop().unwrap(), 1)
                 } else if !corners[1].is_empty() {
-                    (corners[1].pop_front().unwrap(), 0)
+                    (corners[1].pop().unwrap(), 0)
                 } else { break } //No more corners
             };
-            if cur_corner.rem_displacement.length() <= rel_vel_remaining.length() { break }
+            if cur_corner.rem_displacement.length_squared() <= rel_vel_remaining.length_squared() { break }
             let hit_point = match self.next_intersection(&cur_corner, objects[hitting_index], cur_corner.position_data) {
                 Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
                 _ => { continue }
@@ -384,12 +384,7 @@ impl World {
                 }
             } else { continue }
             let corner_pool_idx = hitting_index.abs_diff(1);
-            let mut index = corners[corner_pool_idx].len();
-            for corner in corners[corner_pool_idx].iter().rev() {
-                if corner.rem_displacement.length() >= cur_corner.rem_displacement.length() { break }
-                index -= 1;
-            }
-            corners[corner_pool_idx].insert(index, cur_corner);
+            corners[corner_pool_idx].push(cur_corner);
         }
         (action, rel_vel_remaining, object_hit)
     }
@@ -438,8 +433,8 @@ impl World {
 
     }
 
-    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> VecDeque<Particle> {
-        let mut corners = VecDeque::new();
+    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> BinaryHeap<Particle> {
+        let mut corners = BinaryHeap::new();
         for corner in 0 .. unculled_corners.len() {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
             let mut culled_corner = unculled_corners[corner].clone();
@@ -450,7 +445,7 @@ impl World {
             }
             outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier, 2., GREEN);
             culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
-            corners.push_back(culled_corner);
+            corners.push(culled_corner);
         }
         corners
     }
