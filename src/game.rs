@@ -81,21 +81,6 @@ impl Object {
         data
     }
 
-    fn bound_check(&self, position:Vec2) -> (BVec2, BVec2) {
-        let top_left = self.position - self.grid_length/2.;
-        let bottom_right = self.position + self.grid_length/2.;
-        (
-            BVec2::new(
-                if position.x < top_left.x || position.x > bottom_right.x { false } else { true },
-                if position.y < top_left.y || position.y > bottom_right.y { false } else { true }
-            ),
-            BVec2::new(
-                if position.x == top_left.x || position.x == bottom_right.x { true } else { false },
-                if position.y == top_left.y || position.y == bottom_right.y { true } else { false }
-            )
-        )
-    }
-
     pub fn apply_linear_force(&mut self, force:Vec2) {
         self.velocity += force;
         self.remove_neglible_vel()
@@ -307,7 +292,6 @@ impl World {
         }
     }
 
-
     pub fn two_way_collisions(&mut self, object1:&mut Object, object2:&mut Object, max_depth:u32, multiplier:f32) {
         if within_range(object1, object2, multiplier) {
             let mut relative_velocity= object1.velocity - object2.velocity;
@@ -369,7 +353,6 @@ impl World {
                 } else { break } //No more corners
             };
             if cur_corner.rem_displacement.length() <= rel_vel_remaining.length() { break }
-            
             let hit_point = match self.next_intersection(&cur_corner, objects[hitting_index], cur_corner.position_data) {
                 Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
                 _ => { continue }
@@ -399,7 +382,7 @@ impl World {
                     } 
                     None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
                 }
-            }
+            } else { continue }
             let corner_pool_idx = hitting_index.abs_diff(1);
             let mut index = corners[corner_pool_idx].len();
             for corner in corners[corner_pool_idx].iter().rev() {
@@ -423,6 +406,7 @@ impl World {
         let (cell, depth) = match pos_data {
             Some(data) => { (data.cell.as_vec2(), data.depth) }
             None => {
+                dbg!(particle.rem_displacement);
                 let mut cell = Vec2::ZERO;
                 if particle.position.x <= top_left.x {
                     if particle.rem_displacement.x > 0. { cell.x = -1. } else { return None }
@@ -437,7 +421,6 @@ impl World {
                 (cell, 0)
             }
         };
-
         let quadrant = (particle.rem_displacement.signum() + 0.5).abs().floor();
         let cell_length = object.cell_length(depth);
         let boundary_corner = cell * cell_length + cell_length * quadrant + top_left;
@@ -446,7 +429,6 @@ impl World {
         let ticks_to_hit = if within_bounds.x ^ within_bounds.y && ticks.min_element() == 0. || (!within_bounds.x && !within_bounds.y) {
             ticks.max_element()
         } else { ticks.min_element() };
-
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
         self.push_to_render_cache(boundary_corner, ORANGE, 10);
         self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
