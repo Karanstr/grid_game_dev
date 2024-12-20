@@ -398,7 +398,7 @@ impl SparseDirectedGraph {
 
     }
 
-    
+    //Create object which can be pulled into/out of the dag, where we handle all sorts of stuff.
     pub fn save_object_json(&self, root:NodePointer) -> String {
         let mut data = self.bfs_nodes(root);
         data.reverse();

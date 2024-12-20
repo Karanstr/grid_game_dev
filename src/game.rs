@@ -116,7 +116,7 @@ impl Object {
 pub use vec_friendly_drawing::*;
 
 pub struct World {
-    pub blocks : BlockPallete,
+    pub blocks : BlockPalette,
     pub graph : SparseDirectedGraph,
     pub points_to_draw : Vec<(Vec2, Color, i32)>
 }
@@ -125,7 +125,7 @@ impl World {
 
     pub fn new() -> Self {
         Self {
-            blocks : BlockPallete::new(),
+            blocks : BlockPalette::new(),
             graph : SparseDirectedGraph::new(8),
             points_to_draw : Vec::new(),
         }
@@ -214,7 +214,6 @@ impl World {
                         continue 
                     }
                 };
-                //This logic is incorrect.
                 for _ in 0 .. max_depth - cell_depth {
                     check_zorder = check_zorder << 2 | direction
                 }

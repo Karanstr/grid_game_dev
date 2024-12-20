@@ -18,11 +18,11 @@ pub struct Block {
 }
 
 
-pub struct BlockPallete {
+pub struct BlockPalette {
     pub blocks : Vec<Block>
 }
 
-impl BlockPallete {
+impl BlockPalette {
     pub fn new() -> Self {
         Self {
             blocks : vec![
@@ -109,32 +109,21 @@ impl Particle {
     }
 
     pub fn hittable_walls(&self) -> BVec2 {
-        match self.configuration {
+        let (x_check, y_check) = match self.configuration {
             Configurations::TopLeft => {
-                BVec2::new(
-                    if self.rem_displacement.x < 0. { true } else { false },
-                    if self.rem_displacement.y < 0. { true } else { false }
-                )
+                (self.rem_displacement.x < 0., self.rem_displacement.y < 0.)
             }
             Configurations::TopRight => {
-                BVec2::new(
-                    if self.rem_displacement.x > 0. { true } else { false },
-                    if self.rem_displacement.y < 0. { true } else { false }
-                )
+                (self.rem_displacement.x > 0., self.rem_displacement.y < 0.)
             }
             Configurations::BottomLeft => {
-                BVec2::new(
-                    if self.rem_displacement.x < 0. { true } else { false },
-                    if self.rem_displacement.y > 0. { true } else { false }
-                )
+                (self.rem_displacement.x < 0., self.rem_displacement.y > 0.)
             }
             Configurations::BottomRight => {
-                BVec2::new(
-                    if self.rem_displacement.x > 0. { true } else { false },
-                    if self.rem_displacement.y > 0. { true } else { false }
-                )
+                (self.rem_displacement.x > 0., self.rem_displacement.y > 0.)
             }
-        }
+        };
+        BVec2::new(x_check, y_check)
     }
 
     pub fn mag_slide_check(&self) -> BVec2 {
