@@ -7,16 +7,13 @@ pub use crate::graph::Index;
 mod collision_utils;
 use collision_utils::*;
 
-//Turn rendercache into an independent struct
-
 pub struct Object {
     pub root : NodePointer,
     pub aabs : AABS,
     pub velocity : Vec2,
-    rotation : f32,
-    angular_velocity : f32,
+    pub rotation : f32,
+    pub angular_velocity : f32,
 }
-
 impl Object {
     pub fn new(root:NodePointer, position:Vec2, radius:f32) -> Self {
         Self {
@@ -30,7 +27,6 @@ impl Object {
 
     pub fn effective_aabb(&self, vel_multiplier:f32) -> AABB {
         AABB::from_aabs(self.aabs).extend(self.velocity * vel_multiplier)
-
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
@@ -93,7 +89,6 @@ impl Object {
         let speed_min = 0.005;
         if self.velocity.x.abs() < speed_min { self.velocity.x = 0. }
         if self.velocity.y.abs() < speed_min { self.velocity.y = 0. }
-
     }
 
     pub fn apply_rotational_force(&mut self, torque:f32) {
@@ -110,14 +105,15 @@ impl Object {
 
 }
 
+
 pub use vec_friendly_drawing::*;
+
 
 pub struct World {
     pub blocks : BlockPalette,
     pub graph : SparseDirectedGraph,
     pub points_to_draw : Vec<(Vec2, Color, i32)>
 }
-
 impl World {
 
     pub fn new() -> Self {
@@ -227,7 +223,7 @@ impl World {
         exposed_mask
     }
 
-    fn formatted_exposed_corners(&self, object:&Object, max_depth:u32, cur_pos: Vec2, cur_vel: Vec2) -> Vec<Particle> {
+    fn formatted_exposed_corners(&self, object:&Object, max_depth:u32, cur_pos: Vec2, cur_vel: Vec2, obj_hit:usize) -> Vec<Particle> {
         let leaves = self.graph.dfs_leaves(object.root);
         let mut corners = Vec::new();
         for (zorder, depth, index) in leaves {
@@ -239,28 +235,32 @@ impl World {
                     corners.push(Particle::new(
                         top_left_corner,
                         cur_vel,
-                        Configurations::TopLeft
+                        Configurations::TopLeft,
+                        obj_hit
                     ));
                 }
                 if corner_mask & 0b10 != 0 {
                     corners.push(Particle::new(
                         top_left_corner + Vec2::new(cell_length, 0.),
                         cur_vel,
-                        Configurations::TopRight
+                        Configurations::TopRight,
+                        obj_hit
                     ));
                 }
                 if corner_mask & 0b100 != 0 {
                     corners.push(Particle::new(
                         top_left_corner + Vec2::new(0., cell_length),
                         cur_vel,
-                        Configurations::BottomLeft
+                        Configurations::BottomLeft,
+                        obj_hit
                     ));
                 }
                 if corner_mask & 0b1000 != 0 {
                     corners.push(Particle::new(
                         top_left_corner + cell_length,
                         cur_vel,
-                        Configurations::BottomRight
+                        Configurations::BottomRight,
+                        obj_hit
                     ));
                 }
             }
@@ -296,10 +296,12 @@ impl World {
             let mut relative_velocity= object1.velocity - object2.velocity;
             let mut modifier = Vec2::ONE;
             while relative_velocity.length_squared() != 0. {
+                //Fix this at some point
                 let corners = [
-                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.aabs.center, relative_velocity), max_depth, multiplier),
-                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.aabs.center, -relative_velocity), max_depth, multiplier)
+                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.aabs.center, relative_velocity, 1), max_depth, multiplier),
+                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.aabs.center, -relative_velocity, 0), max_depth, multiplier)
                 ];
+                let corners = BinaryHeap::from(corners.concat());
                 let (action, rem_rel_vel, corner_hit) = self.find_next_action([object1, object2], corners, max_depth);
                 object1.aabs.center += relative_velocity - rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
                 relative_velocity = rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
@@ -333,30 +335,17 @@ impl World {
     }
 
     //The self reference is mutable only so next_intersection can draw a bunch of squares
-    fn find_next_action(&mut self, objects:[&mut Object; 2], mut corners:[BinaryHeap<Particle>; 2], max_depth:u32) -> (OnTouch, Vec2, usize) {
+    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Particle>, max_depth:u32) -> (OnTouch, Vec2, usize) {
         let mut rel_vel_remaining = Vec2::ZERO;
         let mut action = OnTouch::Ignore;
         let mut object_hit = 0;
-        loop {
-            let (mut cur_corner, hitting_index) = {
-                if !corners[0].is_empty() && !corners[1].is_empty() {  
-                    if corners[0].peek().unwrap() > corners[1].peek().unwrap() {
-                        (corners[0].pop().unwrap(), 1)
-                    } else {
-                        (corners[1].pop().unwrap(), 0)
-                    }
-                } else if !corners[0].is_empty() {
-                    (corners[0].pop().unwrap(), 1)
-                } else if !corners[1].is_empty() {
-                    (corners[1].pop().unwrap(), 0)
-                } else { break } //No more corners
-            };
+        while let Some(mut cur_corner) = corners.pop() {
             if cur_corner.rem_displacement.length_squared() <= rel_vel_remaining.length_squared() { break }
-            let hit_point = match self.next_intersection(&cur_corner, objects[hitting_index], cur_corner.position_data) {
+            let hit_point = match self.next_intersection(&cur_corner, objects[cur_corner.hitting_index], cur_corner.position_data) {
                 Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
                 _ => { continue }
             };
-            let position_data = objects[hitting_index].get_data_at_position(&self, hit_point.position, max_depth);
+            let position_data = objects[cur_corner.hitting_index].get_data_at_position(&self, hit_point.position, max_depth);
             cur_corner.move_to(hit_point.position, position_data);
             if let Some(data) = cur_corner.position_data {
                 match self.index_collision(data.node_pointer.index) {
@@ -375,20 +364,19 @@ impl World {
                                 if checked_walls != BVec2::TRUE { checked_walls } else { cur_corner.mag_slide_check() }
                             );
                             rel_vel_remaining = cur_corner.rem_displacement;
-                            object_hit = hitting_index;
+                            object_hit = cur_corner.hitting_index;
                             continue
                         }
                     } 
                     None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
                 }
             } else { continue }
-            let corner_pool_idx = hitting_index.abs_diff(1);
-            corners[corner_pool_idx].push(cur_corner);
+            corners.push(cur_corner);
         }
         (action, rel_vel_remaining, object_hit)
     }
 
-    fn next_intersection(&mut self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
+    fn next_intersection(&self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
         let top_left = object.aabs.min();
         let bottom_right = object.aabs.max();
         let within_bounds = BVec2::new(
@@ -432,8 +420,8 @@ impl World {
         })
     }
 
-    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> BinaryHeap<Particle> {
-        let mut corners = BinaryHeap::new();
+    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> Vec<Particle> {
+        let mut corners = Vec::new();
         for corner in 0 .. unculled_corners.len() {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
             let mut culled_corner = unculled_corners[corner].clone();
@@ -503,7 +491,6 @@ pub struct AABS {
     pub center: Vec2,
     pub radius: f32,
 }
-
 #[allow(dead_code)]
 impl AABS {
     pub fn new(center:Vec2, radius:f32) -> Self {
@@ -518,19 +505,12 @@ impl AABS {
         self.center + self.radius
     }
 
-    pub fn intersects(&self, other:Self) -> bool {
-        let distance = (other.center - self.center).abs();
-        distance.x < self.radius + other.radius && distance.y < self.radius + other.radius
-    }
-
 }
-
 #[derive(Clone, Copy, Debug)]
 pub struct AABB {
     pub top_left: Vec2,
     pub bottom_right: Vec2,
 }
-
 #[allow(dead_code)]
 impl AABB {
     pub fn new(top_left:Vec2, bottom_right:Vec2) -> Self {
@@ -616,7 +596,6 @@ mod vec_friendly_drawing {
 trait Vec2Extension {
     fn better_sign(&self) -> Vec2; 
 }
-
 impl Vec2Extension for Vec2 {
     fn better_sign(&self) -> Vec2 {
         Vec2::new(

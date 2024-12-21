@@ -100,9 +100,12 @@ async fn main() {
         world.render(&mut player, true);
         player.draw_facing();
         world.render_cache();
-        world.render_corners(&player, 5);
-        world.render_corners(&fixed, 5);
+        // world.render_corners(&player, 5);
+        // world.render_corners(&fixed, 5);
         world.two_way_collisions(&mut player, &mut fixed, 5, 10.);
+
+        draw_text(&format!("{:.4}", player.rotation), 200., 10., 20., WHITE);
+        draw_text(&format!("{:.0}", player.aabs.center), 10., 10., 20., WHITE);
         next_frame().await
     }
 

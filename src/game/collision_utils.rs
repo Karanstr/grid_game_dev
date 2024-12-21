@@ -75,6 +75,7 @@ pub struct Particle {
     pub rem_displacement : Vec2,
     pub position_data : Option<LimPositionData>,
     pub configuration : Configurations,
+    pub hitting_index : usize
 }
 
 impl PartialOrd for Particle {
@@ -99,12 +100,13 @@ impl Eq for Particle {}
 
 impl Particle {
 
-    pub fn new(position:Vec2, rem_displacement:Vec2, configuration:Configurations) -> Self {
+    pub fn new(position:Vec2, rem_displacement:Vec2, configuration:Configurations, hitting_index:usize) -> Self {
         Self {
             position,
             rem_displacement,
             position_data : None,
-            configuration
+            configuration, 
+            hitting_index
         }
     }
 
