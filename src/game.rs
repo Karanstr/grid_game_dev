@@ -11,43 +11,40 @@ use collision_utils::*;
 
 pub struct Object {
     pub root : NodePointer,
-    pub position : Vec2,
-    pub grid_length : f32,
+    pub aabs : AABS,
     pub velocity : Vec2,
     rotation : f32,
     angular_velocity : f32,
 }
 
 impl Object {
-
-    pub fn new(root:NodePointer, position:Vec2, grid_length:f32) -> Self {
+    pub fn new(root:NodePointer, position:Vec2, radius:f32) -> Self {
         Self {
             root,
-            position,
-            grid_length,
+            aabs : AABS::new(position, radius),
             velocity : Vec2::ZERO,
             rotation : 0.0,
             angular_velocity : 0.,
         }
     }
 
-    pub fn effective_radius(&self, vel_multiplier:f32) -> f32 {
-        Vec2::splat(self.grid_length/2.).length() + self.velocity.abs().max_element()*vel_multiplier
+    pub fn effective_aabb(&self, vel_multiplier:f32) -> AABB {
+        AABB::from_aabs(self.aabs).extend(self.velocity * vel_multiplier)
+
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
-        self.grid_length / 2f32.powf(depth as f32)
+        self.aabs.radius * 2. / 2f32.powi(depth as i32)
     }
 
     fn cell_top_left_corner(&self, cell:UVec2, depth:u32) -> Vec2 {
         let cell_length = self.cell_length(depth);
-        cell.as_vec2() * cell_length + self.position - self.grid_length/2.
+        cell.as_vec2() * cell_length + self.aabs.min()
     }
 
     //Change to relative position?
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
-        let half_length = self.grid_length/2.;
         let cell_length = self.cell_length(depth);
         let offset = 0.01;
         for i in 0 .. 4 {
@@ -55,9 +52,9 @@ impl Object {
                 if i & 0b1 == 1 { 1. } else { -1. },
                 if i & 0b10 == 0b10 { 1. } else { -1. }
             );
-            let top_left = self.position - half_length;
+            let top_left = self.aabs.min();
             let cur_point = point - top_left + offset * direction;
-            four_points[i] = if cur_point.clamp(Vec2::ZERO, Vec2::splat(self.grid_length)) == cur_point {
+            four_points[i] = if cur_point.clamp(Vec2::ZERO, Vec2::splat(self.aabs.radius * 2.)) == cur_point {
                 Some( (cur_point / cell_length).floor().as_uvec2() )
             } else { None }
         }
@@ -108,7 +105,7 @@ impl Object {
     }
 
     pub fn draw_facing(&self) {
-        draw_vec_line(self.position, self.position + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
+        draw_vec_line(self.aabs.center, self.aabs.center + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
     }
 
 }
@@ -143,6 +140,7 @@ impl World {
         self.points_to_draw = new_points;
     }
 
+    #[allow(dead_code)]
     fn push_to_render_cache(&mut self, point:Vec2, color:Color, ticks:i32) {
         self.points_to_draw.push((point, color, ticks));
     }
@@ -164,8 +162,8 @@ impl World {
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
-        let shifted_point = mouse_pos - modified.position + modified.grid_length/2.;
-        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.grid_length {
+        let shifted_point = mouse_pos - modified.aabs.center + modified.aabs.radius;
+        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.aabs.radius * 2. {
             return Err("Attempting to edit beyond object domain".to_owned())
         }
         let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
@@ -235,7 +233,7 @@ impl World {
         for (zorder, depth, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
                 let corner_mask = self.exposed_corners(object.root, zorder, depth, max_depth);
-                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.position + cur_pos;
+                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.aabs.center + cur_pos;
                 let cell_length = object.cell_length(depth);
                 if corner_mask & 1 != 0 {
                     corners.push(Particle::new(
@@ -299,11 +297,11 @@ impl World {
             let mut modifier = Vec2::ONE;
             while relative_velocity.length_squared() != 0. {
                 let corners = [
-                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.position, relative_velocity), max_depth, multiplier),
-                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.position, -relative_velocity), max_depth, multiplier)
+                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.aabs.center, relative_velocity), max_depth, multiplier),
+                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.aabs.center, -relative_velocity), max_depth, multiplier)
                 ];
                 let (action, rem_rel_vel, corner_hit) = self.find_next_action([object1, object2], corners, max_depth);
-                object1.position += relative_velocity - rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
+                object1.aabs.center += relative_velocity - rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
                 relative_velocity = rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
                 if let OnTouch::Resist(walls_hit) = action {
                     if walls_hit.x {
@@ -319,8 +317,8 @@ impl World {
                 }
             }
         } else {
-            object1.position += object1.velocity;
-            object2.position += object2.velocity;
+            object1.aabs.center += object1.velocity;
+            object2.aabs.center += object2.velocity;
         }
         let drag_multiplier = -0.01;
         object1.apply_linear_force(object1.velocity * drag_multiplier);
@@ -391,9 +389,8 @@ impl World {
     }
 
     fn next_intersection(&mut self, particle:&Particle, object:&Object, pos_data:Option<LimPositionData>) -> Option<HitPoint> {  
-        let half_length = object.grid_length/2.;
-        let top_left = object.position - half_length;
-        let bottom_right = object.position + half_length;
+        let top_left = object.aabs.min();
+        let bottom_right = object.aabs.max();
         let within_bounds = BVec2::new(
             particle.position.x >= top_left.x && particle.position.x <= bottom_right.x,
             particle.position.y >= top_left.y && particle.position.y <= bottom_right.y,
@@ -429,8 +426,6 @@ impl World {
         };
 
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
-        self.push_to_render_cache(boundary_corner, ORANGE, 10);
-        self.push_to_render_cache(particle.position + particle.rem_displacement * ticks_to_hit, RED, 5);
         Some(HitPoint {
             position : particle.position + particle.rem_displacement * ticks_to_hit, 
             ticks_to_hit, 
@@ -443,11 +438,11 @@ impl World {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
             let mut culled_corner = unculled_corners[corner].clone();
             draw_vec_circle(culled_corner.position, 5., DARKPURPLE);
-            if !circles_overlap(hitting.position, hitting.effective_radius(multiplier), culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier) { 
-                outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier, 2., WHITE);
-                continue 
-            }
-            outline_circle(culled_corner.position, culled_corner.rem_displacement.abs().max_element()*multiplier, 2., GREEN);
+            
+            let hitting_aabb = hitting.effective_aabb(multiplier);
+            let point_aabb = AABB::new(culled_corner.position, culled_corner.position).extend(culled_corner.rem_displacement * multiplier);
+            if !hitting_aabb.intersects(point_aabb) { outline_aabb(point_aabb, 2., RED); continue }
+            else { outline_aabb(point_aabb, 2., GREEN); }
             culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
             corners.push(culled_corner);
         }
@@ -479,21 +474,19 @@ impl World {
 
 }
 
+
 pub fn within_range(object1:&Object, object2:&Object, multiplier:f32) -> bool {
-    let obj1_rad = object1.effective_radius(multiplier);
-    let obj2_rad = object2.effective_radius(multiplier);
-    outline_circle(object1.position, obj1_rad, 2., WHITE);
-    outline_circle(object2.position, obj2_rad, 2., WHITE);
-    circles_overlap(object1.position, obj1_rad, object2.position, obj2_rad)
+    let obj1_aabb = object1.effective_aabb(multiplier);
+    let obj2_aabb = object2.effective_aabb(multiplier);
+    outline_aabb(obj1_aabb, 2., RED);
+    outline_aabb(obj2_aabb, 2., RED);
+    obj1_aabb.intersects(obj2_aabb)
 }
 
-fn circles_overlap(point1:Vec2, rad1:f32, point2:Vec2, rad2:f32) -> bool {
-    (point1 - point2).length() < rad1 + rad2
-}
 
 impl Zorder {
     pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
-        let clamped: Vec2 = direction.signum().clamp(Vec2::ZERO, Vec2::ONE);
+        let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
         if direction.x == 0. {
             2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
         } else if direction.y == 0. {
@@ -505,10 +498,79 @@ impl Zorder {
 }
 
 
+#[derive(Clone, Copy, Debug)]
+pub struct AABS {
+    pub center: Vec2,
+    pub radius: f32,
+}
+
+#[allow(dead_code)]
+impl AABS {
+    pub fn new(center:Vec2, radius:f32) -> Self {
+        Self { center, radius }
+    }
+
+    pub fn min(&self) -> Vec2 { 
+        self.center - self.radius
+    }
+
+    pub fn max(&self) -> Vec2 {
+        self.center + self.radius
+    }
+
+    pub fn intersects(&self, other:Self) -> bool {
+        let distance = (other.center - self.center).abs();
+        distance.x < self.radius + other.radius && distance.y < self.radius + other.radius
+    }
+
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AABB {
+    pub top_left: Vec2,
+    pub bottom_right: Vec2,
+}
+
+#[allow(dead_code)]
+impl AABB {
+    pub fn new(top_left:Vec2, bottom_right:Vec2) -> Self {
+        Self { top_left, bottom_right }
+    }
+
+    pub fn from_aabs(aabs:AABS) -> Self {
+        Self::new(aabs.min(), aabs.max())
+    }
+
+    pub fn extend(&self, distance:Vec2) -> Self {
+        let direction = distance.better_sign();
+        let mut new_aabb = self.clone();
+         match direction.x {
+            -1. => { new_aabb.top_left.x += distance.x }
+            1. => { new_aabb.bottom_right.x += distance.x }
+            _ => { }
+        }
+        match direction.y {
+            -1. => { new_aabb.top_left.y += distance.y }
+            1. => { new_aabb.bottom_right.y += distance.y }
+            _ => { }
+        }
+        new_aabb
+    }
+
+    pub fn intersects(&self, other:Self) -> bool {
+        (self.top_left.x < other.bottom_right.x && other.top_left.x < self.bottom_right.x) 
+        && 
+        (self.top_left.y < other.bottom_right.y && other.top_left.y < self.bottom_right.y)
+    }
+
+}
+
 #[allow(dead_code)]
 mod vec_friendly_drawing {
     use macroquad::prelude::*;
+    use crate::AABB;
 
+    //This is kinda silly, consider unifying square and rectangle functions, then just cope when we need to draw squares
     pub fn draw_square(top_left_corner:Vec2, length:f32, color:Color) {
         draw_rectangle(top_left_corner.x, top_left_corner.y, length, length, color);
     }
@@ -520,6 +582,10 @@ mod vec_friendly_drawing {
 
     pub fn outline_square(position:Vec2, length:f32, line_width:f32, color:Color) {
         draw_rectangle_lines(position.x, position.y, length, length, line_width, color);
+    }
+
+    pub fn outline_rectangle(position:Vec2, length:Vec2, line_width:f32, color:Color) {
+        draw_rectangle_lines(position.x, position.y, length.x, length.y, line_width, color);
     }
     
     pub fn outline_centered_square(position:Vec2, length:f32, line_width:f32, color:Color) {
@@ -540,5 +606,22 @@ mod vec_friendly_drawing {
         draw_line(point1.x, point1.y, point2.x, point2.y, line_width, color);
     }
 
+    pub fn outline_aabb(aabb:AABB, line_width:f32, color:Color) {
+        outline_rectangle(aabb.top_left, aabb.bottom_right - aabb.top_left, line_width, color);
+    }
+
 }
 
+
+trait Vec2Extension {
+    fn better_sign(&self) -> Vec2; 
+}
+
+impl Vec2Extension for Vec2 {
+    fn better_sign(&self) -> Vec2 {
+        Vec2::new(
+            if self.x < 0. { -1. } else if self.x > 0. { 1. } else { 0. },
+            if self.y < 0. { -1. } else if self.y > 0. { 1. } else { 0. },
+        )
+    }
+}

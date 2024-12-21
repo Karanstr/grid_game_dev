@@ -12,8 +12,8 @@ async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x+200., size.y+200.);
     let mut world = World::new();
-    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x);
-    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 64.);
+    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x/2.);
+    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 32.);
     let speed = 0.2;
     let torque = 0.08;
     let mut operation_depth = 0;
@@ -102,9 +102,7 @@ async fn main() {
         world.render_cache();
         world.render_corners(&player, 5);
         world.render_corners(&fixed, 5);
-
-        //world.move_with_collisions(&mut player, &fixed, 5, 1.);
-        world.two_way_collisions(&mut player, &mut fixed, 5, 1.);
+        world.two_way_collisions(&mut player, &mut fixed, 5, 10.);
         next_frame().await
     }
 
