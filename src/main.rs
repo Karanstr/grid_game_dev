@@ -11,7 +11,7 @@ use game::*;
 async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x+200., size.y+200.);
-    let mut world = World::new();
+    let mut world = World::new(5);
     let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x/2.);
     let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 32.);
     let speed = 0.2;
@@ -102,7 +102,7 @@ async fn main() {
         world.render_cache();
         // world.render_corners(&player, 5);
         // world.render_corners(&fixed, 5);
-        world.two_way_collisions(&mut player, &mut fixed, 5, 10.);
+        world.two_way_collisions(&mut player, &mut fixed, 10.);
 
         draw_text(&format!("{:.4}", player.rotation), 200., 10., 20., WHITE);
         draw_text(&format!("{:.0}", player.aabs.center), 10., 10., 20., WHITE);

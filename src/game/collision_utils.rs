@@ -156,6 +156,18 @@ pub enum Configurations {
     BottomRight
 }
 
+impl Configurations {
+    pub fn from_index(index:usize) -> Self {
+        match index {
+            0 => Self::TopLeft,
+            1 => Self::TopRight,
+            2 => Self::BottomLeft,
+            3 => Self::BottomRight,
+            _ => panic!("Invalid Configuration Index")
+        }
+    }
+}
+
 
 #[derive(Clone, Copy, Debug)]
 pub struct LimPositionData {

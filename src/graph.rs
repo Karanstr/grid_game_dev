@@ -26,9 +26,9 @@ impl Zorder {
         zorder
     }
 
-    pub fn step_cartesianly(start_zorder:u32, depth:u32, steps:IVec2) -> Option<u32> {
+    pub fn move_cartesianly(start_zorder:u32, depth:u32, offset:IVec2) -> Option<u32> {
         let cell = Self::to_cell(start_zorder, depth);
-        let end_cell = cell.as_ivec2() + steps;
+        let end_cell = cell.as_ivec2() + offset;
         if end_cell.min_element() < 0 || end_cell.max_element() >= 2u32.pow(depth) as i32 {
             return None
         }

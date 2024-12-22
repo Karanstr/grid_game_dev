@@ -112,15 +112,17 @@ pub use vec_friendly_drawing::*;
 pub struct World {
     pub blocks : BlockPalette,
     pub graph : SparseDirectedGraph,
-    pub points_to_draw : Vec<(Vec2, Color, i32)>
+    pub points_to_draw : Vec<(Vec2, Color, i32)>,
+    pub max_depth : u32,
 }
 impl World {
 
-    pub fn new() -> Self {
+    pub fn new(max_depth:u32) -> Self {
         Self {
             blocks : BlockPalette::new(),
             graph : SparseDirectedGraph::new(8),
             points_to_draw : Vec::new(),
+            max_depth,
         }
     }
 
@@ -182,7 +184,7 @@ impl World {
         } else { None }
     }
 
-    fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32, max_depth:u32) -> u8 {
+    fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32) -> u8 {
         let mut exposed_mask = 0b1111;
         let checks = [
             (IVec2::new(-1, 0), 0b01), //Top Left
@@ -202,16 +204,14 @@ impl World {
             for j in 0 .. 3 {
                 let (offset, direction) = checks[i*3 + j];
                 let mut check_zorder = {
-                    if let Some(zorder) = Zorder::step_cartesianly(cell_zorder, cell_depth, offset) {
+                    if let Some(zorder) = Zorder::move_cartesianly(cell_zorder, cell_depth, offset) {
                         zorder
-                    } else { 
-                        continue 
-                    }
+                    } else { continue }
                 };
-                for _ in 0 .. max_depth - cell_depth {
+                for _ in 0 .. self.max_depth - cell_depth {
                     check_zorder = check_zorder << 2 | direction
                 }
-                let path = Zorder::path(check_zorder, max_depth);
+                let path = Zorder::path(check_zorder, self.max_depth);
                 let (node_pointer, _) = self.graph.read(root, &path);
                 if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
                     if walls != BVec2::TRUE { continue }
@@ -223,56 +223,34 @@ impl World {
         exposed_mask
     }
 
-    fn formatted_exposed_corners(&self, object:&Object, max_depth:u32, cur_pos: Vec2, cur_vel: Vec2, obj_hit:usize) -> Vec<Particle> {
+    fn formatted_exposed_corners(&self, object:&Object, cur_pos: Vec2, cur_vel: Vec2, obj_hit:usize) -> Vec<Particle> {
         let leaves = self.graph.dfs_leaves(object.root);
         let mut corners = Vec::new();
         for (zorder, depth, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
-                let corner_mask = self.exposed_corners(object.root, zorder, depth, max_depth);
+                let corner_mask = self.exposed_corners(object.root, zorder, depth);
                 let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.aabs.center + cur_pos;
                 let cell_length = object.cell_length(depth);
-                if corner_mask & 1 != 0 {
-                    corners.push(Particle::new(
-                        top_left_corner,
-                        cur_vel,
-                        Configurations::TopLeft,
-                        obj_hit
-                    ));
-                }
-                if corner_mask & 0b10 != 0 {
-                    corners.push(Particle::new(
-                        top_left_corner + Vec2::new(cell_length, 0.),
-                        cur_vel,
-                        Configurations::TopRight,
-                        obj_hit
-                    ));
-                }
-                if corner_mask & 0b100 != 0 {
-                    corners.push(Particle::new(
-                        top_left_corner + Vec2::new(0., cell_length),
-                        cur_vel,
-                        Configurations::BottomLeft,
-                        obj_hit
-                    ));
-                }
-                if corner_mask & 0b1000 != 0 {
-                    corners.push(Particle::new(
-                        top_left_corner + cell_length,
-                        cur_vel,
-                        Configurations::BottomRight,
-                        obj_hit
-                    ));
+                for i in 0 .. 4 {
+                    if corner_mask & 1 << i != 0 {
+                        corners.push(Particle::new(
+                            top_left_corner + cell_length * IVec2::new(i & 1, i >> 1).as_vec2(),
+                            cur_vel,
+                            Configurations::from_index(i as usize),
+                            obj_hit
+                        ));
+                    }
                 }
             }
         }
         corners
     }
 
-    pub fn render_corners(&self, object:&Object, max_depth:u32) {
+    pub fn render_corners(&self, object:&Object) {
         let leaves = self.graph.dfs_leaves(object.root);
         for (zorder, depth, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
-                let corner_mask = self.exposed_corners(object.root, zorder, depth, max_depth);
+                let corner_mask = self.exposed_corners(object.root, zorder, depth);
                 let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                 let cell_length = object.cell_length(depth);
                 if corner_mask & 1 != 0 {
@@ -291,18 +269,18 @@ impl World {
         }
     }
 
-    pub fn two_way_collisions(&mut self, object1:&mut Object, object2:&mut Object, max_depth:u32, multiplier:f32) {
+    pub fn two_way_collisions(&mut self, object1:&mut Object, object2:&mut Object, multiplier:f32) {
         if within_range(object1, object2, multiplier) {
             let mut relative_velocity= object1.velocity - object2.velocity;
             let mut modifier = Vec2::ONE;
             while relative_velocity.length_squared() != 0. {
                 //Fix this at some point
                 let corners = [
-                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, max_depth, object1.aabs.center, relative_velocity, 1), max_depth, multiplier),
-                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, max_depth, object2.aabs.center, -relative_velocity, 0), max_depth, multiplier)
+                    self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabs.center, relative_velocity, 1), multiplier),
+                    self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabs.center, -relative_velocity, 0), multiplier)
                 ];
                 let corners = BinaryHeap::from(corners.concat());
-                let (action, rem_rel_vel, corner_hit) = self.find_next_action([object1, object2], corners, max_depth);
+                let (action, rem_rel_vel, corner_hit) = self.find_next_action([object1, object2], corners);
                 object1.aabs.center += relative_velocity - rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
                 relative_velocity = rem_rel_vel * if corner_hit == 1 { 1. } else { -1. };
                 if let OnTouch::Resist(walls_hit) = action {
@@ -335,7 +313,7 @@ impl World {
     }
 
     //The self reference is mutable only so next_intersection can draw a bunch of squares
-    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Particle>, max_depth:u32) -> (OnTouch, Vec2, usize) {
+    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Particle>) -> (OnTouch, Vec2, usize) {
         let mut rel_vel_remaining = Vec2::ZERO;
         let mut action = OnTouch::Ignore;
         let mut object_hit = 0;
@@ -345,7 +323,7 @@ impl World {
                 Some(hit_point) if hit_point.ticks_to_hit < 1. => { hit_point }
                 _ => { continue }
             };
-            let position_data = objects[cur_corner.hitting_index].get_data_at_position(&self, hit_point.position, max_depth);
+            let position_data = objects[cur_corner.hitting_index].get_data_at_position(&self, hit_point.position, self.max_depth);
             cur_corner.move_to(hit_point.position, position_data);
             if let Some(data) = cur_corner.position_data {
                 match self.index_collision(data.node_pointer.index) {
@@ -420,7 +398,7 @@ impl World {
         })
     }
 
-    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, max_depth:u32, multiplier:f32) -> Vec<Particle> {
+    fn cull_and_fill_corners(&self, hitting:&Object, unculled_corners:Vec<Particle>, multiplier:f32) -> Vec<Particle> {
         let mut corners = Vec::new();
         for corner in 0 .. unculled_corners.len() {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
@@ -431,7 +409,7 @@ impl World {
             let point_aabb = AABB::new(culled_corner.position, culled_corner.position).extend(culled_corner.rem_displacement * multiplier);
             if !hitting_aabb.intersects(point_aabb) { outline_aabb(point_aabb, 2., RED); continue }
             else { outline_aabb(point_aabb, 2., GREEN); }
-            culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
+            culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, self.max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
             corners.push(culled_corner);
         }
         corners
