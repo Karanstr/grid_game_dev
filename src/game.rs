@@ -7,6 +7,27 @@ pub use crate::graph::Index;
 mod collision_utils;
 use collision_utils::*;
 
+pub struct Camera { 
+    position:Vec2,
+    offset:Vec2,
+    view_size:Vec2,
+}
+impl Camera {
+    pub fn new(position:Vec2, offset:Vec2, view_size:Vec2) -> Self {
+        Self { position, offset, view_size }
+    }
+
+    pub fn update(&mut self, position:Vec2, screen_size:Vec2) {
+        self.position = position;
+        self.view_size = screen_size;
+    }
+
+    pub fn interpolate_offset(&mut self, target: Vec2, smoothing: f32) {
+        self.offset = self.offset.lerp(target, smoothing);
+    }
+}
+
+
 pub struct Object {
     pub root : NodePointer,
     pub aabs : AABS,
@@ -99,8 +120,8 @@ impl Object {
         self.rotation = new_rotation;
     }
 
-    pub fn draw_facing(&self) {
-        draw_vec_line(self.aabs.center, self.aabs.center + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
+    pub fn draw_facing(&self, camera:&Camera) {
+        draw_vec_line(self.aabs.center, self.aabs.center + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW, camera);
     }
 
 }
@@ -114,22 +135,24 @@ pub struct World {
     pub graph : SparseDirectedGraph,
     pub points_to_draw : Vec<(Vec2, Color, i32)>,
     pub max_depth : u32,
+    pub camera : Camera,
 }
 impl World {
 
-    pub fn new(max_depth:u32) -> Self {
+    pub fn new(max_depth:u32, camera:Camera) -> Self {
         Self {
             blocks : BlockPalette::new(),
             graph : SparseDirectedGraph::new(8),
             points_to_draw : Vec::new(),
             max_depth,
+            camera
         }
     }
 
     pub fn render_cache(&mut self) {
         let mut new_points = Vec::new();
         for (point, color, time) in self.points_to_draw.iter_mut() {
-            draw_centered_square(*point, 10., *color);
+            draw_centered_square(*point, 10., *color, &self.camera);
             let new_time = *time - 1;
             if new_time != 0 {
                 new_points.push((*point, *color, new_time))
@@ -150,9 +173,9 @@ impl World {
                 Some(color) => {
                     let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                     if color != BLACK {
-                        draw_square(top_left_corner, object.cell_length(depth), color)
+                        draw_square(top_left_corner, object.cell_length(depth), color, &self.camera)
                     }
-                    if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 2., WHITE) }
+                    if draw_lines { outline_square(top_left_corner, object.cell_length(depth), 2., WHITE, &self.camera) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
@@ -254,23 +277,23 @@ impl World {
                 let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                 let cell_length = object.cell_length(depth);
                 if corner_mask & 1 != 0 {
-                    draw_vec_circle(top_left_corner, 5., YELLOW);
+                    draw_vec_circle(top_left_corner, 5., YELLOW, &self.camera);
                 }
                 if corner_mask & 0b10 != 0 {
-                    draw_vec_circle(top_left_corner + Vec2::new(cell_length, 0.), 5., YELLOW);
+                    draw_vec_circle(top_left_corner + Vec2::new(cell_length, 0.), 5., YELLOW, &self.camera);
                 }
                 if corner_mask & 0b100 != 0 {
-                    draw_vec_circle(top_left_corner + Vec2::new(0., cell_length), 5., YELLOW);
+                    draw_vec_circle(top_left_corner + Vec2::new(0., cell_length), 5., YELLOW, &self.camera);
                 }
                 if corner_mask & 0b1000 != 0 {
-                    draw_vec_circle(top_left_corner + cell_length, 5., YELLOW);
+                    draw_vec_circle(top_left_corner + cell_length, 5., YELLOW, &self.camera);
                 }
             }
         }
     }
 
     pub fn two_way_collisions(&mut self, object1:&mut Object, object2:&mut Object, multiplier:f32) {
-        if within_range(object1, object2, multiplier) {
+        if within_range(object1, object2, multiplier, &self.camera) {
             let mut relative_velocity= object1.velocity - object2.velocity;
             let mut modifier = Vec2::ONE;
             while relative_velocity.length_squared() != 0. {
@@ -403,12 +426,12 @@ impl World {
         for corner in 0 .. unculled_corners.len() {
             if unculled_corners[corner].hittable_walls() == BVec2::FALSE { continue }
             let mut culled_corner = unculled_corners[corner].clone();
-            draw_vec_circle(culled_corner.position, 5., DARKPURPLE);
+            draw_vec_circle(culled_corner.position, 5., DARKPURPLE, &self.camera);
             
             let hitting_aabb = hitting.effective_aabb(multiplier);
             let point_aabb = AABB::new(culled_corner.position, culled_corner.position).extend(culled_corner.rem_displacement * multiplier);
-            if !hitting_aabb.intersects(point_aabb) { outline_aabb(point_aabb, 2., RED); continue }
-            else { outline_aabb(point_aabb, 2., GREEN); }
+            if !hitting_aabb.intersects(point_aabb) { outline_aabb(point_aabb, 2., RED, &self.camera); continue }
+            else { outline_aabb(point_aabb, 2., GREEN, &self.camera); }
             culled_corner.position_data = hitting.get_data_at_position(&self, unculled_corners[corner].position, self.max_depth)[Zorder::from_configured_direction(-unculled_corners[corner].rem_displacement, unculled_corners[corner].configuration)];
             corners.push(culled_corner);
         }
@@ -441,11 +464,11 @@ impl World {
 }
 
 
-pub fn within_range(object1:&Object, object2:&Object, multiplier:f32) -> bool {
+pub fn within_range(object1:&Object, object2:&Object, multiplier:f32, camera:&Camera) -> bool {
     let obj1_aabb = object1.effective_aabb(multiplier);
     let obj2_aabb = object2.effective_aabb(multiplier);
-    outline_aabb(obj1_aabb, 2., RED);
-    outline_aabb(obj2_aabb, 2., RED);
+    outline_aabb(obj1_aabb, 2., RED, camera);
+    outline_aabb(obj2_aabb, 2., RED, camera);
     obj1_aabb.intersects(obj2_aabb)
 }
 
@@ -526,46 +549,51 @@ impl AABB {
 #[allow(dead_code)]
 mod vec_friendly_drawing {
     use macroquad::prelude::*;
-    use crate::AABB;
-
+    use super::{Camera, AABB};
     //This is kinda silly, consider unifying square and rectangle functions, then just cope when we need to draw squares
-    pub fn draw_square(top_left_corner:Vec2, length:f32, color:Color) {
-        draw_rectangle(top_left_corner.x, top_left_corner.y, length, length, color);
+    pub fn draw_square(top_left_corner:Vec2, length:f32, color:Color, camera:&Camera) {
+        let pos = top_left_corner - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_rectangle(pos.x, pos.y, length, length, color);
     }
 
-    pub fn draw_centered_square(position:Vec2, length:f32, color:Color) {
-        let real_pos = position - length/2.;
+    pub fn draw_centered_square(position:Vec2, length:f32, color:Color, camera:&Camera) {
+        let real_pos = position - length/2. - (camera.position - camera.view_size/2.) + camera.offset;
         draw_rectangle(real_pos.x, real_pos.y, length, length, color);
     }
 
-    pub fn outline_square(position:Vec2, length:f32, line_width:f32, color:Color) {
-        draw_rectangle_lines(position.x, position.y, length, length, line_width, color);
+    pub fn outline_square(position:Vec2, length:f32, line_width:f32, color:Color, camera:&Camera) {
+        let pos = position - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_rectangle_lines(pos.x, pos.y, length, length, line_width, color);
     }
 
-    pub fn outline_rectangle(position:Vec2, length:Vec2, line_width:f32, color:Color) {
-        draw_rectangle_lines(position.x, position.y, length.x, length.y, line_width, color);
+    pub fn outline_rectangle(position:Vec2, length:Vec2, line_width:f32, color:Color, camera:&Camera) {
+        let pos = position - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_rectangle_lines(pos.x, pos.y, length.x, length.y, line_width, color);
     }
     
-    pub fn outline_centered_square(position:Vec2, length:f32, line_width:f32, color:Color) {
-        let real_pos = position - length/2.;
+    pub fn outline_centered_square(position:Vec2, length:f32, line_width:f32, color:Color, camera:&Camera) {
+        let real_pos = position - length/2. - (camera.position - camera.view_size/2.) + camera.offset;
         draw_rectangle_lines(real_pos.x, real_pos.y, length, length, line_width, color);
     }
 
-    pub fn draw_vec_circle(position:Vec2, radius:f32, color:Color) {
-        draw_circle(position.x, position.y, radius, color);
+    pub fn draw_vec_circle(position:Vec2, radius:f32, color:Color, camera:&Camera) {
+        let pos = position - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_circle(pos.x, pos.y, radius, color);
     }
 
-    pub fn outline_circle(position:Vec2, radius:f32, line_width:f32, color:Color) {
-        draw_circle_lines(position.x, position.y, radius, line_width, color);
-
+    pub fn outline_circle(position:Vec2, radius:f32, line_width:f32, color:Color, camera:&Camera) {
+        let pos = position - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_circle_lines(pos.x, pos.y, radius, line_width, color);
     }
 
-    pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
-        draw_line(point1.x, point1.y, point2.x, point2.y, line_width, color);
+    pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color, camera:&Camera) {
+        let p1 = point1 - (camera.position - camera.view_size/2.) + camera.offset;
+        let p2 = point2 - (camera.position - camera.view_size/2.) + camera.offset;
+        draw_line(p1.x, p1.y, p2.x, p2.y, line_width, color);
     }
 
-    pub fn outline_aabb(aabb:AABB, line_width:f32, color:Color) {
-        outline_rectangle(aabb.top_left, aabb.bottom_right - aabb.top_left, line_width, color);
+    pub fn outline_aabb(aabb:AABB, line_width:f32, color:Color, camera:&Camera) {
+        outline_rectangle(aabb.top_left, aabb.bottom_right - aabb.top_left, line_width, color, camera);
     }
 
 }

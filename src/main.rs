@@ -1,24 +1,24 @@
 use std::f32::consts::PI;
-
 use macroquad::prelude::*;
+use macroquad::miniquad::window::screen_size;
 mod graph;
 
 mod game;
 use game::*;
 
-
 #[macroquad::main("Window")]
 async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x+200., size.y+200.);
-    let mut world = World::new(5);
-    let mut fixed = Object::new(world.graph.get_root(0), Vec2::new(size.x/2.+100., size.y/2.+100.), size.x/2.);
-    let mut player = Object::new(world.graph.get_root(4), Vec2::new(size.x/2., size.y/2.), 32.);
+    let camera = game::Camera::new(size/2., Vec2::ZERO, size + 200.);
+    let mut world = World::new(5, camera);
+    let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
+    let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
     let speed = 0.2;
     let torque = 0.08;
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
-    let mut save = world.graph.save_object_json(fixed.root);
+    let mut save = world.graph.save_object_json(block.root);
     loop {
 
         //Profiling and player speed-reorientation and save/load
@@ -34,11 +34,11 @@ async fn main() {
             } else if is_key_pressed(KeyCode::T) {
                 player.set_rotation(PI/4.);
             } else if is_key_pressed(KeyCode::K) {
-                save = world.graph.save_object_json(fixed.root);
+                save = world.graph.save_object_json(block.root);
             } else if is_key_pressed(KeyCode::L) {
                 let new_root = world.graph.load_object_json(save.clone());
-                let old_root = fixed.root;
-                fixed.root = new_root;
+                let old_root = block.root;
+                block.root = new_root;
                 world.graph.swap_root(old_root, new_root);
             }
         } 
@@ -85,7 +85,7 @@ async fn main() {
         }
 
         if is_mouse_button_down(MouseButton::Left) {
-            if let Err(message) = world.set_cell_with_mouse(&mut fixed, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+            if let Err(message) = world.set_cell_with_mouse(&mut block, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
                 eprintln!("{message}");
             }
         }
@@ -96,13 +96,15 @@ async fn main() {
         }
 
 
-        world.render(&mut fixed, true);
+        world.render(&mut block, true);
         world.render(&mut player, true);
-        player.draw_facing();
+        player.draw_facing(&world.camera);
         world.render_cache();
         // world.render_corners(&player, 5);
         // world.render_corners(&fixed, 5);
-        world.two_way_collisions(&mut player, &mut fixed, 10.);
+        world.two_way_collisions(&mut player, &mut block, 10.);
+        world.camera.update(player.aabs.center, Vec2::from(screen_size()));
+        world.camera.interpolate_offset(player.velocity*5., 0.1 );
 
         draw_text(&format!("{:.4}", player.rotation), 200., 10., 20., WHITE);
         draw_text(&format!("{:.0}", player.aabs.center), 10., 10., 20., WHITE);
