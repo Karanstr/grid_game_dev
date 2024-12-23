@@ -9,13 +9,12 @@ use game::*;
 use drawing_camera::Camera;
 use utilities::*;
 use macroquad::prelude::*;
-use macroquad::miniquad::window::screen_size;
 
 #[macroquad::main("Window")]
 async fn main() {
     let size = Vec2::new(512., 512.);
-    request_new_screen_size(size.x+200., size.y+200.);
-    let camera = Camera::new(size/2., Vec2::ZERO, size + 200.);
+    request_new_screen_size(size.x, size.y);
+    let camera = Camera::new(AABB::new(size/2., size/2.), Vec2::ZERO);
     let mut world = World::new(5, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
@@ -49,6 +48,10 @@ async fn main() {
                 world.camera.zoom *= 1.1;
             } else if is_key_pressed(KeyCode::Minus) {
                 world.camera.zoom /= 1.1;
+            } else if is_key_pressed(KeyCode::F) {
+                world.camera.shrink_view(Vec2::splat(200.));
+            } else if is_key_pressed(KeyCode::G) {
+                world.camera.expand_view(Vec2::splat(200.));
             }
         } 
 
@@ -104,16 +107,15 @@ async fn main() {
             }
         }
 
-
+        
+        world.camera.update(player.aabb.center());
+        world.camera.interpolate_offset(player.velocity*5., 0.1 );
+        world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
         world.render(&mut block, true);
         world.render(&mut player, true);
         player.draw_facing(&world.camera);
         world.render_cache();
-        // world.render_corners(&player, 5);
-        // world.render_corners(&fixed, 5);
         world.two_way_collisions(&mut player, &mut block, 10.);
-        world.camera.update(player.aabb.center(), Vec2::from(screen_size()));
-        world.camera.interpolate_offset(player.velocity*5., 0.1 );
 
         draw_text(&format!("{:.0}", player.aabb.center()), 10., 10., 20., WHITE);
         next_frame().await

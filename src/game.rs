@@ -28,7 +28,7 @@ impl Object {
     }
 
     pub fn effective_aabb(&self, vel_multiplier:f32) -> AABB {
-        self.aabb.extend(self.velocity * vel_multiplier)
+        self.aabb.expand(self.velocity * vel_multiplier)
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
@@ -258,8 +258,8 @@ impl World {
             if hittable_walls(velocity, corner.configuration) == BVec2::FALSE { continue }
             self.camera.draw_vec_circle(corner.position, 5., DARKPURPLE);
             let hitting_aabb = hitting.effective_aabb(multiplier);
-            let point_aabb = AABB::new(corner.position, Vec2::ZERO).extend( velocity * multiplier);
-            if !hitting_aabb.intersects(point_aabb) { self.camera.outline_bounds(point_aabb, 2., RED); continue }
+            let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand( velocity * multiplier);
+            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { self.camera.outline_bounds(point_aabb, 2., RED); continue }
             else { self.camera.outline_bounds(point_aabb, 2., GREEN); }
             corner.position_data = hitting.get_data_at_position(&self, corner.position, self.max_depth)[Zorder::from_configured_direction(-velocity, corner.configuration)];
             corners.push(Reverse(corner));
@@ -309,14 +309,24 @@ impl World {
         object2.update_rotation();
     }
 
+    fn determine_walls_hit(&self, possibly_hit_walls:BVec2, initial_velocity:Vec2, configuration:Configurations, position_data:[Option<LimPositionData>; 4]) -> Option<BVec2> {
+        let hit_walls = possibly_hit_walls & hittable_walls(initial_velocity, configuration);
+        let hit_walls = if hit_walls == BVec2::TRUE {
+            self.slide_check(initial_velocity, position_data)
+        } else { hit_walls };
+        if hit_walls == BVec2::FALSE { None }
+        else if hit_walls == BVec2::TRUE { Some(mag_slide_check(initial_velocity)) }
+        else { Some(hit_walls) }
+    }
+
     //Replace this return type with a struct
+    //Replace hit_walls with an enum
     fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>, relative_velocity:Vec2) -> (OnTouch, f32, Option<usize>) {
         let mut action = OnTouch::Ignore;
         let mut object_hit = None;
         let mut ticks_to_hit = 1.;
         while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
-            //This is stupid but until theres a proper system it'll do
             let initial_velocity = relative_velocity * if cur_corner.hitting_index == 0 { -1. } else { 1. };
             let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[cur_corner.hitting_index]) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
@@ -324,30 +334,19 @@ impl World {
             cur_corner.position = hit_point.position;
             let position_data = objects[cur_corner.hitting_index].get_data_at_position(&self, cur_corner.position, self.max_depth);
             cur_corner.position_data = position_data[Zorder::from_configured_direction(initial_velocity, cur_corner.configuration)];
-            if let Some(data) = cur_corner.position_data {
-                match self.index_collision(data.node_pointer.index) {
-                    Some(OnTouch::Ignore) => { }
-                    Some(OnTouch::Resist(possibly_hit_walls)) => {
-                        let hit_walls = possibly_hit_walls & hittable_walls(initial_velocity, cur_corner.configuration);
-                        let checked_walls = { 
-                            if hit_walls == BVec2::TRUE {
-                                self.slide_check(initial_velocity, position_data)
-                            } else {
-                                hit_walls 
-                            }
-                        };
-                        if checked_walls != BVec2::FALSE {
-                            action = OnTouch::Resist(
-                                if checked_walls != BVec2::TRUE { checked_walls } else { mag_slide_check(initial_velocity) }
-                            );
-                            ticks_to_hit = cur_corner.ticks_into_projection;
-                            object_hit = Some(cur_corner.hitting_index);
-                            continue
-                        }
-                    } 
-                    None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
-                }
-            } else { continue }
+            let Some(data) = cur_corner.position_data else { continue };
+            match self.index_collision(data.node_pointer.index) {
+                Some(OnTouch::Ignore) => { }
+                Some(OnTouch::Resist(possibly_hit_walls)) => {
+                    if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, initial_velocity, cur_corner.configuration, position_data) {
+                        action = OnTouch::Resist(hit_walls);
+                        ticks_to_hit = cur_corner.ticks_into_projection;
+                        object_hit = Some(cur_corner.hitting_index);
+                        continue
+                    }
+                } 
+                None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
+            }
             corners.push(Reverse(cur_corner));
         }
         (action, ticks_to_hit, object_hit)
@@ -357,14 +356,9 @@ impl World {
         let top_left = hitting.aabb.min();
         let bottom_right = hitting.aabb.max();
         //Replace with aabb check?
-        let within_bounds = BVec2::new(
-            position.x >= top_left.x && position.x <= bottom_right.x,
-            position.y >= top_left.y && position.y <= bottom_right.y,
-        );
+        let within_bounds = hitting.aabb.contains(position);
         let (cell, depth) = match position_data {
-            Some(data) => { 
-                (data.cell.as_vec2(), data.depth) 
-            }
+            Some(data) => { (data.cell.as_vec2(), data.depth) }
             None => {
                 let mut cell = Vec2::ZERO;
                 if position.x <= top_left.x {
@@ -459,7 +453,7 @@ pub fn within_range(object1:&Object, object2:&Object, multiplier:f32, camera:&Ca
     let obj2_aabb = object2.effective_aabb(multiplier);
     camera.outline_bounds(obj1_aabb, 2., RED);
     camera.outline_bounds(obj2_aabb, 2., RED);
-    obj1_aabb.intersects(obj2_aabb)
+    obj1_aabb.intersects(obj2_aabb) == BVec2::TRUE
 }
 
 

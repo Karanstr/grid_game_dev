@@ -1,30 +1,36 @@
 use macroquad::prelude::*;
-use crate::utilities::BoundingRect;
+use macroquad::miniquad::window::screen_size;
+use crate::utilities::{BoundingRect, AABB};
 
 pub struct Camera { 
-    position:Vec2,
-    offset:Vec2,
-    view_size:Vec2,
+    pub aabb:AABB,
+    pub offset:Vec2,
     pub zoom:f32,
 }
 #[allow(dead_code)]
 impl Camera {
-    pub fn new(position:Vec2, offset:Vec2, view_size:Vec2) -> Self {
-        Self { position, offset, view_size, zoom : 1. }
+    pub fn new(aabb:AABB, offset:Vec2) -> Self {
+        Self { aabb, offset, zoom : 1. }
     }
 
-    pub fn update(&mut self, position:Vec2, screen_size:Vec2) {
-        self.position = position;
-        self.view_size = screen_size;
+    pub fn update(&mut self, position:Vec2) {
+        self.aabb.move_to(position);
     }
 
     pub fn interpolate_offset(&mut self, target: Vec2, smoothing: f32) {
         self.offset = self.offset.lerp(target, smoothing);
     }
 
+    pub fn expand_view(&mut self, distance:Vec2) {
+        self.aabb = self.aabb.expand(distance);
+    }
+
+    pub fn shrink_view(&mut self, distance:Vec2) {
+        self.aabb = self.aabb.shrink(distance);
+    }
+
     pub fn camera_global_offset(&self) -> Vec2 {
-        let screen_center = self.view_size/2.;
-        self.position - screen_center/self.zoom + self.offset
+        self.aabb.center() + self.offset - Vec2::from(screen_size())/2./self.zoom
     }
 
      pub fn draw_centered_square(&self, position:Vec2, length:f32, color:Color) {
