@@ -106,7 +106,6 @@ async fn main() {
         world.camera.update(player.aabs.center, Vec2::from(screen_size()));
         world.camera.interpolate_offset(player.velocity*5., 0.1 );
 
-        draw_text(&format!("{:.4}", player.rotation), 200., 10., 20., WHITE);
         draw_text(&format!("{:.0}", player.aabs.center), 10., 10., 20., WHITE);
         next_frame().await
     }
