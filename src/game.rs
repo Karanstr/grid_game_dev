@@ -268,21 +268,21 @@ impl World {
     }
    
     //Clean this up and make it n-body compatible
-    fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32) -> BinaryHeap<Reverse<Particle>> {
+    fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32) -> (BinaryHeap<Reverse<Particle>>, Vec2) {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
             self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, 1), relative_velocity, multiplier),
             self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, 0), -relative_velocity, multiplier)
         ];
-        BinaryHeap::from(corners.concat())
+        (BinaryHeap::from(corners.concat()), relative_velocity)
     }
 
     pub fn two_way_collisions(&self, object1:&mut Object, object2:&mut Object, multiplier:f32) {
         if within_range(object1, object2, multiplier, &self.camera) {
             let mut ticks_into_projection = 0.;
             while ticks_into_projection < 1. {
-                let corners = self.get_corners(object1, object2, ticks_into_projection, multiplier);
-                let (action, ticks_at_hit, object_hit) = self.find_next_action([object1, object2], corners);
+                let (corners, relative_velocity) = self.get_corners(object1, object2, ticks_into_projection, multiplier);
+                let (action, ticks_at_hit, object_hit) = self.find_next_action([object1, object2], corners, relative_velocity);
                 ticks_into_projection += ticks_at_hit;
                 object1.aabb.move_by(object1.velocity * ticks_at_hit);
                 object2.aabb.move_by(object2.velocity * ticks_at_hit);
@@ -310,16 +310,14 @@ impl World {
     }
 
     //Replace this return type with a struct
-    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>) -> (OnTouch, f32, Option<usize>) {
+    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>, relative_velocity:Vec2) -> (OnTouch, f32, Option<usize>) {
         let mut action = OnTouch::Ignore;
         let mut object_hit = None;
         let mut ticks_to_hit = 1.;
         while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
-            let corner_owner = cur_corner.hitting_index.abs_diff(1);
-            dbg!(corner_owner);  //This is stupid but until theres a proper system it'll do
-            let initial_velocity = objects[corner_owner].velocity;
-            let hittable_walls = hittable_walls(initial_velocity, cur_corner.configuration);
+            //This is stupid but until theres a proper system it'll do
+            let initial_velocity = relative_velocity * if cur_corner.hitting_index == 0 { -1. } else { 1. };
             let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[cur_corner.hitting_index]) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
             if cur_corner.ticks_into_projection >= 1. { continue }
@@ -330,7 +328,7 @@ impl World {
                 match self.index_collision(data.node_pointer.index) {
                     Some(OnTouch::Ignore) => { }
                     Some(OnTouch::Resist(possibly_hit_walls)) => {
-                        let hit_walls = possibly_hit_walls & hittable_walls;
+                        let hit_walls = possibly_hit_walls & hittable_walls(initial_velocity, cur_corner.configuration);
                         let checked_walls = { 
                             if hit_walls == BVec2::TRUE {
                                 self.slide_check(initial_velocity, position_data)
