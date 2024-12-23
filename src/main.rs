@@ -26,7 +26,7 @@ async fn main() {
     let mut save = world.graph.save_object_json(block.root);
     loop {
 
-        //Profiling and player speed-reorientation and save/load
+        //Profiling and player speed-reorientation and save/load and zoom
         {
             if is_key_pressed(KeyCode::P) {
                 world.graph.profile();
@@ -45,6 +45,10 @@ async fn main() {
                 let old_root = block.root;
                 block.root = new_root;
                 world.graph.swap_root(old_root, new_root);
+            } else if is_key_pressed(KeyCode::Equal) {
+                world.camera.zoom *= 1.1;
+            } else if is_key_pressed(KeyCode::Minus) {
+                world.camera.zoom /= 1.1;
             }
         } 
 

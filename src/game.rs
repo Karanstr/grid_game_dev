@@ -50,11 +50,10 @@ impl Object {
                 if i & 0b1 == 1 { 1. } else { -1. },
                 if i & 0b10 == 0b10 { 1. } else { -1. }
             );
-            let top_left = self.aabb.min();
-            let cur_point = point - top_left + offset * direction;
-            four_points[i] = if cur_point.clamp(Vec2::ZERO, self.aabb.radius() * 2.) == cur_point {
-                Some( (cur_point / cell_length).floor().as_uvec2() )
-            } else { None }
+            let cur_point = point - self.aabb.min() + offset * direction;
+            if cur_point.clamp(Vec2::ZERO, self.aabb.radius() * 2.) == cur_point {
+                four_points[i] = Some( (cur_point / cell_length).floor().as_uvec2() )
+            }
         }
         four_points
     }
@@ -166,7 +165,7 @@ impl World {
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
-        let shifted_point = mouse_pos - modified.aabb.min() + self.camera.camera_global_offset();
+        let shifted_point = mouse_pos/self.camera.zoom - modified.aabb.min() + self.camera.camera_global_offset();
         if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.aabb.radius().x * 2. {
             return Err("Attempting to edit beyond object domain".to_owned())
         }
@@ -284,10 +283,20 @@ impl World {
             while ticks_into_projection < 1. {
                 let corners = self.get_corners(object1, object2, ticks_into_projection, multiplier);
                 let (action, ticks_at_hit, object_hit) = self.find_next_action([object1, object2], corners);
-                ticks_into_projection = ticks_at_hit;
+                ticks_into_projection += ticks_at_hit;
+                object1.aabb.move_by(object1.velocity * ticks_at_hit);
+                object2.aabb.move_by(object2.velocity * ticks_at_hit);
                 //Update velocities and positions based on collisions
-
-                
+                if let OnTouch::Resist(walls) = action {
+                    if walls.x { 
+                        object1.velocity.x = 0.;
+                        object2.velocity.x = 0.;
+                    }
+                    if walls.y { 
+                        object1.velocity.y = 0.;
+                        object2.velocity.y = 0.;
+                    }
+                }
             }
         } else { //If not in range, move them
             object1.aabb.move_by(object1.velocity);
@@ -307,10 +316,11 @@ impl World {
         let mut ticks_to_hit = 1.;
         while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
-            let corner_owner = cur_corner.hitting_index.abs_diff(1); //This is stupid but until theres a proper system it'll do
+            let corner_owner = cur_corner.hitting_index.abs_diff(1);
+            dbg!(corner_owner);  //This is stupid but until theres a proper system it'll do
             let initial_velocity = objects[corner_owner].velocity;
             let hittable_walls = hittable_walls(initial_velocity, cur_corner.configuration);
-            let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[corner_owner], hittable_walls) else { continue };
+            let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[cur_corner.hitting_index]) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
             if cur_corner.ticks_into_projection >= 1. { continue }
             cur_corner.position = hit_point.position;
@@ -345,9 +355,9 @@ impl World {
         (action, ticks_to_hit, object_hit)
     }
 
-    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, object:&Object, hittable_walls:BVec2) -> Option<HitPoint> {
-        let top_left = object.aabb.min();
-        let bottom_right = object.aabb.max();
+    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {
+        let top_left = hitting.aabb.min();
+        let bottom_right = hitting.aabb.max();
         //Replace with aabb check?
         let within_bounds = BVec2::new(
             position.x >= top_left.x && position.x <= bottom_right.x,
@@ -373,24 +383,15 @@ impl World {
             }
         };
         let quadrant = velocity.signum().max(Vec2::ZERO);
-        let cell_length = object.cell_length(depth);
-        let boundary_corner = cell * cell_length + cell_length * quadrant + top_left;
+        let cell_length = hitting.cell_length(depth);
+        let boundary_corner = top_left + cell * cell_length + cell_length * quadrant;
         
         let ticks = ((boundary_corner - position) / velocity).abs(); 
-        let ticks_to_hit = {
-            //Uncomment this once we can test if it works again
-            //if hittable_walls == BVec2::TRUE {
-                match (within_bounds.x, within_bounds.y) {
-                    (false, false) => { ticks.max_element() },
-                    (true, false) if ticks.x == 0. => { ticks.y },
-                    (false, true) if ticks.y == 0. => { ticks.x },
-                    _ => { ticks.min_element() },
-                }
-            // } else if hittable_walls.x {
-            //     ticks.x
-            // } else if hittable_walls.y {
-            //     ticks.y
-            // } else { return None }
+        let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
+            (false, false) => { ticks.max_element() },
+            (true, false) if ticks.x == 0. => { ticks.y },
+            (false, true) if ticks.y == 0. => { ticks.x },
+            _ => { ticks.min_element() },
         };
             
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
