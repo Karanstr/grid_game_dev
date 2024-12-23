@@ -195,7 +195,6 @@ pub struct SparseDirectedGraph {
     pub leaf_count : u8, 
 }
 impl SparseDirectedGraph {
-
     pub fn new(leaf_count:u8) -> Self {
         let mut instance = Self {
             nodes : MemHeap::new(),

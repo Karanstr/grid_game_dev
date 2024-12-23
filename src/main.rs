@@ -103,10 +103,10 @@ async fn main() {
         // world.render_corners(&player, 5);
         // world.render_corners(&fixed, 5);
         world.two_way_collisions(&mut player, &mut block, 10.);
-        world.camera.update(player.aabs.center, Vec2::from(screen_size()));
+        world.camera.update(player.aabs.center(), Vec2::from(screen_size()));
         world.camera.interpolate_offset(player.velocity*5., 0.1 );
 
-        draw_text(&format!("{:.0}", player.aabs.center), 10., 10., 20., WHITE);
+        draw_text(&format!("{:.0}", player.aabs.center()), 10., 10., 20., WHITE);
         next_frame().await
     }
 
