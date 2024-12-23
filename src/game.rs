@@ -4,37 +4,13 @@ use std::cmp::Reverse;
 use macroquad::prelude::*;
 use crate::graph::{NodePointer, SparseDirectedGraph, Zorder};
 pub use crate::graph::Index;
-//Clean up this import stuff
+use crate::drawing_camera::Camera;
+use crate::utilities::*;
 mod collision_utils;
 use collision_utils::*;
 
-pub struct Camera { 
-    position:Vec2,
-    offset:Vec2,
-    view_size:Vec2,
-}
-impl Camera {
-    pub fn new(position:Vec2, offset:Vec2, view_size:Vec2) -> Self {
-        Self { position, offset, view_size }
-    }
-
-    pub fn update(&mut self, position:Vec2, screen_size:Vec2) {
-        self.position = position;
-        self.view_size = screen_size;
-    }
-
-    pub fn interpolate_offset(&mut self, target: Vec2, smoothing: f32) {
-        self.offset = self.offset.lerp(target, smoothing);
-    }
-
-    pub fn camera_global_offset(&self) -> Vec2 {
-        self.position - self.view_size/2. + self.offset
-    }
-}
-
-
 pub struct Object {
-    pub aabs : AABS,
+    pub aabb : AABB,
     pub root : NodePointer,
     pub velocity : Vec2,
     pub rotation : f32,
@@ -43,7 +19,7 @@ pub struct Object {
 impl Object {
     pub fn new(root:NodePointer, position:Vec2, radius:f32) -> Self {
         Self {
-            aabs : AABS::new(position, radius),
+            aabb : AABB::new(position, Vec2::splat(radius)),
             root,
             velocity : Vec2::ZERO,
             rotation : 0.0,
@@ -52,16 +28,16 @@ impl Object {
     }
 
     pub fn effective_aabb(&self, vel_multiplier:f32) -> AABB {
-        AABB::from_aabs(self.aabs).extend(self.velocity * vel_multiplier)
+        self.aabb.extend(self.velocity * vel_multiplier)
     }
 
     fn cell_length(&self, depth:u32) -> f32 {
-        self.aabs.radius() * 2. / 2f32.powi(depth as i32)
+        self.aabb.radius().x * 2. / 2f32.powi(depth as i32)
     }
 
     fn cell_top_left_corner(&self, cell:UVec2, depth:u32) -> Vec2 {
         let cell_length = self.cell_length(depth);
-        cell.as_vec2() * cell_length + self.aabs.min()
+        cell.as_vec2() * cell_length + self.aabb.min()
     }
 
     //Change to relative position?
@@ -74,9 +50,9 @@ impl Object {
                 if i & 0b1 == 1 { 1. } else { -1. },
                 if i & 0b10 == 0b10 { 1. } else { -1. }
             );
-            let top_left = self.aabs.min();
+            let top_left = self.aabb.min();
             let cur_point = point - top_left + offset * direction;
-            four_points[i] = if cur_point.clamp(Vec2::ZERO, Vec2::splat(self.aabs.radius() * 2.)) == cur_point {
+            four_points[i] = if cur_point.clamp(Vec2::ZERO, self.aabb.radius() * 2.) == cur_point {
                 Some( (cur_point / cell_length).floor().as_uvec2() )
             } else { None }
         }
@@ -132,13 +108,10 @@ impl Object {
     }
 
     pub fn draw_facing(&self, camera:&Camera) {
-        draw_vec_line(self.aabs.center, self.aabs.center + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW, camera);
+        camera.draw_vec_line(self.aabb.center(), self.aabb.center() + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
     }
 
 }
-
-
-pub use vec_friendly_drawing::*;
 
 
 pub struct World {
@@ -149,7 +122,6 @@ pub struct World {
     pub camera : Camera,
 }
 impl World {
-
     pub fn new(max_depth:u32, camera:Camera) -> Self {
         Self {
             graph : SparseDirectedGraph::new(8),
@@ -163,7 +135,7 @@ impl World {
     pub fn render_cache(&mut self) {
         let mut new_points = Vec::new();
         for (point, color, time) in self.points_to_draw.iter_mut() {
-            draw_centered_square(*point, 10., *color, &self.camera);
+            self.camera.draw_centered_square(*point, 10., *color);
             let new_time = *time - 1;
             if new_time != 0 {
                 new_points.push((*point, *color, new_time))
@@ -184,9 +156,9 @@ impl World {
                 Some(color) => {
                     let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
                     if color != BLACK {
-                        draw_vec_rectangle  (top_left_corner, Vec2::splat(object.cell_length(depth)), color, &self.camera)
+                        self.camera.draw_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(depth)), color);
                     }
-                    if draw_lines { outline_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(depth)), 2., WHITE, &self.camera) }
+                    if draw_lines { self.camera.outline_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(depth)), 2., WHITE) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
@@ -194,8 +166,8 @@ impl World {
     }
 
     pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
-        let shifted_point = mouse_pos - modified.aabs.center() + modified.aabs.radius() + self.camera.camera_global_offset();
-        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.aabs.radius() * 2. {
+        let shifted_point = mouse_pos - modified.aabb.min() + self.camera.camera_global_offset();
+        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.aabb.radius().x * 2. {
             return Err("Attempting to edit beyond object domain".to_owned())
         }
         let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
@@ -264,7 +236,7 @@ impl World {
         for (zorder, depth, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
                 let corner_mask = self.exposed_corners(object.root, zorder, depth);
-                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.aabs.center + cur_pos;
+                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.aabb.center() + cur_pos;
                 let cell_length = object.cell_length(depth);
                 for i in 0 .. 4 {
                     if corner_mask & 1 << i != 0 {
@@ -285,11 +257,11 @@ impl World {
         let mut corners = Vec::new();
         while let Some(mut corner) = unculled_corners.pop() {
             if hittable_walls(velocity, corner.configuration) == BVec2::FALSE { continue }
-            draw_vec_circle(corner.position, 5., DARKPURPLE, &self.camera);
+            self.camera.draw_vec_circle(corner.position, 5., DARKPURPLE);
             let hitting_aabb = hitting.effective_aabb(multiplier);
-            let point_aabb = AABB::new(corner.position, corner.position).extend( velocity * multiplier);
-            if !hitting_aabb.intersects(point_aabb) { outline_bounds(point_aabb, 2., RED, &self.camera); continue }
-            else { outline_bounds(point_aabb, 2., GREEN, &self.camera); }
+            let point_aabb = AABB::new(corner.position, Vec2::ZERO).extend( velocity * multiplier);
+            if !hitting_aabb.intersects(point_aabb) { self.camera.outline_bounds(point_aabb, 2., RED); continue }
+            else { self.camera.outline_bounds(point_aabb, 2., GREEN); }
             corner.position_data = hitting.get_data_at_position(&self, corner.position, self.max_depth)[Zorder::from_configured_direction(-velocity, corner.configuration)];
             corners.push(Reverse(corner));
         }
@@ -300,8 +272,8 @@ impl World {
     fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32) -> BinaryHeap<Reverse<Particle>> {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
-            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabs.center, ticks_into_projection, 1), relative_velocity, multiplier),
-            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabs.center, ticks_into_projection, 0), -relative_velocity, multiplier)
+            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, 1), relative_velocity, multiplier),
+            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, 0), -relative_velocity, multiplier)
         ];
         BinaryHeap::from(corners.concat())
     }
@@ -318,8 +290,8 @@ impl World {
                 
             }
         } else { //If not in range, move them
-            object1.aabs.center += object1.velocity;
-            object2.aabs.center += object2.velocity;
+            object1.aabb.move_by(object1.velocity);
+            object2.aabb.move_by(object2.velocity);
         }
         let drag_multiplier = -0.01;
         object1.apply_linear_force(object1.velocity * drag_multiplier);
@@ -374,15 +346,17 @@ impl World {
     }
 
     fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, object:&Object, hittable_walls:BVec2) -> Option<HitPoint> {
-        let top_left = object.aabs.min();
-        let bottom_right = object.aabs.max();
+        let top_left = object.aabb.min();
+        let bottom_right = object.aabb.max();
         //Replace with aabb check?
         let within_bounds = BVec2::new(
             position.x >= top_left.x && position.x <= bottom_right.x,
             position.y >= top_left.y && position.y <= bottom_right.y,
         );
         let (cell, depth) = match position_data {
-            Some(data) => { (data.cell.as_vec2(), data.depth) }
+            Some(data) => { 
+                (data.cell.as_vec2(), data.depth) 
+            }
             None => {
                 let mut cell = Vec2::ZERO;
                 if position.x <= top_left.x {
@@ -484,8 +458,8 @@ pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
 pub fn within_range(object1:&Object, object2:&Object, multiplier:f32, camera:&Camera) -> bool {
     let obj1_aabb = object1.effective_aabb(multiplier);
     let obj2_aabb = object2.effective_aabb(multiplier);
-    outline_bounds(obj1_aabb, 2., RED, camera);
-    outline_bounds(obj2_aabb, 2., RED, camera);
+    camera.outline_bounds(obj1_aabb, 2., RED);
+    camera.outline_bounds(obj2_aabb, 2., RED);
     obj1_aabb.intersects(obj2_aabb)
 }
 
@@ -504,134 +478,3 @@ impl Zorder {
 }
 
 
-pub trait BoundingRect {
-    fn min(&self) -> Vec2;
-    fn max(&self) -> Vec2;
-    fn center(&self) -> Vec2;
-    fn intersects(&self, other:Self) -> bool;
-}
-
-//Unify these?
-#[derive(Clone, Copy, Debug)]
-pub struct AABS {
-    center: Vec2,
-    radius: f32,
-}
-impl BoundingRect for AABS {
-    fn min(&self) -> Vec2 { self.center - self.radius }
-    fn max(&self) -> Vec2 { self.center + self.radius }
-    fn center(&self) -> Vec2 { self.center }
-    fn intersects(&self, other:Self) -> bool {
-        self.min().x < other.max().x && other.min().x < self.max().x &&
-        self.min().y < other.max().y && other.min().y < self.max().y
-    }
-}
-impl AABS {
-    pub fn new(center:Vec2, radius:f32) -> Self { Self { center, radius } }
-    pub fn radius(&self) -> f32 { self.radius }
-}
-#[derive(Clone, Copy, Debug)]
-pub struct AABB {
-    top_left: Vec2,
-    bottom_right: Vec2,
-}
-impl BoundingRect for AABB {
-    fn min(&self) -> Vec2 { self.top_left }
-    fn max(&self) -> Vec2 { self.bottom_right }
-    fn center(&self) -> Vec2 { (self.top_left + self.bottom_right) / 2. }
-    fn intersects(&self, other:Self) -> bool {
-        self.top_left.x < other.bottom_right.x && other.top_left.x < self.bottom_right.x &&
-        self.top_left.y < other.bottom_right.y && other.top_left.y < self.bottom_right.y
-    }
-}
-impl AABB {
-    pub fn new(top_left:Vec2, bottom_right:Vec2) -> Self {
-        Self { top_left, bottom_right }
-    }
-
-    pub fn from_aabs(aabs:AABS) -> Self {
-        Self::new(aabs.min(), aabs.max())
-    }
-
-    pub fn extend(&self, distance:Vec2) -> Self {
-        let direction = distance.better_sign();
-        let mut new_aabb = self.clone();
-         match direction.x {
-            -1. => { new_aabb.top_left.x += distance.x }
-            1. => { new_aabb.bottom_right.x += distance.x }
-            _ => { }
-        }
-        match direction.y {
-            -1. => { new_aabb.top_left.y += distance.y }
-            1. => { new_aabb.bottom_right.y += distance.y }
-            _ => { }
-        }
-        new_aabb
-    }
-}
-
-#[allow(dead_code)]
-mod vec_friendly_drawing {
-    use macroquad::prelude::*;
-    use super::{Camera, BoundingRect};
-
-   
-
-    pub fn draw_centered_square(position:Vec2, length:f32, color:Color, camera:&Camera) {
-        let real_pos = position - length/2. - camera.camera_global_offset();
-        draw_rectangle(real_pos.x, real_pos.y, length, length, color);
-    }
-
-    pub fn outline_centered_square(position:Vec2, length:f32, line_width:f32, color:Color, camera:&Camera) {
-        let real_pos = position - length/2. - camera.camera_global_offset();
-        draw_rectangle_lines(real_pos.x, real_pos.y, length, length, line_width, color);
-    }
-
-    pub fn draw_vec_rectangle(position:Vec2, length:Vec2, color:Color, camera:&Camera) {
-        let pos = position - camera.camera_global_offset();
-        draw_rectangle(pos.x, pos.y, length.x, length.y, color);
-    }
-
-    pub fn outline_vec_rectangle(position:Vec2, length:Vec2, line_width:f32, color:Color, camera:&Camera) {
-        let pos = position - camera.camera_global_offset();
-        draw_rectangle_lines(pos.x, pos.y, length.x, length.y, line_width, color);
-    }
-    
-    pub fn draw_vec_circle(position:Vec2, radius:f32, color:Color, camera:&Camera) {
-        let pos = position - camera.camera_global_offset();
-        draw_circle(pos.x, pos.y, radius, color);
-    }
-
-    pub fn outline_vec_circle(position:Vec2, radius:f32, line_width:f32, color:Color, camera:&Camera) {
-        let pos = position - camera.camera_global_offset();
-        draw_circle_lines(pos.x, pos.y, radius, line_width, color);
-    }
-
-    pub fn draw_vec_line(point1:Vec2, point2:Vec2, line_width:f32, color:Color, camera:&Camera) {
-        let p1 = point1 - camera.camera_global_offset();
-        let p2 = point2 - camera.camera_global_offset();
-        draw_line(p1.x, p1.y, p2.x, p2.y, line_width, color);
-    }
-
-    pub fn draw_bounds<T:BoundingRect>(bounds:T, color:Color, camera:&Camera) {
-        draw_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), color, camera);
-    }
-
-    pub fn outline_bounds<T:BoundingRect>(bounds:T, line_width:f32, color:Color, camera:&Camera) {
-        outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color, camera);
-    }
-
-}
-
-
-trait Vec2Extension {
-    fn better_sign(&self) -> Vec2; 
-}
-impl Vec2Extension for Vec2 {
-    fn better_sign(&self) -> Vec2 {
-        Vec2::new(
-            if self.x < 0. { -1. } else if self.x > 0. { 1. } else { 0. },
-            if self.y < 0. { -1. } else if self.y > 0. { 1. } else { 0. },
-        )
-    }
-}

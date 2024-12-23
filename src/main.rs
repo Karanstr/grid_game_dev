@@ -1,16 +1,21 @@
+mod graph;
+mod game;
+mod drawing_camera;
+mod utilities;
+
 use std::f32::consts::PI;
+use graph::*;
+use game::*;
+use drawing_camera::Camera;
+use utilities::*;
 use macroquad::prelude::*;
 use macroquad::miniquad::window::screen_size;
-mod graph;
-
-mod game;
-use game::*;
 
 #[macroquad::main("Window")]
 async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x+200., size.y+200.);
-    let camera = game::Camera::new(size/2., Vec2::ZERO, size + 200.);
+    let camera = Camera::new(size/2., Vec2::ZERO, size + 200.);
     let mut world = World::new(5, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
@@ -103,10 +108,10 @@ async fn main() {
         // world.render_corners(&player, 5);
         // world.render_corners(&fixed, 5);
         world.two_way_collisions(&mut player, &mut block, 10.);
-        world.camera.update(player.aabs.center(), Vec2::from(screen_size()));
+        world.camera.update(player.aabb.center(), Vec2::from(screen_size()));
         world.camera.interpolate_offset(player.velocity*5., 0.1 );
 
-        draw_text(&format!("{:.0}", player.aabs.center()), 10., 10., 20., WHITE);
+        draw_text(&format!("{:.0}", player.aabb.center()), 10., 10., 20., WHITE);
         next_frame().await
     }
 
