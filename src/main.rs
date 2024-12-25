@@ -18,13 +18,14 @@ async fn main() {
     let mut world = World::new(5, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
+    let mut static_block = Object::new(world.graph.get_root(2), size/2. + 200., 32.);
     let speed = 0.2;
     let torque = 0.08;
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     let mut save = world.graph.save_object_json(block.root);
     loop {
-
+        
         //Profiling and player speed-reorientation and save/load and zoom
         {
             if is_key_pressed(KeyCode::P) {
@@ -94,6 +95,9 @@ async fn main() {
             if is_key_down(KeyCode::S) {
                 player.apply_forward_force(-Vec2::splat(speed));
             }
+            if is_key_down(KeyCode::Space) {
+                player.velocity = Vec2::ZERO;
+            }
         }
 
         if is_mouse_button_down(MouseButton::Left) {
@@ -113,6 +117,7 @@ async fn main() {
         world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
         world.render(&mut block, true);
         world.render(&mut player, true);
+        world.render(&mut static_block, true);
         player.draw_facing(&world.camera);
         world.render_cache();
         world.two_way_collisions(&mut player, &mut block, 10.);

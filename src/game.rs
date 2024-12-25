@@ -282,23 +282,23 @@ impl World {
             let mut ticks_into_projection = 0.;
             while ticks_into_projection < 1. {
                 let (corners, relative_velocity) = self.get_corners(object1, object2, ticks_into_projection, multiplier);
-                let (action, ticks_at_hit, object_hit) = self.find_next_action([object1, object2], corners, relative_velocity);
+                let (action, ticks_at_hit) = self.find_next_action([object1, object2], corners, relative_velocity);
                 ticks_into_projection += ticks_at_hit;
                 object1.aabb.move_by(object1.velocity * ticks_at_hit);
                 object2.aabb.move_by(object2.velocity * ticks_at_hit);
                 //Update velocities and positions based on collisions
-                if let OnTouch::Resist(walls) = action {
-                    if walls.x { 
+                if let OnTouch::Resist(walls_hit) = action {
+                    if walls_hit.x {
                         object1.velocity.x = 0.;
-                        object2.velocity.x = 0.;
+                        object2.velocity.x = relative_velocity.x;
                     }
-                    if walls.y { 
+                    if walls_hit.y {
                         object1.velocity.y = 0.;
-                        object2.velocity.y = 0.;
+                        object2.velocity.y = relative_velocity.y;
                     }
                 }
             }
-        } else { //If not in range, move them
+        } else { //If not in range, move them normally
             object1.aabb.move_by(object1.velocity);
             object2.aabb.move_by(object2.velocity);
         }
@@ -321,9 +321,8 @@ impl World {
 
     //Replace this return type with a struct
     //Replace hit_walls with an enum
-    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>, relative_velocity:Vec2) -> (OnTouch, f32, Option<usize>) {
+    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>, relative_velocity:Vec2) -> (OnTouch, f32) {
         let mut action = OnTouch::Ignore;
-        let mut object_hit = None;
         let mut ticks_to_hit = 1.;
         while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
@@ -341,7 +340,6 @@ impl World {
                     if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, initial_velocity, cur_corner.configuration, position_data) {
                         action = OnTouch::Resist(hit_walls);
                         ticks_to_hit = cur_corner.ticks_into_projection;
-                        object_hit = Some(cur_corner.hitting_index);
                         continue
                     }
                 } 
@@ -349,7 +347,7 @@ impl World {
             }
             corners.push(Reverse(cur_corner));
         }
-        (action, ticks_to_hit, object_hit)
+        (action, ticks_to_hit)
     }
 
     fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {

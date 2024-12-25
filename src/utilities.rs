@@ -55,7 +55,7 @@ impl AABB {
 }
 
 #[allow(dead_code)]
-trait Vec2Extension {
+pub trait Vec2Extension {
     fn better_sign(&self) -> Vec2; 
 }
 impl Vec2Extension for Vec2 {
