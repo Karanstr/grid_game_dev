@@ -13,20 +13,26 @@ impl Camera {
         Self { aabb, offset, zoom : 1. }
     }
 
-    pub fn update(&mut self, position:Vec2) {
-        self.aabb.move_to(position);
+    pub fn interpolate_position(&mut self, position:Vec2, smoothing:f32) {
+        self.aabb.move_to(self.aabb.center().lerp(position, smoothing));
     }
 
-    pub fn interpolate_offset(&mut self, target: Vec2, smoothing: f32) {
+    pub fn interpolate_offset(&mut self, target:Vec2, smoothing:f32) {
         self.offset = self.offset.lerp(target, smoothing);
     }
 
+    //This is a little scuffed bc of how I semantically designed the shrink and expand functions
+    //I'll revisit this at some point
     pub fn expand_view(&mut self, distance:Vec2) {
+        let center = self.aabb.center();
         self.aabb = self.aabb.expand(distance);
+        self.aabb.move_to(center);
     }
 
     pub fn shrink_view(&mut self, distance:Vec2) {
+        let center = self.aabb.center();
         self.aabb = self.aabb.shrink(distance);
+        self.aabb.move_to(center);
     }
 
     pub fn camera_global_offset(&self) -> Vec2 {

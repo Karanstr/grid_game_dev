@@ -18,7 +18,7 @@ async fn main() {
     let mut world = World::new(5, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
-    let mut static_block = Object::new(world.graph.get_root(2), size/2. + 200., 32.);
+    let mut static_block = Object::new(world.graph.get_root(0), size/2., 256.);
     let speed = 0.2;
     let torque = 0.08;
     let mut operation_depth = 0;
@@ -101,26 +101,19 @@ async fn main() {
         }
 
         if is_mouse_button_down(MouseButton::Left) {
-            if let Err(message) = world.set_cell_with_mouse(&mut block, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
-                eprintln!("{message}");
-            }
-        }
-        if is_mouse_button_down(MouseButton::Right) {
-            if let Err(message) = world.set_cell_with_mouse(&mut player, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+            if let Err(message) = world.set_cell_with_mouse(&mut static_block, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
                 eprintln!("{message}");
             }
         }
 
         
-        world.camera.update(player.aabb.center());
-        world.camera.interpolate_offset(player.velocity*5., 0.1 );
+        world.camera.interpolate_position(player.aabb.center(), 0.4);
         world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
-        world.render(&mut block, true);
+        // world.render(&mut block, true);
         world.render(&mut player, true);
         world.render(&mut static_block, true);
         player.draw_facing(&world.camera);
-        world.render_cache();
-        world.two_way_collisions(&mut player, &mut block, 10.);
+        world.n_body_collisions(Vec::from([&mut player, /*&mut block,*/ &mut static_block]), 10.);
 
         draw_text(&format!("{:.0}", player.aabb.center()), 10., 10., 20., WHITE);
         next_frame().await

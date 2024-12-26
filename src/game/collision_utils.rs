@@ -75,7 +75,7 @@ pub struct Particle {
     pub ticks_into_projection : f32,
     pub position_data : Option<LimPositionData>,
     pub configuration : Configurations,
-    pub hitting_index : usize
+    pub rel_objects : (usize, usize)
 }
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -95,13 +95,13 @@ impl PartialEq for Particle {
 impl Eq for Particle {} 
 impl Particle {
 
-    pub fn new(position:Vec2, ticks_into_projection:f32, configuration:Configurations, hitting_index:usize) -> Self {
+    pub fn new(position:Vec2, ticks_into_projection:f32, configuration:Configurations, owner:usize, hitting:usize) -> Self {
         Self {
             position,
             ticks_into_projection,
             position_data : None,
             configuration, 
-            hitting_index
+            rel_objects : (owner, hitting)
         }
     }
 

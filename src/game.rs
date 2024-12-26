@@ -116,7 +116,6 @@ impl Object {
 pub struct World {
     pub graph : SparseDirectedGraph,
     pub blocks : BlockPalette,
-    pub points_to_draw : Vec<(Vec2, Color, i32)>,
     pub max_depth : u32,
     pub camera : Camera,
 }
@@ -125,27 +124,9 @@ impl World {
         Self {
             graph : SparseDirectedGraph::new(8),
             blocks : BlockPalette::new(),
-            points_to_draw : Vec::new(),
             max_depth,
             camera
         }
-    }
-
-    pub fn render_cache(&mut self) {
-        let mut new_points = Vec::new();
-        for (point, color, time) in self.points_to_draw.iter_mut() {
-            self.camera.draw_centered_square(*point, 10., *color);
-            let new_time = *time - 1;
-            if new_time != 0 {
-                new_points.push((*point, *color, new_time))
-            }
-        }
-        self.points_to_draw = new_points;
-    }
-
-    #[allow(dead_code)]
-    fn push_to_render_cache(&mut self, point:Vec2, color:Color, ticks:i32) {
-        self.points_to_draw.push((point, color, ticks));
     }
 
     pub fn render(&self, object:&mut Object, draw_lines:bool) {
@@ -229,21 +210,22 @@ impl World {
         exposed_mask
     }
 
-    fn formatted_exposed_corners(&self, object:&Object, cur_pos: Vec2, ticks_into_projection:f32, obj_hit:usize) -> Vec<Particle> {
-        let leaves = self.graph.dfs_leaves(object.root);
+    fn formatted_exposed_corners(&self, object_within:&Object, cur_pos: Vec2, ticks_into_projection:f32, owner:usize, hitting:usize) -> Vec<Particle> {
+        let leaves = self.graph.dfs_leaves(object_within.root);
         let mut corners = Vec::new();
         for (zorder, depth, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
-                let corner_mask = self.exposed_corners(object.root, zorder, depth);
-                let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object.aabb.center() + cur_pos;
-                let cell_length = object.cell_length(depth);
+                let corner_mask = self.exposed_corners(object_within.root, zorder, depth);
+                let top_left_corner = object_within.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object_within.aabb.center() + cur_pos;
+                let cell_length = object_within.cell_length(depth);
                 for i in 0 .. 4 {
                     if corner_mask & 1 << i != 0 {
                         corners.push(Particle::new(
                             top_left_corner + cell_length * IVec2::new(i & 1, i >> 1).as_vec2(),
                             ticks_into_projection,
                             Configurations::from_index(i as usize),
-                            obj_hit
+                            owner,
+                            hitting,
                         ));
                     }
                 }
@@ -268,45 +250,100 @@ impl World {
     }
    
     //Clean this up and make it n-body compatible
-    fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32) -> (BinaryHeap<Reverse<Particle>>, Vec2) {
+    fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32, obj1_index:usize, obj2_index:usize) -> BinaryHeap<Reverse<Particle>> {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
-            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, 1), relative_velocity, multiplier),
-            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, 0), -relative_velocity, multiplier)
+            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, obj1_index, obj2_index), relative_velocity, multiplier),
+            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
         ];
-        (BinaryHeap::from(corners.concat()), relative_velocity)
+        BinaryHeap::from(corners.concat())
     }
 
-    pub fn two_way_collisions(&self, object1:&mut Object, object2:&mut Object, multiplier:f32) {
-        if within_range(object1, object2, multiplier, &self.camera) {
-            let mut ticks_into_projection = 0.;
-            while ticks_into_projection < 1. {
-                let (corners, relative_velocity) = self.get_corners(object1, object2, ticks_into_projection, multiplier);
-                let (action, ticks_at_hit) = self.find_next_action([object1, object2], corners, relative_velocity);
-                ticks_into_projection += ticks_at_hit;
-                object1.aabb.move_by(object1.velocity * ticks_at_hit);
-                object2.aabb.move_by(object2.velocity * ticks_at_hit);
-                //Update velocities and positions based on collisions
-                if let OnTouch::Resist(walls_hit) = action {
-                    if walls_hit.x {
-                        object1.velocity.x = 0.;
-                        object2.velocity.x = relative_velocity.x;
-                    }
-                    if walls_hit.y {
-                        object1.velocity.y = 0.;
-                        object2.velocity.y = relative_velocity.y;
+    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32) {
+        let mut ticks_into_projection = 0.;
+        loop {
+            let mut corners = BinaryHeap::new();
+            for i in 0 .. objects.len() {
+                for j in 0 .. objects.len() { 
+                    if i == j { continue }
+                    if within_range(objects[i], objects[j], multiplier, &self.camera) {
+                        let (obj1_index, obj2_index) = (i, j);
+                        corners.extend(self.get_corners(objects[i], objects[j], ticks_into_projection, multiplier, obj1_index, obj2_index));
                     }
                 }
             }
-        } else { //If not in range, move them normally
-            object1.aabb.move_by(object1.velocity);
-            object2.aabb.move_by(object2.velocity);
+            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners) else {
+                //No collision, move objects their remaining distance
+                let remaining_ticks = 1. - ticks_into_projection;
+                for object in objects.iter_mut() {
+                    object.aabb.move_by(object.velocity * remaining_ticks);
+                }
+                break
+            };
+            ticks_into_projection += ticks_at_hit;
+            for object in objects.iter_mut() {
+                object.aabb.move_by(object.velocity * ticks_at_hit);
+            }
+            if let OnTouch::Resist(walls_hit) = action {
+                dbg!(ticks_at_hit);
+                let perfection = 0.5;
+                let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
+                let impulse = -(1. + perfection) * relative_velocity / 2.;
+                if walls_hit.x {
+                    objects[owner].velocity.x += impulse.x;
+                    objects[hitting].velocity.x -= impulse.x;
+                }
+                if walls_hit.y {
+                    objects[owner].velocity.y += impulse.y;
+                    objects[hitting].velocity.y -= impulse.y;
+                }
+            }
         }
+        
         let drag_multiplier = -0.01;
-        object1.apply_linear_force(object1.velocity * drag_multiplier);
-        object2.apply_linear_force(object2.velocity * drag_multiplier);
-        object1.update_rotation();
-        object2.update_rotation();
+        for object in objects {
+            object.apply_linear_force(object.velocity * drag_multiplier);
+            object.update_rotation();
+        }
+    }
+
+        //Replace this return type with a struct
+    //Replace hit_walls with an enum
+    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>) -> Option<(OnTouch, f32, (usize, usize))> {
+        let mut action = OnTouch::Ignore;
+        let mut ticks_to_hit = 1.;
+        let mut hit = false;
+        let mut col_owner = 0;
+        let mut col_hitting = 0;
+        while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
+            if cur_corner.ticks_into_projection >= ticks_to_hit { break }
+            let (owner, hitting) = cur_corner.rel_objects;
+            let initial_velocity = objects[owner].velocity - objects[hitting].velocity;
+            let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[hitting]) else { continue };
+            cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
+            if cur_corner.ticks_into_projection >= 1. { continue }
+            cur_corner.position = hit_point.position;
+            let position_data = objects[hitting].get_data_at_position(&self, cur_corner.position, self.max_depth);
+            cur_corner.position_data = position_data[Zorder::from_configured_direction(initial_velocity, cur_corner.configuration)];
+            let Some(data) = cur_corner.position_data else { continue };
+            match self.index_collision(data.node_pointer.index) {
+                Some(OnTouch::Ignore) => { }
+                Some(OnTouch::Resist(possibly_hit_walls)) => {
+                    if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, initial_velocity, cur_corner.configuration, position_data) {
+                        hit = true;
+                        col_owner = owner;
+                        col_hitting = hitting;
+                        action = OnTouch::Resist(hit_walls);
+                        ticks_to_hit = cur_corner.ticks_into_projection;
+                        continue
+                    }
+                } 
+                None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
+            }
+            corners.push(Reverse(cur_corner));
+        }
+        if hit { Some((action, ticks_to_hit, (col_owner, col_hitting))) }
+        else { None }
     }
 
     fn determine_walls_hit(&self, possibly_hit_walls:BVec2, initial_velocity:Vec2, configuration:Configurations, position_data:[Option<LimPositionData>; 4]) -> Option<BVec2> {
@@ -317,37 +354,6 @@ impl World {
         if hit_walls == BVec2::FALSE { None }
         else if hit_walls == BVec2::TRUE { Some(mag_slide_check(initial_velocity)) }
         else { Some(hit_walls) }
-    }
-
-    //Replace this return type with a struct
-    //Replace hit_walls with an enum
-    fn find_next_action(&self, objects:[&mut Object; 2], mut corners:BinaryHeap<Reverse<Particle>>, relative_velocity:Vec2) -> (OnTouch, f32) {
-        let mut action = OnTouch::Ignore;
-        let mut ticks_to_hit = 1.;
-        while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
-            if cur_corner.ticks_into_projection >= ticks_to_hit { break }
-            let initial_velocity = relative_velocity * if cur_corner.hitting_index == 0 { -1. } else { 1. };
-            let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[cur_corner.hitting_index]) else { continue };
-            cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
-            if cur_corner.ticks_into_projection >= 1. { continue }
-            cur_corner.position = hit_point.position;
-            let position_data = objects[cur_corner.hitting_index].get_data_at_position(&self, cur_corner.position, self.max_depth);
-            cur_corner.position_data = position_data[Zorder::from_configured_direction(initial_velocity, cur_corner.configuration)];
-            let Some(data) = cur_corner.position_data else { continue };
-            match self.index_collision(data.node_pointer.index) {
-                Some(OnTouch::Ignore) => { }
-                Some(OnTouch::Resist(possibly_hit_walls)) => {
-                    if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, initial_velocity, cur_corner.configuration, position_data) {
-                        action = OnTouch::Resist(hit_walls);
-                        ticks_to_hit = cur_corner.ticks_into_projection;
-                        continue
-                    }
-                } 
-                None => { eprintln!("Attempting to touch {}, an unregistered block!", *data.node_pointer.index); }
-            }
-            corners.push(Reverse(cur_corner));
-        }
-        (action, ticks_to_hit)
     }
 
     fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {
