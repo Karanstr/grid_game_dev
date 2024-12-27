@@ -15,7 +15,7 @@ async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x, size.y);
     let camera = Camera::new(AABB::new(size/2., size/2.), Vec2::ZERO);
-    let mut world = World::new(3, camera);
+    let mut world = World::new(5, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
     let mut static_block = Object::new(world.graph.get_root(0), size/2., 256.);
@@ -109,8 +109,6 @@ async fn main() {
 
         
         world.camera.interpolate_position(player.aabb.center(), 0.4);
-        // world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
-        // world.render(&mut block, true);
         world.render(&mut player, true);
         world.render(&mut static_block, true);
         world.render(&mut block, true);

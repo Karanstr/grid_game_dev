@@ -209,7 +209,7 @@ impl World {
         exposed_mask
     }
 
-    fn formatted_exposed_corners(&self, object_within:&Object, cur_pos: Vec2, ticks_into_projection:f32, owner:usize, hitting:usize) -> Vec<Particle> {
+    fn formatted_exposed_corners(&self, object_within:&Object, cur_pos: Vec2, owner:usize, hitting:usize) -> Vec<Particle> {
         let leaves = self.graph.dfs_leaves(object_within.root);
         let mut corners = Vec::new();
         for (zorder, depth, index) in leaves {
@@ -221,7 +221,6 @@ impl World {
                     if corner_mask & 1 << i != 0 {
                         corners.push(Particle::new(
                             top_left_corner + cell_length * IVec2::new(i & 1, i >> 1).as_vec2(),
-                            ticks_into_projection,
                             Configurations::from_index(i as usize),
                             owner,
                             hitting,
@@ -248,11 +247,11 @@ impl World {
     }
    
     //Clean this up and make it n-body compatible
-    fn get_corners(&self, object1:&Object, object2:&Object, ticks_into_projection:f32, multiplier:f32, obj1_index:usize, obj2_index:usize) -> BinaryHeap<Reverse<Particle>> {
+    fn get_corners(&self, object1:&Object, object2:&Object, multiplier:f32, obj1_index:usize, obj2_index:usize) -> BinaryHeap<Reverse<Particle>> {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
-            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, obj1_index, obj2_index), relative_velocity, multiplier),
-            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
+            self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), obj1_index, obj2_index), relative_velocity, multiplier),
+            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), obj2_index, obj1_index), -relative_velocity, multiplier)
         ];
         BinaryHeap::from(corners.concat())
     }
@@ -266,7 +265,7 @@ impl World {
                 for j in i + 1 .. objects.len() { 
                     if within_range(objects[i], objects[j], multiplier, &self.camera) {
                         let (obj1_index, obj2_index) = (i, j);
-                        corners.extend(self.get_corners(objects[i], objects[j], 0., multiplier, obj1_index, obj2_index));
+                        corners.extend(self.get_corners(objects[i], objects[j], multiplier, obj1_index, obj2_index));
                     }
                 }
             }
@@ -282,18 +281,16 @@ impl World {
                 object.aabb.move_by(object.velocity * ticks_at_hit);
             }
             if let OnTouch::Resist(walls_hit) = action {
-                let energy_conserved = 1.0;
+                let energy_conserved = 0.5;
                 let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
                 let impulse = -(1. + energy_conserved) * relative_velocity / 2.;
                 if walls_hit.x {
                     objects[owner].velocity.x += impulse.x;
                     objects[hitting].velocity.x -= impulse.x;
-                    // objects[1].velocity.x = 0.;
                 }
                 if walls_hit.y {
                     objects[owner].velocity.y += impulse.y;
                     objects[hitting].velocity.y -= impulse.y;
-                    // objects[1].velocity.y = 0.;
                 }
             }
         }

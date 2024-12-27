@@ -95,10 +95,10 @@ impl PartialEq for Particle {
 impl Eq for Particle {} 
 impl Particle {
 
-    pub fn new(position:Vec2, ticks_into_projection:f32, configuration:Configurations, owner:usize, hitting:usize) -> Self {
+    pub fn new(position:Vec2, configuration:Configurations, owner:usize, hitting:usize) -> Self {
         Self {
             position,
-            ticks_into_projection,
+            ticks_into_projection : 0.,
             position_data : None,
             configuration, 
             rel_objects : (owner, hitting)
