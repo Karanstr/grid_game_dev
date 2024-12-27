@@ -15,7 +15,7 @@ async fn main() {
     let size = Vec2::new(512., 512.);
     request_new_screen_size(size.x, size.y);
     let camera = Camera::new(AABB::new(size/2., size/2.), Vec2::ZERO);
-    let mut world = World::new(5, camera);
+    let mut world = World::new(3, camera);
     let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
     let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
     let mut static_block = Object::new(world.graph.get_root(0), size/2., 256.);
@@ -24,6 +24,8 @@ async fn main() {
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     let mut save = world.graph.save_object_json(block.root);
+    let mut cur_frame = 0;
+    let mut debug_render = DebugRender::new();
     loop {
         
         //Profiling and player speed-reorientation and save/load and zoom
@@ -108,14 +110,15 @@ async fn main() {
 
         
         world.camera.interpolate_position(player.aabb.center(), 0.4);
-        world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
+        // world.camera.outline_bounds(world.camera.aabb, 2., WHITE);
         // world.render(&mut block, true);
         world.render(&mut player, true);
         world.render(&mut static_block, true);
         player.draw_facing(&world.camera);
-        world.n_body_collisions(Vec::from([&mut player, /*&mut block,*/ &mut static_block]), 10.);
-
-        draw_text(&format!("{:.0}", player.aabb.center()), 10., 10., 20., WHITE);
+        // dbg!(cur_frame);
+        world.n_body_collisions(Vec::from([&mut player, /*&mut block,*/ &mut static_block]), 10., &mut debug_render);
+        debug_render.draw(&world.camera);
+        cur_frame += 1;
         next_frame().await
     }
 

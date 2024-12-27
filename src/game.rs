@@ -44,7 +44,7 @@ impl Object {
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let cell_length = self.cell_length(depth);
-        let offset = 0.01;
+        let offset = cell_length / 4.;
         for i in 0 .. 4 {
             let direction = Vec2::new(
                 if i & 0b1 == 1 { 1. } else { -1. },
@@ -259,20 +259,19 @@ impl World {
         BinaryHeap::from(corners.concat())
     }
 
-    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32) {
+    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32, debug_render:&mut DebugRender) {
         let mut ticks_into_projection = 0.;
         loop {
             let mut corners = BinaryHeap::new();
             for i in 0 .. objects.len() {
-                for j in 0 .. objects.len() { 
-                    if i == j { continue }
+                for j in i + 1 .. objects.len() { 
                     if within_range(objects[i], objects[j], multiplier, &self.camera) {
                         let (obj1_index, obj2_index) = (i, j);
                         corners.extend(self.get_corners(objects[i], objects[j], ticks_into_projection, multiplier, obj1_index, obj2_index));
                     }
                 }
             }
-            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners) else {
+            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners, debug_render) else {
                 //No collision, move objects their remaining distance
                 let remaining_ticks = 1. - ticks_into_projection;
                 for object in objects.iter_mut() {
@@ -285,17 +284,18 @@ impl World {
                 object.aabb.move_by(object.velocity * ticks_at_hit);
             }
             if let OnTouch::Resist(walls_hit) = action {
-                dbg!(ticks_at_hit);
-                let perfection = 0.5;
+                let energy_conserved = 1.0;
                 let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
-                let impulse = -(1. + perfection) * relative_velocity / 2.;
+                let impulse = -(1. + energy_conserved) * relative_velocity / 2.;
                 if walls_hit.x {
                     objects[owner].velocity.x += impulse.x;
                     objects[hitting].velocity.x -= impulse.x;
+                    objects[1].velocity.x = 0.;
                 }
                 if walls_hit.y {
                     objects[owner].velocity.y += impulse.y;
                     objects[hitting].velocity.y -= impulse.y;
+                    objects[1].velocity.y = 0.;
                 }
             }
         }
@@ -307,9 +307,9 @@ impl World {
         }
     }
 
-        //Replace this return type with a struct
+    //Replace this return type with a struct
     //Replace hit_walls with an enum
-    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>) -> Option<(OnTouch, f32, (usize, usize))> {
+    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>, debug_render:&mut DebugRender) -> Option<(OnTouch, f32, (usize, usize))> {
         let mut action = OnTouch::Ignore;
         let mut ticks_to_hit = 1.;
         let mut hit = false;
@@ -318,18 +318,18 @@ impl World {
         while let Some(mut cur_corner) = corners.pop().map(|x| x.0) {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
             let (owner, hitting) = cur_corner.rel_objects;
-            let initial_velocity = objects[owner].velocity - objects[hitting].velocity;
-            let Some(hit_point) = self.next_intersection(cur_corner.position, initial_velocity, cur_corner.position_data, objects[hitting]) else { continue };
+            let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
+            let Some(hit_point) = self.next_intersection(cur_corner.position, relative_velocity, cur_corner.position_data, objects[hitting], debug_render) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
-            if cur_corner.ticks_into_projection >= 1. { continue }
+            if cur_corner.ticks_into_projection >= ticks_to_hit { continue }
             cur_corner.position = hit_point.position;
             let position_data = objects[hitting].get_data_at_position(&self, cur_corner.position, self.max_depth);
-            cur_corner.position_data = position_data[Zorder::from_configured_direction(initial_velocity, cur_corner.configuration)];
+            cur_corner.position_data = position_data[Zorder::from_configured_direction(relative_velocity, cur_corner.configuration)];
             let Some(data) = cur_corner.position_data else { continue };
             match self.index_collision(data.node_pointer.index) {
                 Some(OnTouch::Ignore) => { }
                 Some(OnTouch::Resist(possibly_hit_walls)) => {
-                    if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, initial_velocity, cur_corner.configuration, position_data) {
+                    if let Some(hit_walls) = self.determine_walls_hit(possibly_hit_walls, relative_velocity, cur_corner.configuration, position_data) {
                         hit = true;
                         col_owner = owner;
                         col_hitting = hitting;
@@ -346,17 +346,23 @@ impl World {
         else { None }
     }
 
-    fn determine_walls_hit(&self, possibly_hit_walls:BVec2, initial_velocity:Vec2, configuration:Configurations, position_data:[Option<LimPositionData>; 4]) -> Option<BVec2> {
-        let hit_walls = possibly_hit_walls & hittable_walls(initial_velocity, configuration);
-        let hit_walls = if hit_walls == BVec2::TRUE {
-            self.slide_check(initial_velocity, position_data)
-        } else { hit_walls };
-        if hit_walls == BVec2::FALSE { None }
-        else if hit_walls == BVec2::TRUE { Some(mag_slide_check(initial_velocity)) }
-        else { Some(hit_walls) }
+    fn determine_walls_hit(&self, possibly_hit_walls:BVec2, velocity:Vec2, configuration:Configurations, position_data:[Option<LimPositionData>; 4]) -> Option<BVec2> {
+        let hit_walls = {
+            let potential_hits = possibly_hit_walls & hittable_walls(velocity, configuration);
+            if potential_hits == BVec2::TRUE {
+                self.slide_check(velocity, position_data)
+            } else {
+                potential_hits
+            }
+        };
+        match hit_walls {
+            BVec2::TRUE => { Some(mag_slide_check(velocity)) }
+            BVec2::FALSE => { None }
+            _ => { Some(hit_walls) }
+        }
     }
 
-    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {
+    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object, debug_render:&mut DebugRender) -> Option<HitPoint> {
         let top_left = hitting.aabb.min();
         let bottom_right = hitting.aabb.max();
         //Replace with aabb check?
@@ -389,7 +395,7 @@ impl World {
             (false, true) if ticks.y == 0. => { ticks.x },
             _ => { ticks.min_element() },
         };
-            
+        debug_render.add(position + velocity * ticks_to_hit, WHITE, 10);
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
         Some(HitPoint {
             position : position + velocity * ticks_to_hit, 
@@ -414,10 +420,11 @@ impl World {
         let y_block_collision = if let Some(pos_data) = position_data[y_slide_check] {
             self.index_collision(pos_data.node_pointer.index).unwrap_or(OnTouch::Ignore)
         } else { OnTouch::Ignore };
-        BVec2::new(
-            !matches!(y_block_collision, OnTouch::Resist(_)),
-            !matches!(x_block_collision, OnTouch::Resist(_)),
-        )
+        let result = BVec2::new(
+            matches!(y_block_collision, OnTouch::Ignore),
+            matches!(x_block_collision, OnTouch::Ignore),
+        );
+        result
     }
 
 }
@@ -464,10 +471,11 @@ pub fn within_range(object1:&Object, object2:&Object, multiplier:f32, camera:&Ca
 impl Zorder {
     pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
         let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
+        if direction == Vec2::ZERO { dbg!("AHHH"); }
         if direction.x == 0. {
             2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
         } else if direction.y == 0. {
-            clamped.x as usize | if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 2 } else { 0 }
+            clamped.x as usize | 2 * if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 1 } else { 0 }
         } else {
             2 * clamped.y as usize | clamped.x as usize
         }

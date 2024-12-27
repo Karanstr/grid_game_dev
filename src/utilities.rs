@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::drawing_camera::Camera;
 
 #[allow(dead_code)]
 pub trait BoundingRect {
@@ -40,7 +41,7 @@ impl AABB {
     pub fn new(center:Vec2, radius:Vec2) -> Self { Self { center, radius } }
     pub fn radius(&self) -> Vec2 { self.radius }
     pub fn set_radius(&mut self, radius:Vec2) { self.radius = radius }
-    
+
     pub fn expand(&self, distance:Vec2) -> Self {
         Self {
             center: self.center + distance / 2.,
@@ -65,5 +66,31 @@ impl Vec2Extension for Vec2 {
             if self.x < 0. { -1. } else if self.x > 0. { 1. } else { 0. },
             if self.y < 0. { -1. } else if self.y > 0. { 1. } else { 0. },
         )
+    }
+}
+
+
+
+pub struct Drawable {
+    pub position : Vec2,
+    pub color : Color,
+    pub ticks_remaining : i32,
+}
+pub struct DebugRender {
+    pub drawables: Vec<Drawable>,
+}
+impl DebugRender {
+    pub fn new() -> Self { 
+        Self { drawables: Vec::new() } 
+    }
+    pub fn add(&mut self, position:Vec2, color:Color, ticks_remaining:i32) { 
+        self.drawables.push(Drawable { position, color, ticks_remaining });
+    }
+    pub fn draw(&mut self, camera:&Camera) { 
+        for drawable in self.drawables.iter_mut() { 
+            drawable.ticks_remaining -= 1;
+            camera.draw_centered_square(drawable.position, 5., drawable.color);
+        } 
+        self.drawables.retain(|drawable| drawable.ticks_remaining > 0);
     }
 }
