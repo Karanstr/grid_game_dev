@@ -44,7 +44,7 @@ impl Object {
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let cell_length = self.cell_length(depth);
-        let offset = cell_length / 2.;
+        let offset = 0.01;
         for i in 0 .. 4 {
             let direction = Vec2::new(
                 if i & 0b1 == 1 { 1. } else { -1. },
@@ -111,7 +111,6 @@ impl Object {
     }
 
 }
-
 
 pub struct World {
     pub graph : SparseDirectedGraph,
@@ -253,28 +252,28 @@ impl World {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
             self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, obj1_index, obj2_index), relative_velocity, multiplier),
-            // self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
+            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
         ];
         BinaryHeap::from(corners.concat())
     }
 
-    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32, debug_render:&mut DebugRender) {
+    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32) {
         let mut ticks_into_projection = 0.;
         loop {
+            let tick_max = 1. - ticks_into_projection;
             let mut corners = BinaryHeap::new();
             for i in 0 .. objects.len() {
                 for j in i + 1 .. objects.len() { 
                     if within_range(objects[i], objects[j], multiplier, &self.camera) {
                         let (obj1_index, obj2_index) = (i, j);
-                        corners.extend(self.get_corners(objects[i], objects[j], ticks_into_projection, multiplier, obj1_index, obj2_index));
+                        corners.extend(self.get_corners(objects[i], objects[j], 0., multiplier, obj1_index, obj2_index));
                     }
                 }
             }
-            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners, debug_render) else {
+            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners, tick_max) else {
                 //No collision, move objects their remaining distance
-                let remaining_ticks = 1. - ticks_into_projection;
                 for object in objects.iter_mut() {
-                    object.aabb.move_by(object.velocity * remaining_ticks);
+                    object.aabb.move_by(object.velocity * tick_max);
                 }
                 break
             };
@@ -289,12 +288,12 @@ impl World {
                 if walls_hit.x {
                     objects[owner].velocity.x += impulse.x;
                     objects[hitting].velocity.x -= impulse.x;
-                    objects[1].velocity.x = 0.;
+                    // objects[1].velocity.x = 0.;
                 }
                 if walls_hit.y {
                     objects[owner].velocity.y += impulse.y;
                     objects[hitting].velocity.y -= impulse.y;
-                    objects[1].velocity.y = 0.;
+                    // objects[1].velocity.y = 0.;
                 }
             }
         }
@@ -307,10 +306,9 @@ impl World {
     }
 
     //Replace this return type with a struct
-    //Replace hit_walls with an enum
-    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>, debug_render:&mut DebugRender) -> Option<(OnTouch, f32, (usize, usize))> {
+    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> Option<(OnTouch, f32, (usize, usize))> {
         let mut action = OnTouch::Ignore;
-        let mut ticks_to_hit = 1.;
+        let mut ticks_to_hit = tick_max;
         let mut hit = false;
         let mut col_owner = 0;
         let mut col_hitting = 0;
@@ -318,7 +316,7 @@ impl World {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
             let (owner, hitting) = cur_corner.rel_objects;
             let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
-            let Some(hit_point) = self.next_intersection(cur_corner.position, relative_velocity, cur_corner.position_data, objects[hitting], debug_render) else { continue };
+            let Some(hit_point) = self.next_intersection(cur_corner.position, relative_velocity, cur_corner.position_data, objects[hitting]) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
             if cur_corner.ticks_into_projection >= ticks_to_hit { continue }
             cur_corner.position = hit_point.position;
@@ -361,7 +359,7 @@ impl World {
         }
     }
 
-    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object, debug_render:&mut DebugRender) -> Option<HitPoint> {
+    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {
         let top_left = hitting.aabb.min();
         let bottom_right = hitting.aabb.max();
         //Replace with aabb check?

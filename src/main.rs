@@ -24,7 +24,6 @@ async fn main() {
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
     let mut save = world.graph.save_object_json(block.root);
-    let mut cur_frame = 0;
     let mut debug_render = DebugRender::new();
     loop {
         
@@ -114,11 +113,10 @@ async fn main() {
         // world.render(&mut block, true);
         world.render(&mut player, true);
         world.render(&mut static_block, true);
+        world.render(&mut block, true);
         player.draw_facing(&world.camera);
-        // dbg!(cur_frame);
-        world.n_body_collisions(Vec::from([&mut player, /*&mut block,*/ &mut static_block]), 10., &mut debug_render);
+        world.n_body_collisions(Vec::from([&mut player, &mut block, &mut static_block]), 10.);
         debug_render.draw(&world.camera);
-        cur_frame += 1;
         next_frame().await
     }
 
