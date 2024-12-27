@@ -44,7 +44,7 @@ impl Object {
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let cell_length = self.cell_length(depth);
-        let offset = cell_length / 4.;
+        let offset = cell_length / 2.;
         for i in 0 .. 4 {
             let direction = Vec2::new(
                 if i & 0b1 == 1 { 1. } else { -1. },
@@ -238,7 +238,6 @@ impl World {
         let mut corners = Vec::new();
         while let Some(mut corner) = unculled_corners.pop() {
             if hittable_walls(velocity, corner.configuration) == BVec2::FALSE { continue }
-            self.camera.draw_vec_circle(corner.position, 5., DARKPURPLE);
             let hitting_aabb = hitting.effective_aabb(multiplier);
             let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand( velocity * multiplier);
             if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { self.camera.outline_bounds(point_aabb, 2., RED); continue }
@@ -254,7 +253,7 @@ impl World {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
             self.cull_and_fill_corners(object2, self.formatted_exposed_corners(object1, object1.aabb.center(), ticks_into_projection, obj1_index, obj2_index), relative_velocity, multiplier),
-            self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
+            // self.cull_and_fill_corners(object1, self.formatted_exposed_corners(object2, object2.aabb.center(), ticks_into_projection, obj2_index, obj1_index), -relative_velocity, multiplier)
         ];
         BinaryHeap::from(corners.concat())
     }
@@ -395,7 +394,6 @@ impl World {
             (false, true) if ticks.y == 0. => { ticks.x },
             _ => { ticks.min_element() },
         };
-        debug_render.add(position + velocity * ticks_to_hit, WHITE, 10);
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
         Some(HitPoint {
             position : position + velocity * ticks_to_hit, 
