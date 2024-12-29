@@ -40,8 +40,6 @@ impl BoundingRect for AABB {
 impl AABB {
     pub fn new(center:Vec2, radius:Vec2) -> Self { Self { center, radius } }
     pub fn radius(&self) -> Vec2 { self.radius }
-    pub fn set_radius(&mut self, radius:Vec2) { self.radius = radius }
-
     pub fn expand(&self, distance:Vec2) -> Self {
         Self {
             center: self.center + distance / 2.,
@@ -79,6 +77,7 @@ pub struct Drawable {
 pub struct DebugRender {
     pub drawables: Vec<Drawable>,
 }
+#[allow(dead_code)]
 impl DebugRender {
     pub fn new() -> Self { 
         Self { drawables: Vec::new() } 

@@ -26,7 +26,7 @@ async fn main() {
     let mut save = world.graph.save_object_json(block.root);
     let mut debug_render = DebugRender::new();
     loop {
-        
+         
         //Profiling and player speed-reorientation and save/load and zoom
         {
             if is_key_pressed(KeyCode::P) {
@@ -115,6 +115,7 @@ async fn main() {
         player.draw_facing(&world.camera);
         world.n_body_collisions(Vec::from([&mut player, &mut block, &mut static_block]), 10.);
         debug_render.draw(&world.camera);
+        world.identify_object_region(&player, &static_block, 10.);
         next_frame().await
     }
 

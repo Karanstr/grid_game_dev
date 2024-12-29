@@ -283,6 +283,7 @@ impl World {
             if let OnTouch::Resist(walls_hit) = action {
                 let energy_conserved = 0.5;
                 let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
+                                    //Replace with absorbtion_rate of both sides of the collision?
                 let impulse = -(1. + energy_conserved) * relative_velocity / 2.;
                 if walls_hit.x {
                     objects[owner].velocity.x += impulse.x;
@@ -292,6 +293,8 @@ impl World {
                     objects[owner].velocity.y += impulse.y;
                     objects[hitting].velocity.y -= impulse.y;
                 }
+                objects[owner].remove_neglible_vel();
+                objects[hitting].remove_neglible_vel();
             }
         }
         
@@ -419,6 +422,26 @@ impl World {
         );
         result
     }
+
+    pub fn identify_object_region(&self, moving_object:&Object, hitting_object:&Object, multiplier:f32) {
+        let bounding_box = moving_object.aabb.expand((moving_object.velocity - hitting_object.velocity) * multiplier);
+        if hitting_object.aabb.intersects(bounding_box) != BVec2::TRUE { return }
+        let (top_left_zorder, a_depth) = {
+            match hitting_object.get_data_at_position(&self, bounding_box.min(), self.max_depth)[0] {
+                Some(data) => (Zorder::from_cell(data.cell, data.depth), data.depth),
+                None => (0, 0),
+            }
+        };
+        let (bottom_right_zorder, b_depth) = {
+            match hitting_object.get_data_at_position(&self, bounding_box.max(), self.max_depth)[0] {
+                Some(data) => (Zorder::from_cell(data.cell, data.depth), data.depth),
+                None => (0, 0),
+            }
+        };
+        let (cell_depth, parent_zorder) = Zorder::shared_parent(top_left_zorder, a_depth, bottom_right_zorder, b_depth);
+        self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(Zorder::to_cell(parent_zorder, cell_depth), cell_depth), Vec2::splat(hitting_object.cell_length(cell_depth)), 4., GREEN);
+    }
+
 
 }
 

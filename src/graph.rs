@@ -35,23 +35,39 @@ impl Zorder {
         Some(Self::from_cell(UVec2::new(end_cell.x as u32, end_cell.y as u32), depth))
     }
 
-    pub fn read(zorder:u32, layer:u32, depth:u32) -> u32 {
-        zorder >> (2 * (depth - layer)) & 0b11
+    pub fn read_step(zorder:u32, layer:u32, depth:u32) -> u32 {
+        Self::read_until(zorder, layer, depth) & 0b11
     }
 
-    pub fn divergence_depth(zorder_a:u32, zorder_b:u32, depth:u32) -> Option<u32> {
-        for layer in 1 ..= depth {
-            if Self::read(zorder_a, layer, depth) != Self::read(zorder_b, layer, depth) {
-                return Some(layer)
+    pub fn read_until(zorder:u32, layer:u32, depth:u32) -> u32 {
+        zorder >> (2 * (depth - layer))
+    }
+
+    pub fn shared_parent(zorder_a:u32, a_depth:u32, zorder_b:u32, b_depth:u32) -> (u32, u32) {
+        //Temporary, this is dumb but I wanna be done for tonight
+        let common_depth = u32::max(a_depth, b_depth);
+        let a_zorder = {
+            let mut zorder = zorder_a;
+            for _ in a_depth .. common_depth { zorder <<= 2 }
+            zorder
+        };
+        let b_zorder = {
+            let mut zorder = zorder_b;
+            for _ in b_depth .. common_depth { zorder <<= 2 }
+            zorder
+        };
+        for layer in (0 ..= common_depth).rev() {
+            if Self::read_until(a_zorder, layer, common_depth) == Self::read_until(b_zorder, layer, common_depth) {
+                return (layer, Self::read_until(a_zorder, layer, common_depth))
             }
         }
-        None    
+        (0, 0)
     }
 
     pub fn path(zorder:u32, depth:u32) -> Vec<u32> {
         let mut steps:Vec<u32> = Vec::with_capacity(depth as usize);
         for layer in 1 ..= depth {
-            steps.push(Self::read(zorder, layer, depth));
+            steps.push(Self::read_step(zorder, layer, depth));
         }
         steps
     }
