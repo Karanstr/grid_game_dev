@@ -2,12 +2,40 @@ use std::f32::consts::PI;
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use macroquad::prelude::*;
-use crate::graph::{NodePointer, SparseDirectedGraph, Zorder};
+use crate::graph::{NodePointer, SparseDirectedGraph};
 pub use crate::graph::Index;
 use crate::drawing_camera::Camera;
 use crate::utilities::*;
 mod collision_utils;
 use collision_utils::*;
+
+//Feels like this belongs here, not sure though
+impl SparseDirectedGraph {
+    pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(ZorderPath, Index)> {
+        //Arbitrary limit
+        let maximum_depth = 10;
+        let mut leaves = Vec::new();
+        let mut stack = Vec::new();
+        stack.push((root, ZorderPath::root()));
+
+        while let Some((node, zorder)) = stack.pop() {
+            let children = self.node(node.index).unwrap().children;
+            //If we're cycling
+            if children[0].index == node.index {
+                leaves.push((zorder, children[0].index));
+                continue
+            }
+            if zorder.depth + 1 > maximum_depth { 
+                println!("Graph exceeds depth limit at index {}", *node.index);
+                continue
+            }
+            for i in (0 .. 4).rev() {
+                stack.push((children[i], zorder.step_down(i as u32)));
+            }
+        }
+        leaves
+    }
+}
 
 pub struct Object {
     pub aabb : AABB,
@@ -59,10 +87,10 @@ impl Object {
     }
 
     fn find_real_node(&self, world:&World, cell:UVec2, max_depth:u32) -> LimPositionData {
-        let max_zorder = Zorder::from_cell(cell, max_depth);
-        let (cell_pointer, real_depth) = world.graph.read(self.root, &Zorder::path(max_zorder, max_depth));
-        let zorder = max_zorder >> 2 * (max_depth - real_depth);
-        LimPositionData::new(cell_pointer, Zorder::to_cell(zorder, real_depth), real_depth)
+        let path = ZorderPath::from_cell(cell, max_depth);
+        let (cell_pointer, real_depth) = world.graph.read(self.root, &path.steps());
+        let zorder = path.with_depth(real_depth);
+        LimPositionData::new(cell_pointer, zorder.to_cell(), real_depth)
     }
 
     //Change to relative position?
@@ -130,14 +158,14 @@ impl World {
 
     pub fn render(&self, object:&mut Object, draw_lines:bool) {
         let blocks = self.graph.dfs_leaves(object.root);
-        for (zorder, depth, index) in blocks {
+        for (zorder, index) in blocks {
             match self.index_color(index) {
                 Some(color) => {
-                    let top_left_corner = object.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth);
+                    let top_left_corner = object.cell_top_left_corner(zorder.to_cell(), zorder.depth);
                     if color != BLACK {
-                        self.camera.draw_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(depth)), color);
+                        self.camera.draw_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(zorder.depth)), color);
                     }
-                    if draw_lines { self.camera.outline_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(depth)), 2., WHITE) }
+                    if draw_lines { self.camera.outline_vec_rectangle(top_left_corner, Vec2::splat(object.cell_length(zorder.depth)), 2., WHITE) }
                 }
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
@@ -150,7 +178,7 @@ impl World {
             return Err("Attempting to edit beyond object domain".to_owned())
         }
         let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
-        let path = Zorder::path( Zorder::from_cell(cell, depth), depth );
+        let path = ZorderPath::from_cell(cell, depth).steps();
         if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
             modified.root = root;
             Ok(())
@@ -170,7 +198,7 @@ impl World {
     }
 
     //Make this not bad?
-    fn exposed_corners(&self, root:NodePointer, cell_zorder:u32, cell_depth:u32) -> u8 {
+    fn exposed_corners(&self, root:NodePointer, zorder:ZorderPath) -> u8 {
         let mut exposed_mask = 0b1111;
         let checks = [
             (IVec2::new(-1, 0), 0b01), //Top Left
@@ -190,14 +218,14 @@ impl World {
             for j in 0 .. 3 {
                 let (offset, direction) = checks[i*3 + j];
                 let mut check_zorder = {
-                    if let Some(zorder) = Zorder::move_cartesianly(cell_zorder, cell_depth, offset) {
+                    if let Some(zorder) = zorder.move_cartesianly(offset) {
                         zorder
                     } else { continue }
                 };
-                for _ in 0 .. self.max_depth - cell_depth {
-                    check_zorder = check_zorder << 2 | direction
+                for _ in 0 .. self.max_depth - zorder.depth {
+                    check_zorder = check_zorder.step_down(direction);
                 }
-                let path = Zorder::path(check_zorder, self.max_depth);
+                let path = check_zorder.steps();
                 let (node_pointer, _) = self.graph.read(root, &path);
                 if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
                     if walls != BVec2::TRUE { continue }
@@ -212,11 +240,11 @@ impl World {
     fn formatted_exposed_corners(&self, object_within:&Object, cur_pos: Vec2, owner:usize, hitting:usize) -> Vec<Particle> {
         let leaves = self.graph.dfs_leaves(object_within.root);
         let mut corners = Vec::new();
-        for (zorder, depth, index) in leaves {
+        for (zorder, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
-                let corner_mask = self.exposed_corners(object_within.root, zorder, depth);
-                let top_left_corner = object_within.cell_top_left_corner(Zorder::to_cell(zorder, depth), depth) - object_within.aabb.center() + cur_pos;
-                let cell_length = object_within.cell_length(depth);
+                let corner_mask = self.exposed_corners(object_within.root, zorder);
+                let top_left_corner = object_within.cell_top_left_corner(zorder.to_cell(), zorder.depth) - object_within.aabb.center() + cur_pos;
+                let cell_length = object_within.cell_length(zorder.depth);
                 for i in 0 .. 4 {
                     if corner_mask & 1 << i != 0 {
                         corners.push(Particle::new(
@@ -240,7 +268,7 @@ impl World {
             let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand( velocity * multiplier);
             if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { self.camera.outline_bounds(point_aabb, 2., RED); continue }
             else { self.camera.outline_bounds(point_aabb, 2., GREEN); }
-            corner.position_data = hitting.get_data_at_position(&self, corner.position, self.max_depth)[Zorder::from_configured_direction(-velocity, corner.configuration)];
+            corner.position_data = hitting.get_data_at_position(&self, corner.position, self.max_depth)[configured_direction(-velocity, corner.configuration)];
             corners.push(Reverse(corner));
         }
         corners
@@ -321,7 +349,7 @@ impl World {
             if cur_corner.ticks_into_projection >= ticks_to_hit { continue }
             cur_corner.position = hit_point.position;
             let position_data = objects[hitting].get_data_at_position(&self, cur_corner.position, self.max_depth);
-            cur_corner.position_data = position_data[Zorder::from_configured_direction(relative_velocity, cur_corner.configuration)];
+            cur_corner.position_data = position_data[configured_direction(relative_velocity, cur_corner.configuration)];
             let Some(data) = cur_corner.position_data else { continue };
             match self.index_collision(data.node_pointer.index) {
                 Some(OnTouch::Ignore) => { }
@@ -426,20 +454,22 @@ impl World {
     pub fn identify_object_region(&self, moving_object:&Object, hitting_object:&Object, multiplier:f32) {
         let bounding_box = moving_object.aabb.expand((moving_object.velocity - hitting_object.velocity) * multiplier);
         if hitting_object.aabb.intersects(bounding_box) != BVec2::TRUE { return }
-        let (top_left_zorder, a_depth) = {
+        let top_left_zorder = {
             match hitting_object.get_data_at_position(&self, bounding_box.min(), self.max_depth)[0] {
-                Some(data) => (Zorder::from_cell(data.cell, data.depth), data.depth),
-                None => (0, 0),
+                Some(data) => ZorderPath::from_cell(data.cell, data.depth),
+                None => ZorderPath::root(),
             }
         };
-        let (bottom_right_zorder, b_depth) = {
+        let bottom_right_zorder = {
             match hitting_object.get_data_at_position(&self, bounding_box.max(), self.max_depth)[0] {
-                Some(data) => (Zorder::from_cell(data.cell, data.depth), data.depth),
-                None => (0, 0),
+                Some(data) => ZorderPath::from_cell(data.cell, data.depth),
+                None => ZorderPath::root(),
             }
         };
-        let (cell_depth, parent_zorder) = Zorder::shared_parent(top_left_zorder, a_depth, bottom_right_zorder, b_depth);
-        self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(Zorder::to_cell(parent_zorder, cell_depth), cell_depth), Vec2::splat(hitting_object.cell_length(cell_depth)), 4., GREEN);
+        
+        dbg!(top_left_zorder, bottom_right_zorder);
+        let parent_zorder = top_left_zorder.shared_parent(bottom_right_zorder);
+        self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(parent_zorder.to_cell(), parent_zorder.depth), Vec2::splat(hitting_object.cell_length(parent_zorder.depth)), 4., GREEN);
     }
 
 
@@ -483,19 +513,98 @@ pub fn within_range(object1:&Object, object2:&Object, multiplier:f32, camera:&Ca
     obj1_aabb.intersects(obj2_aabb) == BVec2::TRUE
 }
 
-
-impl Zorder {
-    pub fn from_configured_direction(direction:Vec2, configuration:Configurations) -> usize {
-        let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
-        if direction == Vec2::ZERO { dbg!("AHHH"); }
-        if direction.x == 0. {
-            2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
-        } else if direction.y == 0. {
-            clamped.x as usize | 2 * if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 1 } else { 0 }
-        } else {
-            2 * clamped.y as usize | clamped.x as usize
-        }
+pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
+    let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
+    if direction == Vec2::ZERO { dbg!("AHHH"); }
+    if direction.x == 0. {
+        2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
+    } else if direction.y == 0. {
+        clamped.x as usize | 2 * if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 1 } else { 0 }
+    } else {
+        2 * clamped.y as usize | clamped.x as usize
     }
 }
 
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ZorderPath {
+    pub zorder : u32,
+    pub depth : u32
+}
+impl ZorderPath {
+    pub fn root() -> Self {
+        Self { zorder: 0, depth: 0 }
+    }
+
+    pub fn to_cell(&self) -> UVec2 {
+        let mut cell = UVec2::ZERO;
+        for layer in 0 .. self.depth {
+            cell.x |= (self.zorder >> (2 * layer) & 0b1) << layer;
+            cell.y |= (self.zorder >> (2 * layer + 1) & 0b1) << layer;
+        }
+        cell
+    }
+
+    pub fn from_cell(cell:UVec2, depth:u32) -> Self {
+        let mut zorder = 0;
+        for layer in (0 .. depth).rev() {
+            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
+            zorder = (zorder << 2) | step;
+        }
+        Self { zorder, depth}
+    }
+
+    pub fn with_depth(&self, new_depth:u32) -> Self {
+        let mut zorder = self.zorder;   
+        if self.depth < new_depth {
+           zorder <<= 2 * (new_depth - self.depth);
+        } else {
+           zorder >>= 2 * (self.depth - new_depth);
+        };
+        Self { zorder, depth: new_depth}
+    }
+
+    pub fn move_cartesianly(&self, offset:IVec2) -> Option<Self> {
+        let cell = self.to_cell();
+        let end_cell = cell.as_ivec2() + offset;
+        if end_cell.min_element() < 0 || end_cell.max_element() >= 2u32.pow(self.depth) as i32 {
+            return None
+        }
+        Some(Self::from_cell(UVec2::new(end_cell.x as u32, end_cell.y as u32), self.depth))
+    }
+
+    pub fn read_step(&self, layer:u32) -> u32 {
+        self.with_depth(layer).zorder & 0b11
+    }
+
+    pub fn shared_parent(&self, other: Self) -> Self {
+        let common_depth = u32::max(self.depth, other.depth);
+        let a_zorder = self.with_depth(common_depth);
+        let b_zorder = other.with_depth(common_depth);
+        for layer in (0 ..= common_depth).rev() {
+            if a_zorder.with_depth(layer) == b_zorder.with_depth(layer) {
+                return a_zorder.with_depth(layer)
+            }
+        }
+        Self { zorder: 0, depth: 0 }
+    }
+
+    pub fn step_down(&self, direction:u32) -> Self {
+        Self { zorder: self.zorder << 2 | direction, depth: self.depth + 1 }
+    }
+
+    pub fn steps(&self) -> Vec<u32> {
+        let mut steps:Vec<u32> = Vec::with_capacity(self.depth as usize);
+        for layer in 1 ..= self.depth {
+            steps.push(self.read_step(layer));
+        }
+        steps
+    }
+
+    pub fn cells_intersecting_aabb(aabb:AABB, max_depth: u32) -> Vec<(u32, u32)> {
+       todo!()
+    }
+
+}
 

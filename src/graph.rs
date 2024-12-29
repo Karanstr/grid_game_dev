@@ -1,78 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 use vec_mem_heap::{MemHeap, Ownership};
-use macroquad::math::{IVec2, UVec2};
 pub use vec_mem_heap::{Index, AccessError};
 
-
-pub struct Zorder;
-#[allow(dead_code)]
-impl Zorder {
-    pub fn to_cell(zorder:u32, depth:u32) -> UVec2 {
-        let mut cell = UVec2::ZERO;
-        for layer in 0 .. depth {
-            cell.x |= (zorder >> (2 * layer) & 0b1) << layer;
-            cell.y |= (zorder >> (2 * layer + 1) & 0b1) << layer;
-        }
-        cell
-    }
-
-    pub fn from_cell(cell:UVec2, depth:u32) -> u32 {
-        let mut zorder = 0;
-        for layer in (0 .. depth).rev() {
-            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
-            zorder = (zorder << 2) | step;
-        }
-        zorder
-    }
-
-    pub fn move_cartesianly(start_zorder:u32, depth:u32, offset:IVec2) -> Option<u32> {
-        let cell = Self::to_cell(start_zorder, depth);
-        let end_cell = cell.as_ivec2() + offset;
-        if end_cell.min_element() < 0 || end_cell.max_element() >= 2u32.pow(depth) as i32 {
-            return None
-        }
-        Some(Self::from_cell(UVec2::new(end_cell.x as u32, end_cell.y as u32), depth))
-    }
-
-    pub fn read_step(zorder:u32, layer:u32, depth:u32) -> u32 {
-        Self::read_until(zorder, layer, depth) & 0b11
-    }
-
-    pub fn read_until(zorder:u32, layer:u32, depth:u32) -> u32 {
-        zorder >> (2 * (depth - layer))
-    }
-
-    pub fn shared_parent(zorder_a:u32, a_depth:u32, zorder_b:u32, b_depth:u32) -> (u32, u32) {
-        //Temporary, this is dumb but I wanna be done for tonight
-        let common_depth = u32::max(a_depth, b_depth);
-        let a_zorder = {
-            let mut zorder = zorder_a;
-            for _ in a_depth .. common_depth { zorder <<= 2 }
-            zorder
-        };
-        let b_zorder = {
-            let mut zorder = zorder_b;
-            for _ in b_depth .. common_depth { zorder <<= 2 }
-            zorder
-        };
-        for layer in (0 ..= common_depth).rev() {
-            if Self::read_until(a_zorder, layer, common_depth) == Self::read_until(b_zorder, layer, common_depth) {
-                return (layer, Self::read_until(a_zorder, layer, common_depth))
-            }
-        }
-        (0, 0)
-    }
-
-    pub fn path(zorder:u32, depth:u32) -> Vec<u32> {
-        let mut steps:Vec<u32> = Vec::with_capacity(depth as usize);
-        for layer in 1 ..= depth {
-            steps.push(Self::read_step(zorder, layer, depth));
-        }
-        steps
-    }
-
-}
 
 mod node_stuff {
     use super::Index;
@@ -228,8 +158,8 @@ impl SparseDirectedGraph {
         instance
     }
 
-    //Private functions used for reading
-    fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
+    //Functions used for reading
+    pub fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
         self.nodes.data(index)
     }
 
@@ -331,34 +261,6 @@ impl SparseDirectedGraph {
         if let Some(node_pointer) = trail.last() {
             (*node_pointer, trail.len() as u32 - 1)
         } else { panic!("Trail is broken again") }
-    }
-
-    //Returns(zorder, depth, index)
-    pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(u32, u32, Index)> {
-        //Arbitrary limit
-        let maximum_depth = 10;
-        //              zorder, depth, index
-        let mut leaves = Vec::new();
-        let mut stack = Vec::new();
-        //       node_pointer, depth, zorder
-        stack.push((root, 0u32, 0u32));
-
-        while let Some((node, layers_deep, zorder)) = stack.pop() {
-            let children = self.node(node.index).unwrap().children;
-            //If we're cycling
-            if children[0].index == node.index {
-                leaves.push((zorder, layers_deep, children[0].index));
-                continue
-            }
-            if layers_deep + 1 > maximum_depth { 
-                println!("Graph exceeds depth limit at index {}", *node.index);
-                continue
-            }
-            for i in (0 .. 4).rev() {
-                stack.push((children[i], layers_deep + 1, (zorder << 2) | i as u32));
-            }
-        }
-        leaves
     }
 
     fn bfs_nodes(&self, root:NodePointer) -> Vec<NodePointer> {
