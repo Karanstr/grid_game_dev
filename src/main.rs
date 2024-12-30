@@ -4,16 +4,15 @@ use engine::game::*;
 use engine::drawing_camera::Camera;
 use engine::utilities::*;
 use macroquad::prelude::*;
-
 use std::fs;
 
 #[macroquad::main("Window")]
 async fn main() {
-    let size = Vec2::new(512., 512.);
-    request_new_screen_size(size.x, size.y);
-    let camera = Camera::new(AABB::new(size/2., size/2.), Vec2::ZERO);
+    let size = Vec2::splat(256.);
+    request_new_screen_size(size.x*2., size.y*2.);
+    let camera = Camera::new(AABB::new(size, size), Vec2::ZERO);
     let mut world = World::new(5, camera);
-    let mut floor = Object::new(world.graph.get_root(0), size/2., 256., CollisionType::Static);
+    let mut floor = Object::new(world.graph.get_root(0), size, 256., CollisionType::Static);
     //Loading
     {
         let save = fs::read_to_string("src/entities/world.json").unwrap();
@@ -25,10 +24,9 @@ async fn main() {
         }
     }
     world.add_object(floor);
-    world.add_object(Object::new(world.graph.get_root(2), size/2., 32., CollisionType::Dynamic));
+    world.add_object(Object::new(world.graph.get_root(2), size, 32., CollisionType::Dynamic));
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
-    let mut debug_render = DebugRender::new();
     loop {
          
         //Profiling and save/load and zoom
@@ -55,7 +53,12 @@ async fn main() {
                 world.camera.shrink_view(Vec2::splat(200.));
             } else if is_key_pressed(KeyCode::G) {
                 world.camera.expand_view(Vec2::splat(200.));
+            } else if is_key_pressed(KeyCode::J) {
+                world.expand_object_domain(0, 0);
+            } else if is_key_pressed(KeyCode::H) {
+                world.shrink_object_domain(0, 0);
             }
+
         } 
 
         //Depth changing
@@ -108,10 +111,7 @@ async fn main() {
         let new_cam_pos = world.access_object(1).aabb.center();
         world.camera.interpolate_position(new_cam_pos, 0.4);
         world.camera.show_view();
-        world.render_all(false, true);
-        world.n_body_collisions(1.);
-        debug_render.draw(&world.camera);
-        world.identify_object_region(1, 0, 1.);
+        world.draw_and_tick(true, true);
         next_frame().await
     }
 

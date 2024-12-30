@@ -163,7 +163,7 @@ impl SparseDirectedGraph {
         self.nodes.data(index)
     }
 
-    fn child(&self, node:NodePointer, zorder:usize) -> Result<NodePointer, AccessError> {
+    pub fn child(&self, node:NodePointer, zorder:usize) -> Result<NodePointer, AccessError> {
         Ok( self.node(node.index)?.children[zorder] )
     }
 

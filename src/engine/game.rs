@@ -482,6 +482,32 @@ impl World {
         self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(parent_zorder.to_cell(), parent_zorder.depth), Vec2::splat(hitting_object.cell_length(parent_zorder.depth)), 4., GREEN);
     }
 
+    pub fn draw_and_tick(&mut self, draw_lines:bool, cull:bool) {
+        self.render_all(draw_lines, cull);
+        self.n_body_collisions(1.)
+    }
+
+    pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
+        let object = &mut self.objects[object_index];
+        object.aabb = object.aabb.expand(2. * object.aabb.radius() * zorder_to_direction(direction as u32));
+        self.max_depth += 1;
+        let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root).unwrap();
+        self.graph.swap_root(object.root, new_root);
+        object.root = new_root;
+    }
+
+    //Give each object a depth parameter instead of a universal max depth
+    pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
+        let object = &mut self.objects[object_index];
+        if object.aabb.radius() == Vec2::ONE { return }
+        if self.max_depth > 5 { self.max_depth -= 1 }
+        object.aabb = object.aabb.shrink(object.aabb.radius() * zorder_to_direction(preserve_direction as u32));
+        let new_root = self.graph.set_node(object.root, &[], self.graph.child(object.root, preserve_direction).unwrap()).unwrap();
+        self.graph.swap_root(object.root, new_root);
+        object.root = new_root;
+    }
+
+
 
 }
 
@@ -535,7 +561,12 @@ pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usi
     }
 }
 
-
+pub fn zorder_to_direction(zorder:u32) -> Vec2 {
+    -Vec2::new(
+        if zorder & 0b1 == 0b1 { 1. } else { -1. },
+        if zorder & 0b10 == 0b10 { 1. } else { -1. },
+    )
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ZorderPath {
