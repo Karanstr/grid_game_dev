@@ -6,11 +6,11 @@ pub use vec_mem_heap::{Index, AccessError};
 #[derive(Copy, Clone)]
 pub struct Root {
     pub pointer : NodePointer,
-    pub max_depth : u32
+    pub height : u32
 }
 impl Root {
-    pub fn new(pointer:NodePointer, max_depth:u32) -> Self {
-        Self { pointer, max_depth }
+    pub fn new(pointer:NodePointer, height:u32) -> Self {
+        Self { pointer, height }
     }
 }
 
@@ -208,7 +208,7 @@ impl SparseDirectedGraph {
                     }
                     self.index_lookup.remove(&node);
                 },
-                Err( error ) => { self.handle_access_error(error) }
+                Err( error ) => { self.handle_access_error(error, "Decrease Owners".to_owned()) }
                 Ok(None) => {},
             }
         }
@@ -225,7 +225,7 @@ impl SparseDirectedGraph {
                 for child in children {
                     if child.index != index {
                         if let Err( error) = self.nodes.add_owner(child.index) {
-                            self.handle_access_error(error);
+                            self.handle_access_error(error, "Add Node".to_owned());
                         }
                     }
                 }
@@ -234,11 +234,11 @@ impl SparseDirectedGraph {
         }
     }
 
-    fn handle_access_error(&self, error:AccessError) {
+    fn handle_access_error(&self, error:AccessError, location:String) {
         match error {
             AccessError::ProtectedMemory(index) if *index < self.leaf_count as usize => {}
             error => {
-                dbg!(error);
+                dbg!(error, location);
             }
         }
     }
@@ -301,7 +301,7 @@ impl SparseDirectedGraph {
     //This is a stupid, temporary function
     pub fn swap_root(&mut self, old_root:NodePointer, new_root:NodePointer) {
         if let Err( error) = self.nodes.add_owner(new_root.index) {
-            self.handle_access_error(error);
+            self.handle_access_error(error, "Swap Root".to_owned());
         }
         self.dec_owners(old_root.index);
     }
@@ -334,11 +334,11 @@ impl SparseDirectedGraph {
         #[derive(Serialize)]
         struct Helper {
             nodes : MemHeap<NodeHandler>,
-            max_depth : u32
+            root_height : u32
         }
         serde_json::to_string_pretty(&Helper { 
             nodes : object_graph.nodes, 
-            max_depth : root.max_depth 
+            root_height : root.height 
         }).unwrap()
     }
     
@@ -347,7 +347,7 @@ impl SparseDirectedGraph {
         #[derive(Deserialize)]
         struct Helper {
             nodes: MemHeap<NodeHandler>,
-            max_depth : u32
+            root_height : u32
             //leaf_count : u8
         }
         let helper:Helper = serde_json::from_str(&json).unwrap();
@@ -356,7 +356,7 @@ impl SparseDirectedGraph {
             data.push(NodePointer::new(Index(index)))
         }
         let pointer = Self::map_to(&helper.nodes, self, &data, self.leaf_count);
-        Root::new(pointer, helper.max_depth)
+        Root::new(pointer, helper.root_height)
     }
 
     fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> NodePointer {

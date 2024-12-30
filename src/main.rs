@@ -10,9 +10,9 @@ use std::fs;
 async fn main() {
     let size = Vec2::splat(256.);
     request_new_screen_size(size.x*2., size.y*2.);
-    let camera = Camera::new(AABB::new(size, size), Vec2::ZERO);
+    let camera = Camera::new(AABB::new(size, Vec2::splat(1.)), Vec2::ZERO);
     let mut world = World::new(camera);
-    let mut floor = Object::new(world.graph.get_root(0), size, 256., CollisionType::Static);
+    let mut floor = Object::new(world.graph.get_root(0), 0, size, CollisionType::Static);
     //Loading
     {
         let save = fs::read_to_string("src/entities/world.json").unwrap();
@@ -24,8 +24,8 @@ async fn main() {
         }
     }
     world.add_object(floor);
-    world.add_object(Object::new(world.graph.get_root(2), size, 32., CollisionType::Dynamic));
-    let mut operation_depth = 0;
+    world.add_object(Object::new(world.graph.get_root(2), 0, size, CollisionType::Dynamic));
+    let mut operation_height = 0;
     let mut cur_block_index = 0;
     loop {
          
@@ -47,13 +47,13 @@ async fn main() {
                 floor.root = new_root;
                 world.graph.swap_root(old_root.pointer, new_root.pointer);
             } else if is_key_pressed(KeyCode::Equal) {
-                world.camera.zoom *= 1.1;
+                world.camera.modify_zoom(1.1);
             } else if is_key_pressed(KeyCode::Minus) {
-                world.camera.zoom /= 1.1;
+                world.camera.modify_zoom(1./1.1);
             } else if is_key_pressed(KeyCode::F) {
-                world.camera.shrink_view(Vec2::splat(200.));
+                world.camera.shrink_view(1.1);
             } else if is_key_pressed(KeyCode::G) {
-                world.camera.expand_view(Vec2::splat(200.));
+                world.camera.expand_view(1.1);
             } else if is_key_pressed(KeyCode::J) {
                 world.expand_object_domain(0, 0);
             } else if is_key_pressed(KeyCode::H) {
@@ -65,32 +65,30 @@ async fn main() {
         //Depth changing
         {
             if is_key_pressed(KeyCode::Key1) {
-                operation_depth = 1;
+                operation_height = 0;
             } else if is_key_pressed(KeyCode::Key2) {
-                operation_depth = 2;
+                operation_height = 1;
             } else if is_key_pressed(KeyCode::Key3) {
-                operation_depth = 3;
+                operation_height = 2;
             } else if is_key_pressed(KeyCode::Key4) {
-                operation_depth = 4;
+                operation_height = 3;
             } else if is_key_pressed(KeyCode::Key5) {
-                operation_depth = 5;
+                operation_height = 4;
             } else if is_key_pressed(KeyCode::Key6) {
-                operation_depth = 6;
+                operation_height = 5;
             } else if is_key_pressed(KeyCode::Key7) {
-                operation_depth = 7;
+                operation_height = 6;
             } else if is_key_pressed(KeyCode::Key8) {
-                operation_depth = 8;
+                operation_height = 7;
             } else if is_key_pressed(KeyCode::Key9) {
-                operation_depth = 9;
-            } else if is_key_pressed(KeyCode::Key0) {
-                operation_depth = 0;
+                operation_height = 8;
             }
         }
         
         //WASD Movement
         {
             let player = world.access_object(1);
-            let speed = 0.2;
+            let speed = 0.01;
             if is_key_down(KeyCode::A) {
                 player.apply_linear_force(Vec2::new(-speed, 0.));
             }
@@ -98,21 +96,21 @@ async fn main() {
                 player.apply_linear_force(Vec2::new(speed, 0.));
             }
             if is_key_pressed(KeyCode::Space) {
-                player.apply_linear_force(Vec2::new(0., -6.));
+                player.apply_linear_force(Vec2::new(0., -0.27));
             }
-            player.apply_linear_force(Vec2::new(0., 0.22));
+            // player.apply_linear_force(Vec2::new(0., 0.015));
         }
 
         if is_mouse_button_down(MouseButton::Left) {
-            if let Err(message) = world.set_cell_with_mouse(0, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+            if let Err(message) = world.set_cell_with_mouse(0, Vec2::from(mouse_position()), operation_height, Index(cur_block_index)) {
                 eprintln!("{message}");
             }
         }
 
-        let new_cam_pos = world.access_object(1).aabb.center();
-        world.camera.interpolate_position(new_cam_pos, 0.4);
+        let new_cam_pos = world.access_object(1).position;
+        world.camera.update(new_cam_pos, 0.4);
         world.camera.show_view();
-        world.draw_and_tick(true, true);
+        world.draw_and_tick(true, false);
         next_frame().await
     }
 

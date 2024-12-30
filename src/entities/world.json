@@ -84,25 +84,6 @@
               "index": 0
             },
             {
-              "index": 1
-            },
-            {
-              "index": 1
-            },
-            {
-              "index": 1
-            }
-          ]
-        },
-        "owner_count": 1
-      },
-      {
-        "data": {
-          "children": [
-            {
-              "index": 0
-            },
-            {
               "index": 0
             },
             {
@@ -128,6 +109,44 @@
               "index": 0
             },
             {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
               "index": 1
             }
           ]
@@ -147,6 +166,25 @@
               "index": 1
             },
             {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 2
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
               "index": 1
             }
           ]
@@ -160,10 +198,29 @@
               "index": 1
             },
             {
+              "index": 1
+            },
+            {
               "index": 0
             },
             {
               "index": 1
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
             },
             {
               "index": 0
@@ -182,44 +239,6 @@
               "index": 1
             },
             {
-              "index": 0
-            },
-            {
-              "index": 1
-            }
-          ]
-        },
-        "owner_count": 1
-      },
-      {
-        "data": {
-          "children": [
-            {
-              "index": 1
-            },
-            {
-              "index": 1
-            },
-            {
-              "index": 0
-            },
-            {
-              "index": 0
-            }
-          ]
-        },
-        "owner_count": 2
-      },
-      {
-        "data": {
-          "children": [
-            {
-              "index": 1
-            },
-            {
-              "index": 1
-            },
-            {
               "index": 1
             },
             {
@@ -232,14 +251,14 @@
       {
         "data": {
           "children": [
-            {
-              "index": 0
-            },
             {
               "index": 6
             },
             {
               "index": 5
+            },
+            {
+              "index": 4
             },
             {
               "index": 4
@@ -261,26 +280,7 @@
               "index": 7
             },
             {
-              "index": 5
-            }
-          ]
-        },
-        "owner_count": 1
-      },
-      {
-        "data": {
-          "children": [
-            {
-              "index": 10
-            },
-            {
-              "index": 9
-            },
-            {
-              "index": 0
-            },
-            {
-              "index": 6
+              "index": 7
             }
           ]
         },
@@ -296,6 +296,25 @@
               "index": 10
             },
             {
+              "index": 0
+            },
+            {
+              "index": 9
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 12
+            },
+            {
+              "index": 11
+            },
+            {
               "index": 8
             },
             {
@@ -309,6 +328,9 @@
         "data": {
           "children": [
             {
+              "index": 16
+            },
+            {
               "index": 15
             },
             {
@@ -316,9 +338,6 @@
             },
             {
               "index": 13
-            },
-            {
-              "index": 12
             }
           ]
         },
@@ -333,5 +352,5 @@
       3
     ]
   },
-  "max_depth": 5
+  "root_height": 3
 }
