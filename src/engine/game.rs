@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use macroquad::prelude::*;
-use crate::engine::graph::{NodePointer, SparseDirectedGraph};
+use crate::engine::graph::{NodePointer, SparseDirectedGraph, Root};
 pub use crate::engine::graph::Index;
 use crate::engine::drawing_camera::Camera;
 use crate::engine::utilities::*;
@@ -41,18 +41,21 @@ pub enum CollisionType {
     Dynamic
 }
 
+
 //Give objects each a unique id?
+//Root max depth is guaranteed to be >= the lowest cell.
+//Without me being real clever though, we'll just have to check every now and then to find the real max depth
 pub struct Object {
     pub aabb : AABB,
-    pub root : NodePointer,
+    pub root : Root,
     pub velocity : Vec2,
     pub collision_type : CollisionType
 }
 impl Object {
-    pub fn new(root:NodePointer, position:Vec2, radius:f32, collision_type:CollisionType) -> Self {
+    pub fn new(root_pointer:NodePointer, position:Vec2, radius:f32, collision_type:CollisionType) -> Self {
         Self {
             aabb : AABB::new(position, Vec2::splat(radius)),
-            root,
+            root : Root::new(root_pointer, 1),
             velocity : Vec2::ZERO,
             collision_type
         }
@@ -89,20 +92,20 @@ impl Object {
         four_points
     }
 
-    fn find_real_node(&self, world:&World, cell:UVec2, max_depth:u32) -> LimPositionData {
-        let path = ZorderPath::from_cell(cell, max_depth);
-        let (cell_pointer, real_depth) = world.graph.read(self.root, &path.steps());
+    fn find_real_node(&self, world:&World, cell:UVec2) -> LimPositionData {
+        let path = ZorderPath::from_cell(cell, self.root.max_depth);
+        let (cell_pointer, real_depth) = world.graph.read(self.root.pointer, &path.steps());
         let zorder = path.with_depth(real_depth);
         LimPositionData::new(cell_pointer, zorder.to_cell(), real_depth)
     }
 
     //Change to relative position?
-    fn get_data_at_position(&self, world:&World, position:Vec2, max_depth:u32) -> [Option<LimPositionData>; 4] {
-        let max_depth_cells = self.coord_to_cell(position, max_depth);
+    fn get_data_at_position(&self, world:&World, position:Vec2) -> [Option<LimPositionData>; 4] {
+        let max_depth_cells = self.coord_to_cell(position, self.root.max_depth);
         let mut data: [Option<LimPositionData>; 4] = [None; 4];
         for i in 0 .. 4 {
             if let Some(grid_cell) = max_depth_cells[i] {
-                data[i] = Some(self.find_real_node(world, grid_cell, max_depth))
+                data[i] = Some(self.find_real_node(world, grid_cell))
             }
         }
         data
@@ -125,16 +128,14 @@ pub struct World {
     pub graph : SparseDirectedGraph,
     pub blocks : BlockPalette,
     pub objects : Vec<Object>,
-    pub max_depth : u32,
     pub camera : Camera,
 }
 impl World {
-    pub fn new(max_depth:u32, camera:Camera) -> Self {
+    pub fn new(camera:Camera) -> Self {
         Self {
             graph : SparseDirectedGraph::new(4),
             blocks : BlockPalette::new(),
             objects : Vec::new(),
-            max_depth,
             camera
         }
     }
@@ -157,7 +158,7 @@ impl World {
 
     pub fn render_object(&self, object_index:usize, draw_lines:bool) {
         let object = &self.objects[object_index];
-        let blocks = self.graph.dfs_leaves(object.root);
+        let blocks = self.graph.dfs_leaves(object.root.pointer);
         for (zorder, index) in blocks {
             match self.index_color(index) {
                 Some(color) => {
@@ -180,8 +181,9 @@ impl World {
         }
         let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
         let path = ZorderPath::from_cell(cell, depth).steps();
-        if let Ok(root) = self.graph.set_node(modified.root, &path, NodePointer::new(index)) {
-            modified.root = root;
+        if let Ok(pointer) = self.graph.set_node(modified.root.pointer, &path, NodePointer::new(index)) {
+            modified.root.pointer = pointer;
+            modified.root.max_depth = u32::max(modified.root.max_depth, depth);
             Ok(())
         } else { Err("Failed to modify cell. Likely means structure is corrupted.".to_owned()) }
     }
@@ -199,7 +201,7 @@ impl World {
     }
 
     //Make this not bad?
-    fn exposed_corners(&self, root:NodePointer, zorder:ZorderPath) -> u8 {
+    fn exposed_corners(&self, root:Root, zorder:ZorderPath) -> u8 {
         let mut exposed_mask = 0b1111;
         let checks = [
             (IVec2::new(-1, 0), 0b01), //Top Left
@@ -223,11 +225,11 @@ impl World {
                         zorder
                     } else { continue }
                 };
-                for _ in 0 .. self.max_depth - zorder.depth {
+                for _ in 0 .. root.max_depth - zorder.depth {
                     check_zorder = check_zorder.step_down(direction);
                 }
                 let path = check_zorder.steps();
-                let (node_pointer, _) = self.graph.read(root, &path);
+                let (node_pointer, _) = self.graph.read(root.pointer, &path);
                 if let Some(OnTouch::Resist(walls)) = self.index_collision(node_pointer.index) {
                     if walls != BVec2::TRUE { continue }
                     exposed_mask -= 1 << i;
@@ -239,7 +241,7 @@ impl World {
     }
 
     fn formatted_exposed_corners(&self, object_within:&Object, cur_pos: Vec2, owner:usize, hitting:usize) -> Vec<Particle> {
-        let leaves = self.graph.dfs_leaves(object_within.root);
+        let leaves = self.graph.dfs_leaves(object_within.root.pointer);
         let mut corners = Vec::new();
         for (zorder, index) in leaves {
             if !matches!(self.index_collision(index).unwrap_or(OnTouch::Ignore), OnTouch::Ignore) {
@@ -269,7 +271,7 @@ impl World {
             let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand( velocity * multiplier);
             if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { self.camera.outline_bounds(point_aabb, 2., RED); continue }
             else { self.camera.outline_bounds(point_aabb, 2., GREEN); }
-            corner.position_data = hitting.get_data_at_position(&self, corner.position, self.max_depth)[configured_direction(-velocity, corner.configuration)];
+            corner.position_data = hitting.get_data_at_position(&self, corner.position)[configured_direction(-velocity, corner.configuration)];
             corners.push(Reverse(corner));
         }
         corners
@@ -357,7 +359,7 @@ impl World {
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
             if cur_corner.ticks_into_projection >= ticks_to_hit { continue }
             cur_corner.position = hit_point.position;
-            let position_data = objects[hitting].get_data_at_position(&self, cur_corner.position, self.max_depth);
+            let position_data = objects[hitting].get_data_at_position(&self, cur_corner.position);
             cur_corner.position_data = position_data[configured_direction(relative_velocity, cur_corner.configuration)];
             let Some(data) = cur_corner.position_data else { continue };
             match self.index_collision(data.node_pointer.index) {
@@ -466,13 +468,13 @@ impl World {
         let bounding_box = moving_object.aabb.expand((moving_object.velocity - hitting_object.velocity) * multiplier);
         if hitting_object.aabb.intersects(bounding_box) != BVec2::TRUE { return }
         let top_left_zorder = {
-            match hitting_object.get_data_at_position(&self, bounding_box.min(), self.max_depth)[0] {
+            match hitting_object.get_data_at_position(&self, bounding_box.min())[0] {
                 Some(data) => ZorderPath::from_cell(data.cell, data.depth),
                 None => ZorderPath::root(),
             }
         };
         let bottom_right_zorder = {
-            match hitting_object.get_data_at_position(&self, bounding_box.max(), self.max_depth)[0] {
+            match hitting_object.get_data_at_position(&self, bounding_box.max())[0] {
                 Some(data) => ZorderPath::from_cell(data.cell, data.depth),
                 None => ZorderPath::root(),
             }
@@ -490,21 +492,22 @@ impl World {
     pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
         let object = &mut self.objects[object_index];
         object.aabb = object.aabb.expand(2. * object.aabb.radius() * zorder_to_direction(direction as u32));
-        self.max_depth += 1;
-        let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root).unwrap();
-        self.graph.swap_root(object.root, new_root);
-        object.root = new_root;
+        let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root.pointer).unwrap();
+        self.graph.swap_root(object.root.pointer, new_root);
+        object.root.pointer = new_root;
+        object.root.max_depth += 1;
     }
 
     //Give each object a depth parameter instead of a universal max depth
     pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
         let object = &mut self.objects[object_index];
         if object.aabb.radius() == Vec2::ONE { return }
-        if self.max_depth > 5 { self.max_depth -= 1 }
+        if object.root.max_depth == 1 { return }
         object.aabb = object.aabb.shrink(object.aabb.radius() * zorder_to_direction(preserve_direction as u32));
-        let new_root = self.graph.set_node(object.root, &[], self.graph.child(object.root, preserve_direction).unwrap()).unwrap();
-        self.graph.swap_root(object.root, new_root);
-        object.root = new_root;
+        let new_root = self.graph.set_node(object.root.pointer, &[], self.graph.child(object.root.pointer, preserve_direction).unwrap()).unwrap();
+        self.graph.swap_root(object.root.pointer, new_root);
+        object.root.pointer = new_root;
+        object.root.max_depth -= 1;
     }
 
 

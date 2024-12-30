@@ -11,7 +11,7 @@ async fn main() {
     let size = Vec2::splat(256.);
     request_new_screen_size(size.x*2., size.y*2.);
     let camera = Camera::new(AABB::new(size, size), Vec2::ZERO);
-    let mut world = World::new(5, camera);
+    let mut world = World::new(camera);
     let mut floor = Object::new(world.graph.get_root(0), size, 256., CollisionType::Static);
     //Loading
     {
@@ -19,8 +19,8 @@ async fn main() {
         if !save.is_empty() {
             let new_root = world.graph.load_object_json(save);
             let old_root = floor.root;
+            world.graph.swap_root(old_root.pointer, new_root.pointer);
             floor.root = new_root;
-            world.graph.swap_root(old_root, new_root);
         }
     }
     world.add_object(floor);
@@ -36,15 +36,16 @@ async fn main() {
             } else if is_key_pressed(KeyCode::V) {
                 cur_block_index = (cur_block_index + 1) % world.graph.leaf_count as usize;
             } else if is_key_pressed(KeyCode::K) {
-                // let save = world.graph.save_object_json(floor.root);
-                // let _ = fs::write("src/entities/world.json", save);
+                let root = world.access_object(0).root;
+                let save = world.graph.save_object_json(root);
+                let _ = fs::write("src/entities/world.json", save);
             } else if is_key_pressed(KeyCode::L) {
                 let save = fs::read_to_string("src/entities/world.json").unwrap();
                 let new_root = world.graph.load_object_json(save);
                 let floor = world.access_object(0);
                 let old_root = floor.root;
                 floor.root = new_root;
-                world.graph.swap_root(old_root, new_root);
+                world.graph.swap_root(old_root.pointer, new_root.pointer);
             } else if is_key_pressed(KeyCode::Equal) {
                 world.camera.zoom *= 1.1;
             } else if is_key_pressed(KeyCode::Minus) {

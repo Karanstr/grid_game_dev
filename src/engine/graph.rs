@@ -3,6 +3,16 @@ use serde::{Deserialize, Serialize};
 use vec_mem_heap::{MemHeap, Ownership};
 pub use vec_mem_heap::{Index, AccessError};
 
+#[derive(Copy, Clone)]
+pub struct Root {
+    pub pointer : NodePointer,
+    pub max_depth : u32
+}
+impl Root {
+    pub fn new(pointer:NodePointer, max_depth:u32) -> Self {
+        Self { pointer, max_depth }
+    }
+}
 
 mod node_stuff {
     use super::Index;
@@ -316,19 +326,28 @@ impl SparseDirectedGraph {
     }
 
     //Create object which can be pulled into/out of the dag, where we handle all sorts of stuff.
-    pub fn save_object_json(&self, root:NodePointer) -> String {
-        let mut data = self.bfs_nodes(root);
+    pub fn save_object_json(&self, root:Root) -> String {
+        let mut data = self.bfs_nodes(root.pointer);
         data.reverse();
         let mut object_graph = Self::new(self.leaf_count);
         let _ = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count);
-        serde_json::to_string_pretty(&object_graph).unwrap()
+        #[derive(Serialize)]
+        struct Helper {
+            nodes : MemHeap<NodeHandler>,
+            max_depth : u32
+        }
+        serde_json::to_string_pretty(&Helper { 
+            nodes : object_graph.nodes, 
+            max_depth : root.max_depth 
+        }).unwrap()
     }
     
     //Assumes leaf_count constant
-    pub fn load_object_json(&mut self, json:String) -> NodePointer {
+    pub fn load_object_json(&mut self, json:String) -> Root {
         #[derive(Deserialize)]
         struct Helper {
             nodes: MemHeap<NodeHandler>,
+            max_depth : u32
             //leaf_count : u8
         }
         let helper:Helper = serde_json::from_str(&json).unwrap();
@@ -336,7 +355,8 @@ impl SparseDirectedGraph {
         for index in 0 .. helper.nodes.length() {
             data.push(NodePointer::new(Index(index)))
         }
-        Self::map_to(&helper.nodes, self, &data, self.leaf_count)
+        let pointer = Self::map_to(&helper.nodes, self, &data, self.leaf_count);
+        Root::new(pointer, helper.max_depth)
     }
 
     fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> NodePointer {
