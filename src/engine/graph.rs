@@ -320,7 +320,7 @@ impl SparseDirectedGraph {
         let mut data = self.bfs_nodes(root);
         data.reverse();
         let mut object_graph = Self::new(self.leaf_count);
-        let _ = Self::map_to(&self.nodes, &mut object_graph, &data);
+        let _ = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count);
         serde_json::to_string_pretty(&object_graph).unwrap()
     }
     
@@ -336,19 +336,14 @@ impl SparseDirectedGraph {
         for index in 0 .. helper.nodes.length() {
             data.push(NodePointer::new(Index(index)))
         }
-        Self::map_to(&helper.nodes, self, &data)
+        Self::map_to(&helper.nodes, self, &data, self.leaf_count)
     }
 
-    fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer]) -> NodePointer {
+    fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> NodePointer {
         let mut remapped = HashMap::new();
-        remapped.insert(Index(0), Index(0));
-        remapped.insert(Index(1), Index(1));
-        remapped.insert(Index(2), Index(2));
-        remapped.insert(Index(3), Index(3));
-        remapped.insert(Index(4), Index(4));
-        remapped.insert(Index(5), Index(5));
-        remapped.insert(Index(6), Index(6));
-        remapped.insert(Index(7), Index(7));
+        for i in 0 .. leaf_count as usize {
+            remapped.insert(Index(i), Index(i));
+        }
         for pointer in data {
             let old_node = source.data(pointer.index).unwrap();
             let new_node = NodeHandler {

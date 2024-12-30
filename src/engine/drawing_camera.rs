@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::miniquad::window::screen_size;
-use crate::utilities::{BoundingRect, AABB};
+use crate::engine::utilities::{BoundingRect, AABB};
 
 pub struct Camera { 
     pub aabb:AABB,
@@ -11,6 +11,10 @@ pub struct Camera {
 impl Camera {
     pub fn new(aabb:AABB, offset:Vec2) -> Self {
         Self { aabb, offset, zoom : 1. }
+    }
+
+    pub fn show_view(&self) {
+        self.outline_bounds(self.aabb, 2., WHITE);
     }
 
     pub fn interpolate_position(&mut self, position:Vec2, smoothing:f32) {

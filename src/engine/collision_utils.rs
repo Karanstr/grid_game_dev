@@ -1,5 +1,8 @@
 use std::cmp::Ordering;
-use super::*;
+use macroquad::prelude::*;
+use crate::engine::graph::NodePointer;
+pub use crate::engine::graph::Index;
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OnTouch {
@@ -39,23 +42,17 @@ impl BlockPalette {
                     color : GREEN
                 },
                 Block {
-                    name : "Dirt".to_owned(),
+                    name : "Metal".to_owned(),
                     index : Index(2),
                     collision : OnTouch::Resist(BVec2::TRUE),
-                    color : BROWN
+                    color : GRAY
                 },
                 Block {
                     name : "Water".to_owned(),
                     index : Index(3),
-                    collision : OnTouch::Ignore,
+                    collision : OnTouch::Resist(BVec2::TRUE),
                     color : BLUE
                 },
-                Block {
-                    name : "Metal".to_owned(),
-                    index : Index(4),
-                    collision : OnTouch::Resist(BVec2::TRUE),
-                    color : GRAY
-                }
             ]
         }
     }

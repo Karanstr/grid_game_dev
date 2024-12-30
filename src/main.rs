@@ -1,14 +1,11 @@
-mod graph;
-mod game;
-mod drawing_camera;
-mod utilities;
-
-use std::f32::consts::PI;
-use graph::*;
-use game::*;
-use drawing_camera::Camera;
-use utilities::*;
+mod engine;
+use engine::graph::*;
+use engine::game::*;
+use engine::drawing_camera::Camera;
+use engine::utilities::*;
 use macroquad::prelude::*;
+
+use std::fs;
 
 #[macroquad::main("Window")]
 async fn main() {
@@ -16,35 +13,39 @@ async fn main() {
     request_new_screen_size(size.x, size.y);
     let camera = Camera::new(AABB::new(size/2., size/2.), Vec2::ZERO);
     let mut world = World::new(5, camera);
-    let mut block = Object::new(world.graph.get_root(1), size/2. + 100., 32.);
-    let mut player = Object::new(world.graph.get_root(4), size/2., 32.);
-    let mut static_block = Object::new(world.graph.get_root(0), size/2., 256.);
-    let speed = 0.2;
-    let torque = 0.08;
+    let mut floor = Object::new(world.graph.get_root(0), size/2., 256., CollisionType::Static);
+    //Loading
+    {
+        let save = fs::read_to_string("src/entities/world.json").unwrap();
+        if !save.is_empty() {
+            let new_root = world.graph.load_object_json(save);
+            let old_root = floor.root;
+            floor.root = new_root;
+            world.graph.swap_root(old_root, new_root);
+        }
+    }
+    world.add_object(floor);
+    world.add_object(Object::new(world.graph.get_root(2), size/2., 32., CollisionType::Dynamic));
     let mut operation_depth = 0;
     let mut cur_block_index = 0;
-    let mut save = world.graph.save_object_json(block.root);
     let mut debug_render = DebugRender::new();
     loop {
          
-        //Profiling and player speed-reorientation and save/load and zoom
+        //Profiling and save/load and zoom
         {
             if is_key_pressed(KeyCode::P) {
                 world.graph.profile();
             } else if is_key_pressed(KeyCode::V) {
-                cur_block_index = (cur_block_index + 1) % 5
-            } else if is_key_pressed(KeyCode::H) {
-                player.set_rotation(0.);
-            } else if is_key_pressed(KeyCode::R) {
-                player.set_rotation(PI/2.);
-            } else if is_key_pressed(KeyCode::T) {
-                player.set_rotation(PI/4.);
+                cur_block_index = (cur_block_index + 1) % world.graph.leaf_count as usize;
             } else if is_key_pressed(KeyCode::K) {
-                save = world.graph.save_object_json(block.root);
+                // let save = world.graph.save_object_json(floor.root);
+                // let _ = fs::write("src/entities/world.json", save);
             } else if is_key_pressed(KeyCode::L) {
-                let new_root = world.graph.load_object_json(save.clone());
-                let old_root = block.root;
-                block.root = new_root;
+                let save = fs::read_to_string("src/entities/world.json").unwrap();
+                let new_root = world.graph.load_object_json(save);
+                let floor = world.access_object(0);
+                let old_root = floor.root;
+                floor.root = new_root;
                 world.graph.swap_root(old_root, new_root);
             } else if is_key_pressed(KeyCode::Equal) {
                 world.camera.zoom *= 1.1;
@@ -57,7 +58,7 @@ async fn main() {
             }
         } 
 
-        //Handle depth changing
+        //Depth changing
         {
             if is_key_pressed(KeyCode::Key1) {
                 operation_depth = 1;
@@ -82,40 +83,35 @@ async fn main() {
             }
         }
         
-        //WASD Tank Movement
+        //WASD Movement
         {
+            let player = world.access_object(1);
+            let speed = 0.2;
             if is_key_down(KeyCode::A) {
-                player.apply_rotational_force(-torque);
+                player.apply_linear_force(Vec2::new(-speed, 0.));
             }
             if is_key_down(KeyCode::D) {
-                player.apply_rotational_force(torque);
+                player.apply_linear_force(Vec2::new(speed, 0.));
             }
-            if is_key_down(KeyCode::W) {
-                player.apply_forward_force(Vec2::splat(speed));
+            if is_key_pressed(KeyCode::Space) {
+                player.apply_linear_force(Vec2::new(0., -6.));
             }
-            if is_key_down(KeyCode::S) {
-                player.apply_forward_force(-Vec2::splat(speed));
-            }
-            if is_key_down(KeyCode::Space) {
-                player.velocity = Vec2::ZERO;
-            }
+            player.apply_linear_force(Vec2::new(0., 0.22));
         }
 
         if is_mouse_button_down(MouseButton::Left) {
-            if let Err(message) = world.set_cell_with_mouse(&mut static_block, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
+            if let Err(message) = world.set_cell_with_mouse(0, Vec2::from(mouse_position()), operation_depth, Index(cur_block_index)) {
                 eprintln!("{message}");
             }
         }
 
-        
-        world.camera.interpolate_position(player.aabb.center(), 0.4);
-        world.render(&mut player, true);
-        world.render(&mut static_block, true);
-        world.render(&mut block, true);
-        player.draw_facing(&world.camera);
-        world.n_body_collisions(Vec::from([&mut player, &mut block, &mut static_block]), 10.);
+        let new_cam_pos = world.access_object(1).aabb.center();
+        world.camera.interpolate_position(new_cam_pos, 0.4);
+        world.camera.show_view();
+        world.render_all(false, true);
+        world.n_body_collisions(1.);
         debug_render.draw(&world.camera);
-        world.identify_object_region(&player, &static_block, 10.);
+        world.identify_object_region(1, 0, 1.);
         next_frame().await
     }
 

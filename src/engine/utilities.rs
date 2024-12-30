@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::drawing_camera::Camera;
+use crate::engine::drawing_camera::Camera;
 
 #[allow(dead_code)]
 pub trait BoundingRect {

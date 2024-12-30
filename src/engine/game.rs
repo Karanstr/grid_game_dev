@@ -1,13 +1,11 @@
-use std::f32::consts::PI;
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use macroquad::prelude::*;
-use crate::graph::{NodePointer, SparseDirectedGraph};
-pub use crate::graph::Index;
-use crate::drawing_camera::Camera;
-use crate::utilities::*;
-mod collision_utils;
-use collision_utils::*;
+use crate::engine::graph::{NodePointer, SparseDirectedGraph};
+pub use crate::engine::graph::Index;
+use crate::engine::drawing_camera::Camera;
+use crate::engine::utilities::*;
+use crate::engine::collision_utils::*;
 
 //Feels like this belongs here, not sure though
 impl SparseDirectedGraph {
@@ -37,21 +35,26 @@ impl SparseDirectedGraph {
     }
 }
 
+pub enum CollisionType {
+    Static,
+    Path,
+    Dynamic
+}
+
+//Give objects each a unique id?
 pub struct Object {
     pub aabb : AABB,
     pub root : NodePointer,
     pub velocity : Vec2,
-    pub rotation : f32,
-    pub angular_velocity : f32,
+    pub collision_type : CollisionType
 }
 impl Object {
-    pub fn new(root:NodePointer, position:Vec2, radius:f32) -> Self {
+    pub fn new(root:NodePointer, position:Vec2, radius:f32, collision_type:CollisionType) -> Self {
         Self {
             aabb : AABB::new(position, Vec2::splat(radius)),
             root,
             velocity : Vec2::ZERO,
-            rotation : 0.0,
-            angular_velocity : 0.,
+            collision_type
         }
     }
 
@@ -110,32 +113,10 @@ impl Object {
         self.remove_neglible_vel()
     }
 
-    pub fn apply_forward_force(&mut self, force:Vec2) {
-        self.apply_linear_force(force * Vec2::from_angle(self.rotation));
-    }
-
     fn remove_neglible_vel(&mut self) {
         let speed_min = 0.005;
         if self.velocity.x.abs() < speed_min { self.velocity.x = 0. }
         if self.velocity.y.abs() < speed_min { self.velocity.y = 0. }
-    }
-
-    pub fn apply_rotational_force(&mut self, torque:f32) {
-        self.angular_velocity += torque
-    }
-
-    pub fn update_rotation(&mut self) {
-        self.rotation += self.angular_velocity;
-        self.rotation %= 2.*PI;
-        self.angular_velocity = 0.;
-    }
-
-    pub fn set_rotation(&mut self, new_rotation:f32) {
-        self.rotation = new_rotation;
-    }
-
-    pub fn draw_facing(&self, camera:&Camera) {
-        camera.draw_vec_line(self.aabb.center(), self.aabb.center() + 10. * Vec2::new(self.rotation.cos(), self.rotation.sin()), 1., YELLOW);
     }
 
 }
@@ -143,20 +124,39 @@ impl Object {
 pub struct World {
     pub graph : SparseDirectedGraph,
     pub blocks : BlockPalette,
+    pub objects : Vec<Object>,
     pub max_depth : u32,
     pub camera : Camera,
 }
 impl World {
     pub fn new(max_depth:u32, camera:Camera) -> Self {
         Self {
-            graph : SparseDirectedGraph::new(8),
+            graph : SparseDirectedGraph::new(4),
             blocks : BlockPalette::new(),
+            objects : Vec::new(),
             max_depth,
             camera
         }
     }
 
-    pub fn render(&self, object:&mut Object, draw_lines:bool) {
+    pub fn add_object(&mut self, object:Object) -> usize {
+        self.objects.push(object);
+        self.objects.len() - 1
+    }
+
+    pub fn access_object(&mut self, index:usize) -> &mut Object {
+        &mut self.objects[index]
+    }
+
+    pub fn render_all(&self, draw_lines:bool, cull:bool ) {
+        for object in 0 .. self.objects.len() {
+            if cull && !(self.camera.aabb.intersects(self.objects[object].aabb) == BVec2::TRUE) { continue }
+            self.render_object(object, draw_lines);
+        }
+    }
+
+    pub fn render_object(&self, object_index:usize, draw_lines:bool) {
+        let object = &self.objects[object_index];
         let blocks = self.graph.dfs_leaves(object.root);
         for (zorder, index) in blocks {
             match self.index_color(index) {
@@ -172,7 +172,8 @@ impl World {
         }
     }
 
-    pub fn set_cell_with_mouse(&mut self, modified:&mut Object, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
+    pub fn set_cell_with_mouse(&mut self, modified_index:usize, mouse_pos:Vec2, depth:u32, index:Index) -> Result<(), String> {
+        let modified = &mut self.objects[modified_index];
         let shifted_point = mouse_pos/self.camera.zoom - modified.aabb.min() + self.camera.camera_global_offset();
         if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.aabb.radius().x * 2. {
             return Err("Attempting to edit beyond object domain".to_owned())
@@ -284,57 +285,65 @@ impl World {
         BinaryHeap::from(corners.concat())
     }
 
-    pub fn n_body_collisions(&self, mut objects:Vec<&mut Object>, multiplier:f32) {
+    pub fn n_body_collisions(&mut self, multiplier:f32) {
         let mut ticks_into_projection = 0.;
         loop {
             let tick_max = 1. - ticks_into_projection;
             let mut corners = BinaryHeap::new();
-            for i in 0 .. objects.len() {
-                for j in i + 1 .. objects.len() { 
-                    if within_range(objects[i], objects[j], multiplier, &self.camera) {
+            for i in 0 .. self.objects.len() {
+                for j in i + 1 .. self.objects.len() { 
+                    if within_range(&self.objects[i], &self.objects[j], multiplier, &self.camera) {
                         let (obj1_index, obj2_index) = (i, j);
-                        corners.extend(self.get_corners(objects[i], objects[j], multiplier, obj1_index, obj2_index));
+                        corners.extend(self.get_corners(&self.objects[i], &self.objects[j], multiplier, obj1_index, obj2_index));
                     }
                 }
             }
-            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(&objects, corners, tick_max) else {
+            let Some((action, ticks_at_hit, (owner, hitting))) = self.find_next_action(corners, tick_max) else {
                 //No collision, move objects their remaining distance
-                for object in objects.iter_mut() {
+                for object in self.objects.iter_mut() {
                     object.aabb.move_by(object.velocity * tick_max);
                 }
                 break
             };
             ticks_into_projection += ticks_at_hit;
-            for object in objects.iter_mut() {
+            for object in self.objects.iter_mut() {
                 object.aabb.move_by(object.velocity * ticks_at_hit);
             }
             if let OnTouch::Resist(walls_hit) = action {
                 let energy_conserved = 0.5;
-                let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
+                let relative_velocity = self.objects[owner].velocity - self.objects[hitting].velocity;
                                     //Replace with absorbtion_rate of both sides of the collision?
                 let impulse = -(1. + energy_conserved) * relative_velocity / 2.;
                 if walls_hit.x {
-                    objects[owner].velocity.x += impulse.x;
-                    objects[hitting].velocity.x -= impulse.x;
+                    if matches!(self.objects[owner].collision_type, CollisionType::Dynamic) {
+                        self.objects[owner].velocity.x += impulse.x;
+                    }
+                    if matches!(self.objects[hitting].collision_type, CollisionType::Dynamic) {
+                        self.objects[hitting].velocity.x -= impulse.x;
+                    }
                 }
                 if walls_hit.y {
-                    objects[owner].velocity.y += impulse.y;
-                    objects[hitting].velocity.y -= impulse.y;
+                    if matches!(self.objects[owner].collision_type, CollisionType::Dynamic) {
+                        self.objects[owner].velocity.y += impulse.y;
+                    }
+                    if matches!(self.objects[hitting].collision_type, CollisionType::Dynamic) {
+                        self.objects[hitting].velocity.y -= impulse.y;
+                    }
                 }
-                objects[owner].remove_neglible_vel();
-                objects[hitting].remove_neglible_vel();
+                self.objects[owner].remove_neglible_vel();
+                self.objects[hitting].remove_neglible_vel();
             }
         }
         
         let drag_multiplier = -0.01;
-        for object in objects {
+        for object in self.objects.iter_mut() {
             object.apply_linear_force(object.velocity * drag_multiplier);
-            object.update_rotation();
         }
     }
 
     //Replace this return type with a struct
-    fn find_next_action(&self, objects:&Vec<&mut Object>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> Option<(OnTouch, f32, (usize, usize))> {
+    fn find_next_action(&self, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> Option<(OnTouch, f32, (usize, usize))> {
+        let objects = &self.objects;
         let mut action = OnTouch::Ignore;
         let mut ticks_to_hit = tick_max;
         let mut hit = false;
@@ -344,7 +353,7 @@ impl World {
             if cur_corner.ticks_into_projection >= ticks_to_hit { break }
             let (owner, hitting) = cur_corner.rel_objects;
             let relative_velocity = objects[owner].velocity - objects[hitting].velocity;
-            let Some(hit_point) = self.next_intersection(cur_corner.position, relative_velocity, cur_corner.position_data, objects[hitting]) else { continue };
+            let Some(hit_point) = self.next_intersection(cur_corner.position, relative_velocity, cur_corner.position_data, &objects[hitting]) else { continue };
             cur_corner.ticks_into_projection += hit_point.ticks_to_hit;
             if cur_corner.ticks_into_projection >= ticks_to_hit { continue }
             cur_corner.position = hit_point.position;
@@ -451,7 +460,9 @@ impl World {
         result
     }
 
-    pub fn identify_object_region(&self, moving_object:&Object, hitting_object:&Object, multiplier:f32) {
+    pub fn identify_object_region(&self, moving_object_index:usize, hitting_object_index:usize, multiplier:f32) {
+        let moving_object = &self.objects[moving_object_index];
+        let hitting_object = &self.objects[hitting_object_index];
         let bounding_box = moving_object.aabb.expand((moving_object.velocity - hitting_object.velocity) * multiplier);
         if hitting_object.aabb.intersects(bounding_box) != BVec2::TRUE { return }
         let top_left_zorder = {
@@ -467,7 +478,6 @@ impl World {
             }
         };
         
-        dbg!(top_left_zorder, bottom_right_zorder);
         let parent_zorder = top_left_zorder.shared_parent(bottom_right_zorder);
         self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(parent_zorder.to_cell(), parent_zorder.depth), Vec2::splat(hitting_object.cell_length(parent_zorder.depth)), 4., GREEN);
     }
