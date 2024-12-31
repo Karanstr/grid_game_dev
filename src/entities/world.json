@@ -76,6 +76,253 @@
           ]
         },
         "owner_count": 0
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            }
+          ]
+        },
+        "owner_count": 2
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            }
+          ]
+        },
+        "owner_count": 2
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 2
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 1
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 2
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 1
+            },
+            {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 0
+            },
+            {
+              "index": 6
+            },
+            {
+              "index": 5
+            },
+            {
+              "index": 4
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 8
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 7
+            },
+            {
+              "index": 5
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 10
+            },
+            {
+              "index": 9
+            },
+            {
+              "index": 0
+            },
+            {
+              "index": 6
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 11
+            },
+            {
+              "index": 10
+            },
+            {
+              "index": 8
+            },
+            {
+              "index": 0
+            }
+          ]
+        },
+        "owner_count": 1
+      },
+      {
+        "data": {
+          "children": [
+            {
+              "index": 15
+            },
+            {
+              "index": 14
+            },
+            {
+              "index": 13
+            },
+            {
+              "index": 12
+            }
+          ]
+        },
+        "owner_count": 0
       }
     ],
     "free_indexes": [],
@@ -88,7 +335,7 @@
   },
   "root": {
     "pointer": {
-      "index": 0
+      "index": 16
     },
     "height": 3
   }

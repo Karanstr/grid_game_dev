@@ -11,19 +11,15 @@ const MIN_BLOCK_SIZE:Vec2 = Vec2::splat(2.);
 //Feels like this belongs here, not sure though
 impl SparseDirectedGraph {
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(ZorderPath, Index)> {
+        let mut stack = Vec::from([(root, ZorderPath::root())]);
         let mut leaves = Vec::new();
-        let mut stack = Vec::new();
-        stack.push((root, ZorderPath::root()));
-
         while let Some((node, zorder)) = stack.pop() {
             let children = self.node(node.index).unwrap().children;
-            //If we're cycling
             if children[0].index == node.index {
                 leaves.push((zorder, children[0].index));
-                continue
-            }
-            for i in (0 .. 4).rev() {
-                stack.push((children[i], zorder.step_down(i as u32)));
+            } else { for i in 0 .. 4 {
+                    stack.push((children[i], zorder.step_down(i as u32)));
+                }
             }
         }
         leaves

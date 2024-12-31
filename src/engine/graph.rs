@@ -50,9 +50,7 @@ impl SparseDirectedGraph {
         };
         for i in 0 .. leaf_count {
             instance.add_node(
-                NodeHandler{
-                    children : [NodePointer::new(Index(i as usize)); 4]
-                }, 
+                NodeHandler::new([NodePointer::new(Index(i as usize)); 4]),
                 true
             );
         }
@@ -97,10 +95,9 @@ impl SparseDirectedGraph {
     }
 
     fn dec_owners(&mut self, index:Index) {
-        let mut stack = Vec::new();
-        stack.push( index );
-        while stack.len() != 0 {
-            match self.nodes.remove_owner(stack.pop().unwrap()) {
+        let mut stack = Vec::from([index]);
+        while let Some(next_index) = stack.pop() {
+            match self.nodes.remove_owner(next_index) {
                 Ok(Some(node)) => {
                     for child in node.children.iter() {
                         stack.push(child.index)
@@ -146,9 +143,7 @@ impl SparseDirectedGraph {
     pub fn set_node(&mut self, root:NodePointer, path:&[u32], new_node:NodePointer) -> Result<NodePointer, AccessError> {
         let trail = self.get_trail(root, path);
         let mut cur_node_pointer = new_node;
-        let depth = path.len();
-        for layer in 1 ..= depth {
-            let cur_depth = depth - layer;
+        for cur_depth in (0 .. path.len()).rev() {
             let parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
             let parent_node_pointer =  {
                 let mut new_parent = self.node(parent.index)?.clone();
@@ -158,9 +153,7 @@ impl SparseDirectedGraph {
             cur_node_pointer.index = self.add_node(parent_node_pointer, false);
         }
         self.swap_root(root, cur_node_pointer);
-        // if let Err( error ) = self.nodes.add_owner(cur_node_pointer.index) { self.handle_access_error(error) }
-        // self.dec_owners(root.index);
-        Ok ( cur_node_pointer )
+        Ok( cur_node_pointer )
     }
 
     //Public functions used for reading
@@ -174,15 +167,13 @@ impl SparseDirectedGraph {
 
     pub fn read(&self, root:NodePointer, path:&[u32]) -> (NodePointer, u32) {
         let trail = self.get_trail(root, path);
-        if let Some(node_pointer) = trail.last() {
-            (*node_pointer, trail.len() as u32 - 1)
-        } else { panic!("Trail is broken again") }
+        let Some(node_pointer) = trail.last() else { panic!("Trail is broken again") };
+        (*node_pointer, trail.len() as u32 - 1)
     }
 
     pub fn bfs_nodes(&self, root:NodePointer) -> Vec<NodePointer> {
-        let mut queue = VecDeque::new();
+        let mut queue = VecDeque::from([root]);
         let mut bfs_node_pointers = Vec::new();
-        queue.push_back(root);
         while let Some(node_pointer) = queue.pop_front() {
             if let Ok(node) = self.node(node_pointer.index) {
                 bfs_node_pointers.push(node_pointer);
