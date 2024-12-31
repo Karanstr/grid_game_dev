@@ -7,6 +7,7 @@ use crate::engine::drawing_camera::Camera;
 use crate::engine::utilities::*;
 use crate::engine::collision_utils::*;
 const MIN_BLOCK_SIZE:Vec2 = Vec2::splat(2.);
+
 //Feels like this belongs here, not sure though
 impl SparseDirectedGraph {
     pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(ZorderPath, Index)> {
@@ -37,16 +38,16 @@ pub enum CollisionType {
 
 //Give objects each a unique id?
 pub struct Object {
-    pub position : Vec2,
     pub root : Root,
+    pub position : Vec2,
     pub velocity : Vec2,
     pub collision_type : CollisionType
 }
 impl Object {
-    pub fn new(root_pointer:NodePointer, root_height:u32, position:Vec2, collision_type:CollisionType) -> Self {
+    pub fn new(root_pointer:NodePointer, position:Vec2, collision_type:CollisionType) -> Self {
         Self {
+            root : Root::new(root_pointer, 0),
             position,
-            root : Root::new(root_pointer, root_height),
             velocity : Vec2::ZERO,
             collision_type
         }
@@ -69,7 +70,6 @@ impl Object {
         cell.as_vec2() * cell_length + self.grid_top_left_corner()
     }
 
-    //Change to relative position?
     fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
         let mut four_points = [None; 4];
         let cell_length = self.cell_length(depth);
@@ -94,7 +94,6 @@ impl Object {
         LimPositionData::new(cell_pointer, zorder.to_cell(), real_depth)
     }
 
-    //Change to relative position?
     fn get_data_at_position(&self, world:&World, position:Vec2) -> [Option<LimPositionData>; 4] {
         let max_depth_cells = self.coord_to_cell(position, self.root.height);
         let mut data: [Option<LimPositionData>; 4] = [None; 4];
@@ -121,17 +120,17 @@ impl Object {
 
 pub struct World {
     pub graph : SparseDirectedGraph,
+    pub camera : Camera,
     pub blocks : BlockPalette,
     pub objects : Vec<Object>,
-    pub camera : Camera,
 }
 impl World {
     pub fn new(camera:Camera) -> Self {
         Self {
             graph : SparseDirectedGraph::new(4),
+            camera,
             blocks : BlockPalette::new(),
             objects : Vec::new(),
-            camera
         }
     }
 
@@ -166,6 +165,11 @@ impl World {
                 None => { eprintln!("Failed to draw {}, unregistered block", *index) }
             }
         }
+    }
+
+    pub fn draw_and_tick(&mut self, draw_lines:bool, cull:bool) {
+        self.render_all(draw_lines, cull);
+        self.n_body_collisions(1.)
     }
 
     pub fn set_cell_with_mouse(&mut self, modified_index:usize, mouse_pos:Vec2, height:u32, index:Index) -> Result<(), String> {
@@ -273,7 +277,6 @@ impl World {
         corners
     }
    
-    //Clean this up and make it n-body compatible
     fn get_corners(&self, object1:&Object, object2:&Object, multiplier:f32, obj1_index:usize, obj2_index:usize) -> BinaryHeap<Reverse<Particle>> {
         let relative_velocity = object1.velocity - object2.velocity;
         let corners = [
@@ -480,11 +483,6 @@ impl World {
         self.camera.outline_vec_rectangle(hitting_object.cell_top_left_corner(parent_zorder.to_cell(), parent_zorder.depth), hitting_object.cell_length(parent_zorder.depth), 4., GREEN);
     }
 
-    pub fn draw_and_tick(&mut self, draw_lines:bool, cull:bool) {
-        self.render_all(draw_lines, cull);
-        self.n_body_collisions(1.)
-    }
-
     pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
         let object = &mut self.objects[object_index];
         //Prevent zorder overflow for now
@@ -505,8 +503,6 @@ impl World {
         object.root.pointer = new_root;
         object.root.height -= 1;
     }
-
-
 
 }
 

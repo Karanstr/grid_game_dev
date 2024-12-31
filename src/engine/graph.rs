@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use vec_mem_heap::{MemHeap, Ownership};
 pub use vec_mem_heap::{Index, AccessError};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Root {
     pub pointer : NodePointer,
     pub height : u32
@@ -143,10 +143,8 @@ mod node_stuff {
 }
 
 pub use node_stuff::{NodeHandler, NodePointer};
-#[derive(Serialize)]
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
-    #[serde(skip)]
     index_lookup : HashMap<NodeHandler, Index>,
     pub leaf_count : u8, 
 }
@@ -330,33 +328,36 @@ impl SparseDirectedGraph {
         let mut data = self.bfs_nodes(root.pointer);
         data.reverse();
         let mut object_graph = Self::new(self.leaf_count);
-        let _ = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count);
-        #[derive(Serialize)]
-        struct Helper {
-            nodes : MemHeap<NodeHandler>,
-            root_height : u32
-        }
-        serde_json::to_string_pretty(&Helper { 
+        let root_pointer = {
+            let maybe_pointer = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count);
+            if *root.pointer.index < self.leaf_count as usize {
+                root.pointer
+            } else { 
+                maybe_pointer
+            }
+        };
+        serde_json::to_string_pretty(&RootStorage {
             nodes : object_graph.nodes, 
-            root_height : root.height 
+            root : Root::new(root_pointer, root.height),
         }).unwrap()
     }
     
     //Assumes leaf_count constant
     pub fn load_object_json(&mut self, json:String) -> Root {
-        #[derive(Deserialize)]
-        struct Helper {
-            nodes: MemHeap<NodeHandler>,
-            root_height : u32
-            //leaf_count : u8
-        }
-        let helper:Helper = serde_json::from_str(&json).unwrap();
+        let temp:RootStorage = serde_json::from_str(&json).unwrap();
         let mut data = Vec::new();
-        for index in 0 .. helper.nodes.length() {
+        for index in 0 .. temp.nodes.length() {
             data.push(NodePointer::new(Index(index)))
         }
-        let pointer = Self::map_to(&helper.nodes, self, &data, self.leaf_count);
-        Root::new(pointer, helper.root_height)
+        let pointer = {
+            let maybe_pointer = Self::map_to(&temp.nodes, self, &data, self.leaf_count);
+            if *maybe_pointer.index < self.leaf_count as usize {
+                temp.root.pointer
+            } else { 
+                maybe_pointer
+            }
+        };
+        Root::new(pointer, temp.root.height)
     }
 
     fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> NodePointer {
@@ -381,5 +382,11 @@ impl SparseDirectedGraph {
     }
 
 
+}
+
+#[derive(Serialize, Deserialize)]
+struct RootStorage {
+    nodes : MemHeap<NodeHandler>,
+    root : Root,
 }
 

@@ -12,7 +12,7 @@ async fn main() {
     request_new_screen_size(size.x*2., size.y*2.);
     let camera = Camera::new(AABB::new(size, Vec2::splat(1.)), Vec2::ZERO);
     let mut world = World::new(camera);
-    let mut floor = Object::new(world.graph.get_root(0), 0, size, CollisionType::Static);
+    let mut floor = Object::new(world.graph.get_root(0), size, CollisionType::Static);
     //Loading
     {
         let save = fs::read_to_string("src/entities/world.json").unwrap();
@@ -24,7 +24,7 @@ async fn main() {
         }
     }
     world.add_object(floor);
-    world.add_object(Object::new(world.graph.get_root(2), 0, size, CollisionType::Dynamic));
+    world.add_object(Object::new(world.graph.get_root(2), size, CollisionType::Dynamic));
     let mut operation_height = 0;
     let mut cur_block_index = 0;
     loop {
@@ -95,7 +95,7 @@ async fn main() {
             if is_key_down(KeyCode::D) {
                 player.apply_linear_force(Vec2::new(speed, 0.));
             }
-            if is_key_pressed(KeyCode::Space) {
+            if is_key_pressed(KeyCode::W) {
                 player.apply_linear_force(Vec2::new(0., -0.27));
             }
             // player.apply_linear_force(Vec2::new(0., 0.015));
