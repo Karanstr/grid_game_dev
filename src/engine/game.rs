@@ -37,7 +37,8 @@ pub struct Object {
     pub root : Root,
     pub position : Vec2,
     pub velocity : Vec2,
-    pub collision_type : CollisionType
+    pub collision_type : CollisionType,
+    pub can_jump : bool,
 }
 impl Object {
     pub fn new(root_pointer:NodePointer, position:Vec2, collision_type:CollisionType) -> Self {
@@ -45,7 +46,8 @@ impl Object {
             root : Root::new(root_pointer, 0),
             position,
             velocity : Vec2::ZERO,
-            collision_type
+            collision_type,
+            can_jump : true
         }
     }
 
@@ -110,6 +112,17 @@ impl Object {
         let speed_min = 0.0005;
         if self.velocity.x.abs() < speed_min { self.velocity.x = 0. }
         if self.velocity.y.abs() < speed_min { self.velocity.y = 0. }
+    }
+
+    fn handle_resist(&mut self, impulse:Vec2, walls_hit:BVec2) {
+        match self.collision_type {
+            CollisionType::Static => { }
+            CollisionType::Dynamic => {
+                self.velocity += impulse * Vec2::from(walls_hit);
+                if impulse.y < 0. && walls_hit.y { self.can_jump = true }
+                self.remove_neglible_vel()
+            }
+        }
     }
 
 }
@@ -307,28 +320,10 @@ impl World {
                 object.position += object.velocity * ticks_at_hit;
             }
             if let OnTouch::Resist(walls_hit) = action {
-                let energy_conserved = 0.5;
                 let relative_velocity = self.objects[owner].velocity - self.objects[hitting].velocity;
-                                    //Replace with absorbtion_rate of both sides of the collision?
-                let impulse = -(1. + energy_conserved) * relative_velocity / 2.;
-                if walls_hit.x {
-                    if matches!(self.objects[owner].collision_type, CollisionType::Dynamic) {
-                        self.objects[owner].velocity.x += impulse.x;
-                    }
-                    if matches!(self.objects[hitting].collision_type, CollisionType::Dynamic) {
-                        self.objects[hitting].velocity.x -= impulse.x;
-                    }
-                }
-                if walls_hit.y {
-                    if matches!(self.objects[owner].collision_type, CollisionType::Dynamic) {
-                        self.objects[owner].velocity.y += impulse.y;
-                    }
-                    if matches!(self.objects[hitting].collision_type, CollisionType::Dynamic) {
-                        self.objects[hitting].velocity.y -= impulse.y;
-                    }
-                }
-                self.objects[owner].remove_neglible_vel();
-                self.objects[hitting].remove_neglible_vel();
+                let impulse = -(1. + 0.5)/2. * relative_velocity;
+                self.objects[owner].handle_resist(impulse, walls_hit);
+                self.objects[hitting].handle_resist(-impulse, walls_hit);
             }
         }
         

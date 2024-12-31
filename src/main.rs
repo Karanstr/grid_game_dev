@@ -5,6 +5,7 @@ use engine::drawing_camera::Camera;
 use engine::utilities::*;
 use macroquad::prelude::*;
 use std::fs;
+use std::panic::catch_unwind;
 
 #[macroquad::main("Window")]
 async fn main() {
@@ -95,10 +96,11 @@ async fn main() {
             if is_key_down(KeyCode::D) {
                 player.apply_linear_acceleration(Vec2::new(speed, 0.));
             }
-            if is_key_pressed(KeyCode::W) {
+            if is_key_pressed(KeyCode::W) && player.can_jump {
                 player.apply_linear_acceleration(Vec2::new(0., -0.27));
             }
-            // player.apply_linear_force(Vec2::new(0., 0.015));
+            player.apply_linear_acceleration(Vec2::new(0., 0.015));
+            player.can_jump = false;
         }
 
         if is_mouse_button_down(MouseButton::Left) {
