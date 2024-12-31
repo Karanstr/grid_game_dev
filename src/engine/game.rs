@@ -105,9 +105,9 @@ impl Object {
         data
     }
 
-    pub fn apply_linear_force(&mut self, force:Vec2) {
-        self.velocity += force;
-        self.remove_neglible_vel()
+    pub fn apply_linear_acceleration(&mut self, acceleration:Vec2) { 
+        self.velocity += acceleration; 
+        self.remove_neglible_vel() 
     }
 
     fn remove_neglible_vel(&mut self) {
@@ -336,9 +336,9 @@ impl World {
             }
         }
         
-        let drag_multiplier = -0.1;
+        let drag_multiplier = 0.1;
         for object in self.objects.iter_mut() {
-            object.apply_linear_force(object.velocity * drag_multiplier);
+            object.apply_linear_acceleration(-object.velocity * drag_multiplier);
         }
     }
 

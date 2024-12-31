@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
 use vec_mem_heap::{MemHeap, Ownership};
 pub use vec_mem_heap::{Index, AccessError};
+use std::hash::Hash;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct Root {
@@ -14,141 +15,33 @@ impl Root {
     }
 }
 
-mod node_stuff {
-    use super::Index;
-    use serde::{Serialize, Deserialize};
-    use std::hash::Hash;
-
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-    pub struct NodePointer { 
-        pub index : Index,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodePointer { 
+    pub index : Index,
+}
+impl NodePointer {
+    pub fn new(index:Index) -> Self {
+        Self { index }
     }
-    impl NodePointer {
-        pub fn new(index:Index) -> Self {
-            Self {
-                index, 
-            }
-        }
-    }
-    
-    #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-    pub struct NodeHandler {
-        pub children : [NodePointer; 4]
-    }
-    
-
-    //Re-add this compression stuff once I've seperated geometry
-    /*
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct Four {
-        pub children : [NodePointer; 4],
-    }
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct Three {
-        pub children : [NodePointer; 3],
-    }
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct Two {
-        pub children : [NodePointer; 2],
-    }
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub struct One {
-        pub child : NodePointer,
-    }
-    impl One {
-        pub fn new(index:Index) -> Self {
-            Self { 
-                child : NodePointer::new(index, 0b0000) 
-            }
-        }
-    }
-
-    #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-    pub enum NodeHandler {
-        FourNode(Four),
-        ThreeNode(Three),
-        TwoNode(Two),  
-        OneNode(One),
-    }
-
-    impl NodeHandler {
-
-        pub fn child_freq(freq_mask:u8, child_zorder:usize) -> usize {
-            (freq_mask as usize >> (2 * child_zorder)) & 0b11
-        }
- 
-        pub fn raw_node(&self) -> Vec<NodePointer> {
-            match self {
-                Self::FourNode(node) => Vec::from(node.children),
-                Self::ThreeNode(node) => Vec::from(node.children),
-                Self::TwoNode(node) => Vec::from(node.children),
-                Self::OneNode(node) => vec![node.child],
-            }
-        }
-
-        fn read_node(&self, freq_mask:u8) -> [NodePointer; 4] {
-            let children = self.raw_node();
-            [
-                children[Self::child_freq(freq_mask, 0)],
-                children[Self::child_freq(freq_mask, 1)],
-                children[Self::child_freq(freq_mask, 2)],
-                children[Self::child_freq(freq_mask, 3)]
-            ] 
-        }
-
-        pub fn child(&self, freq_mask:u8, child_zorder:usize) -> NodePointer {
-            self.raw_node()[Self::child_freq(freq_mask, child_zorder)]
-        }
-
-        pub fn with_different_child(&self, freq_mask:u8, child_zorder:usize, child:NodePointer) -> (Self, u8) {
-            let mut node = self.read_node(freq_mask);
-            node[child_zorder] = child;
-            Self::compress_node(node)
-        }
-
-        //Fix this
-        fn compress_node( node:[NodePointer; 4]) -> (Self, u8) {
-            let count:HashMap<NodePointer, u8> = HashMap::new();
-            let mut freq_mask = 0;
-            for i in 0 .. 4 {
-                match count.get_mut(&node[i]) {
-                    Some(number) => *number += 1,
-                    None => _ = count.insert(node[i], 1)
-                }
-            }
-            for 
-            let mut compressed_node = Vec::new();
-            ( match compressed_node.len() {
-                4 => Self::FourNode(Four{
-                    children : 
-                } ), 
-                3 => Self::ThreeNode(Three{
-                    children : 
-                } ), 
-                2 => Self::TwoNode(Two{
-                    children : 
-                } ), 
-                1 => Self::OneNode(One{
-                    child : compressed_node[0]
-                } ),
-                _ => panic!("What?")
-            }, 
-            freq_mask)
-        }
-
-    }
-
-    */
 }
 
-pub use node_stuff::{NodeHandler, NodePointer};
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodeHandler {
+    pub children : [NodePointer; 4]
+}
+impl NodeHandler {
+    pub fn new(children:[NodePointer; 4]) -> Self {
+        Self { children : children }
+    }
+}
+
 pub struct SparseDirectedGraph {
     nodes : MemHeap<NodeHandler>,
     index_lookup : HashMap<NodeHandler, Index>,
     pub leaf_count : u8, 
 }
 impl SparseDirectedGraph {
+    //Utility
     pub fn new(leaf_count:u8) -> Self {
         let mut instance = Self {
             nodes : MemHeap::new(),
@@ -165,17 +58,7 @@ impl SparseDirectedGraph {
         }
         instance
     }
-
-    //Functions used for reading
-    pub fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
-        self.nodes.data(index)
-    }
-
-    pub fn child(&self, node:NodePointer, zorder:usize) -> Result<NodePointer, AccessError> {
-        Ok( self.node(node.index)?.children[zorder] )
-    }
-
-    //Add cyclicity here
+    
     fn get_trail(&self, root:NodePointer, path:&[u32]) -> Vec<NodePointer>  {
         let mut trail = vec![root];
         for step in 0 .. path.len() {
@@ -189,6 +72,24 @@ impl SparseDirectedGraph {
         trail 
     }
 
+    pub fn profile(&self) {
+        println!("---------- STATUS ----------");
+        let mut free_memory = 0;
+        let mut reserved_memory = 0;
+        let mut dangling = 0;
+        for index in 0 .. self.nodes.length() {
+            let cur_index = Index(index);
+            if let Ok(status) = self.nodes.status(cur_index) {
+                if let Ownership::Fine(_) = status {
+                    reserved_memory += 1;
+                } else { dangling += 1 }
+            } else { free_memory += 1 }
+        }
+
+        println!("There are {} nodes within the tree, consisting of:", reserved_memory);
+        println!("{} dangling nodes and {} free slots", dangling - self.leaf_count, free_memory);
+
+    }
 
     //Private functions used for writing
     fn find_index(&self, node:&NodeHandler) -> Option<Index> {
@@ -242,7 +143,6 @@ impl SparseDirectedGraph {
     }
 
     //Public functions used for writing
-    //Add cyclicity here.
     pub fn set_node(&mut self, root:NodePointer, path:&[u32], new_node:NodePointer) -> Result<NodePointer, AccessError> {
         let trail = self.get_trail(root, path);
         let mut cur_node_pointer = new_node;
@@ -264,6 +164,14 @@ impl SparseDirectedGraph {
     }
 
     //Public functions used for reading
+    pub fn node(&self, index:Index) -> Result<&NodeHandler, AccessError> {
+        self.nodes.data(index)
+    }
+
+    pub fn child(&self, node:NodePointer, zorder:usize) -> Result<NodePointer, AccessError> {
+        Ok( self.node(node.index)?.children[zorder] )
+    }
+
     pub fn read(&self, root:NodePointer, path:&[u32]) -> (NodePointer, u32) {
         let trail = self.get_trail(root, path);
         if let Some(node_pointer) = trail.last() {
@@ -271,7 +179,7 @@ impl SparseDirectedGraph {
         } else { panic!("Trail is broken again") }
     }
 
-    fn bfs_nodes(&self, root:NodePointer) -> Vec<NodePointer> {
+    pub fn bfs_nodes(&self, root:NodePointer) -> Vec<NodePointer> {
         let mut queue = VecDeque::new();
         let mut bfs_node_pointers = Vec::new();
         queue.push_back(root);
@@ -288,7 +196,6 @@ impl SparseDirectedGraph {
         bfs_node_pointers
     }
 
-
     //Public functions used for root manipulation
     pub fn get_root(&self, index:usize) -> NodePointer {
         NodePointer {
@@ -296,7 +203,6 @@ impl SparseDirectedGraph {
         }
     }
 
-    //This is a stupid, temporary function
     pub fn swap_root(&mut self, old_root:NodePointer, new_root:NodePointer) {
         if let Err( error) = self.nodes.add_owner(new_root.index) {
             self.handle_access_error(error, "Swap Root".to_owned());
@@ -304,63 +210,37 @@ impl SparseDirectedGraph {
         self.dec_owners(old_root.index);
     }
 
-    pub fn profile(&self) {
-        println!("---------- STATUS ----------");
-        let mut free_memory = 0;
-        let mut reserved_memory = 0;
-        let mut dangling = 0;
-        for index in 0 .. self.nodes.length() {
-            let cur_index = Index(index);
-            if let Ok(status) = self.nodes.status(cur_index) {
-                if let Ownership::Fine(_) = status {
-                    reserved_memory += 1;
-                } else { dangling += 1 }
-            } else { free_memory += 1 }
-        }
+}
 
-        println!("There are {} nodes within the tree, consisting of:", reserved_memory);
-        println!("{} dangling nodes and {} free slots", dangling - self.leaf_count, free_memory);
-
-    }
-
-    //Create object which can be pulled into/out of the dag, where we handle all sorts of stuff.
+#[derive(Serialize, Deserialize)]
+struct TreeStorage {
+    nodes : MemHeap<NodeHandler>,
+    root : Root,
+}
+//Assumes constant leaf count. Eventually add more metadata
+impl SparseDirectedGraph {
     pub fn save_object_json(&self, root:Root) -> String {
         let mut data = self.bfs_nodes(root.pointer);
         data.reverse();
         let mut object_graph = Self::new(self.leaf_count);
-        let root_pointer = {
-            let maybe_pointer = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count);
-            if *root.pointer.index < self.leaf_count as usize {
-                root.pointer
-            } else { 
-                maybe_pointer
-            }
-        };
-        serde_json::to_string_pretty(&RootStorage {
+        let root_pointer = Self::map_to(&self.nodes, &mut object_graph, &data, self.leaf_count).unwrap_or(root.pointer);
+        serde_json::to_string_pretty(&TreeStorage {
             nodes : object_graph.nodes, 
             root : Root::new(root_pointer, root.height),
         }).unwrap()
     }
     
-    //Assumes leaf_count constant
     pub fn load_object_json(&mut self, json:String) -> Root {
-        let temp:RootStorage = serde_json::from_str(&json).unwrap();
+        let temp:TreeStorage = serde_json::from_str(&json).unwrap();
         let mut data = Vec::new();
         for index in 0 .. temp.nodes.length() {
             data.push(NodePointer::new(Index(index)))
         }
-        let pointer = {
-            let maybe_pointer = Self::map_to(&temp.nodes, self, &data, self.leaf_count);
-            if *maybe_pointer.index < self.leaf_count as usize {
-                temp.root.pointer
-            } else { 
-                maybe_pointer
-            }
-        };
+        let pointer = Self::map_to(&temp.nodes, self, &data, self.leaf_count).unwrap_or(temp.root.pointer);
         Root::new(pointer, temp.root.height)
     }
 
-    fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> NodePointer {
+    fn map_to(source:&MemHeap<NodeHandler>, to:&mut Self, data:&[NodePointer], leaf_count:u8) -> Option<NodePointer> {
         let mut remapped = HashMap::new();
         for i in 0 .. leaf_count as usize {
             remapped.insert(Index(i), Index(i));
@@ -378,15 +258,9 @@ impl SparseDirectedGraph {
             let new_index = to.add_node(new_node, false);
             remapped.insert(pointer.index, new_index);
         }
-        NodePointer::new(*remapped.get(&data.last().unwrap().index).unwrap())
+        if remapped.len() != leaf_count as usize { 
+            Some(NodePointer::new(*remapped.get(&data.last().unwrap().index).unwrap()))
+        } else { None }
     }
 
-
 }
-
-#[derive(Serialize, Deserialize)]
-struct RootStorage {
-    nodes : MemHeap<NodeHandler>,
-    root : Root,
-}
-

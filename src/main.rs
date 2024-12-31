@@ -90,13 +90,13 @@ async fn main() {
             let player = world.access_object(1);
             let speed = 0.01;
             if is_key_down(KeyCode::A) {
-                player.apply_linear_force(Vec2::new(-speed, 0.));
+                player.apply_linear_acceleration(Vec2::new(-speed, 0.));
             }
             if is_key_down(KeyCode::D) {
-                player.apply_linear_force(Vec2::new(speed, 0.));
+                player.apply_linear_acceleration(Vec2::new(speed, 0.));
             }
             if is_key_pressed(KeyCode::W) {
-                player.apply_linear_force(Vec2::new(0., -0.27));
+                player.apply_linear_acceleration(Vec2::new(0., -0.27));
             }
             // player.apply_linear_force(Vec2::new(0., 0.015));
         }
