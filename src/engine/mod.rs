@@ -1,5 +1,4 @@
-pub mod game;
 pub mod graph;
-pub mod drawing_camera;
-pub mod utilities;
-pub mod collision_utils;
+pub mod components;
+pub mod utility;
+pub mod systems;

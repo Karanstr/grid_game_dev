@@ -1,14 +1,22 @@
-use macroquad::prelude::*;
 use macroquad::miniquad::window::screen_size;
-use crate::engine::utilities::{BoundingRect, AABB};
+use macroquad::color::{colors::*, Color};
+use macroquad::math::{Vec2, BVec2};
+use macroquad::shapes::*;
+use crate::engine::utility::blocks::BlockPalette;
+use crate::engine::graph::SparseDirectedGraph;
+use crate::engine::utility::partition::AABB;
+use crate::engine::components::Location;
+use crate::grid::Bounds;
+use derive_new::new;
+use hecs::World;
+
 
 pub struct Camera { 
-    pub aabb:AABB,
-    pub offset:Vec2,
-    zoom:f32,
-    zoom_modifier:f32
+   pub aabb:AABB,
+   pub offset:Vec2,
+   zoom:f32,
+   zoom_modifier:f32
 }
-#[allow(dead_code)]
 impl Camera {
     pub fn new(aabb:AABB, offset:Vec2) -> Self {
         let screen_size = Vec2::from(screen_size());
@@ -95,13 +103,45 @@ impl Camera {
         draw_line(p1.x * self.zoom(), p1.y * self.zoom(), p2.x * self.zoom(), p2.y * self.zoom(), line_width, color);
     }
 
-    pub fn draw_bounds<T:BoundingRect>(&self, bounds:T, color:Color) {
+    pub fn draw_bounds(&self, bounds:AABB, color:Color) {
         self.draw_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), color);
     }
 
-    pub fn outline_bounds<T:BoundingRect>(&self, bounds:T, line_width:f32, color:Color) {
+    pub fn outline_bounds(&self, bounds:AABB, line_width:f32, color:Color) {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     }
 
+
+}
+
+
+#[derive(new)]
+pub struct RenderingSystem(pub Camera);
+
+impl RenderingSystem {
+
+   pub fn draw_all(&self, world: &mut World, graph: &SparseDirectedGraph, blocks: &BlockPalette) {
+      let entities = world.query_mut::<&Location>();
+      for (_, location) in entities {
+         if self.0.aabb.intersects(Bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
+            self.draw(location, graph, blocks);
+         }
+      }
+   }
+
+   pub fn draw(&self, location: &Location, graph: &SparseDirectedGraph, blocks: &BlockPalette) {
+      let object_top_left = location.position - Bounds::cell_length(location.pointer.height) / 2.;
+      let leaves = graph.dfs_leaves(location.pointer);
+      for leaf in leaves {
+         let color = blocks.blocks[*leaf.pointer.pointer.index].color; 
+         if 0 != *leaf.pointer.pointer.index {
+            self.0.draw_vec_rectangle(
+               object_top_left + Bounds::top_left_corner(leaf.cell, leaf.pointer.height),
+               Bounds::cell_length(leaf.pointer.height),
+               color
+            );
+         }
+      }
+   }
 
 }

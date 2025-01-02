@@ -1,108 +1,20 @@
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use macroquad::prelude::*;
-use crate::engine::graph::{NodePointer, SparseDirectedGraph, Root};
+use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
 pub use crate::engine::graph::Index;
-use crate::engine::drawing_camera::Camera;
-use crate::engine::utilities::*;
+use crate::engine::camera::Camera;
 use crate::engine::collision_utils::*;
-const MIN_BLOCK_SIZE:Vec2 = Vec2::splat(2.);
+use crate::grid::CellData;
 
-//Feels like this belongs here, not sure though
-impl SparseDirectedGraph {
-    pub fn dfs_leaves(&self, root:NodePointer) -> Vec<(ZorderPath, Index)> {
-        let mut stack = Vec::from([(root, ZorderPath::root())]);
-        let mut leaves = Vec::new();
-        while let Some((node, zorder)) = stack.pop() {
-            let children = self.node(node.index).unwrap().children;
-            if children[0].index == node.index {
-                leaves.push((zorder, children[0].index));
-            } else { for i in 0 .. 4 {
-                    stack.push((children[i], zorder.step_down(i as u32)));
-                }
-            }
-        }
-        leaves
-    }
-}
-
-pub enum CollisionType {
-    Static,
-    Dynamic
-}
+//This guy needs more thought
 
 
-//Give objects each a unique id?
-pub struct Object {
-    pub root : Root,
-    pub position : Vec2,
-    pub velocity : Vec2,
-    pub collision_type : CollisionType,
-    pub can_jump : bool,
-}
-impl Object {
-    pub fn new(root_pointer:NodePointer, position:Vec2, collision_type:CollisionType) -> Self {
-        Self {
-            root : Root::new(root_pointer, 0),
-            position,
-            velocity : Vec2::ZERO,
-            collision_type,
-            can_jump : true
-        }
-    }
 
-    fn cell_length(&self, depth:u32) -> Vec2 {
-        MIN_BLOCK_SIZE.powf((self.root.height - depth) as f32)
-    }
 
-    pub fn aabb(&self) -> AABB {
-        AABB::new(self.position, self.cell_length(0)/2.)
-    }
 
-    fn grid_top_left_corner(&self) -> Vec2 {
-        self.position - self.cell_length(0)/2.
-    }
 
-    fn cell_top_left_corner(&self, cell:UVec2, depth:u32) -> Vec2 {
-        let cell_length = self.cell_length(depth);
-        cell.as_vec2() * cell_length + self.grid_top_left_corner()
-    }
-
-    fn coord_to_cell(&self, point:Vec2, depth:u32) -> [Option<UVec2>; 4] {
-        let mut four_points = [None; 4];
-        let cell_length = self.cell_length(depth);
-        let offset = MIN_BLOCK_SIZE.x/2_f32.powi(16);
-        for i in 0 .. 4 {
-            let direction = Vec2::new(
-                if i & 0b1 == 1 { 1. } else { -1. },
-                if i & 0b10 == 0b10 { 1. } else { -1. }
-            );
-            let cur_point = point - self.grid_top_left_corner() + offset * direction;
-            if cur_point.clamp(Vec2::ZERO, self.cell_length(0)) == cur_point {
-                four_points[i] = Some( (cur_point / cell_length).floor().as_uvec2() )
-            }
-        }
-        four_points
-    }
-
-    fn find_real_node(&self, world:&World, cell:UVec2) -> LimPositionData {
-        let path = ZorderPath::from_cell(cell, self.root.height);
-        let (cell_pointer, real_depth) = world.graph.read(self.root.pointer, &path.steps());
-        let zorder = path.with_depth(real_depth);
-        LimPositionData::new(cell_pointer, zorder.to_cell(), real_depth)
-    }
-
-    fn get_data_at_position(&self, world:&World, position:Vec2) -> [Option<LimPositionData>; 4] {
-        let max_depth_cells = self.coord_to_cell(position, self.root.height);
-        let mut data: [Option<LimPositionData>; 4] = [None; 4];
-        for i in 0 .. 4 {
-            if let Some(grid_cell) = max_depth_cells[i] {
-                data[i] = Some(self.find_real_node(world, grid_cell))
-            }
-        }
-        data
-    }
-
+    /*
     pub fn apply_linear_acceleration(&mut self, acceleration:Vec2) { 
         self.velocity += acceleration; 
         self.remove_neglible_vel() 
@@ -124,41 +36,9 @@ impl Object {
             }
         }
     }
+*/
 
-}
-
-pub struct World {
-    pub graph : SparseDirectedGraph,
-    pub camera : Camera,
-    pub blocks : BlockPalette,
-    pub objects : Vec<Object>,
-}
 impl World {
-    pub fn new(camera:Camera) -> Self {
-        Self {
-            graph : SparseDirectedGraph::new(4),
-            camera,
-            blocks : BlockPalette::new(),
-            objects : Vec::new(),
-        }
-    }
-
-    pub fn add_object(&mut self, object:Object) -> usize {
-        self.objects.push(object);
-        self.objects.len() - 1
-    }
-
-    pub fn access_object(&mut self, index:usize) -> &mut Object {
-        &mut self.objects[index]
-    }
-
-    pub fn render_all(&self, draw_lines:bool, cull:bool ) {
-        for object in 0 .. self.objects.len() {
-            if cull && !(self.camera.aabb.intersects(self.objects[object].aabb()) == BVec2::TRUE) { continue }
-            self.render_object(object, draw_lines);
-        }
-    }
-
     pub fn render_object(&self, object_index:usize, draw_lines:bool) {
         let object = &self.objects[object_index];
         let blocks = self.graph.dfs_leaves(object.root.pointer);
@@ -388,7 +268,7 @@ impl World {
         }
     }
 
-    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<HitPoint> {
+    fn next_intersection(&self, position:Vec2, velocity:Vec2, position_data:Option<LimPositionData>, hitting:&Object) -> Option<f32> {
         let hitting_aabb = hitting.aabb();
         let top_left = hitting_aabb.min();
         let bottom_right = hitting_aabb.max();
@@ -422,10 +302,7 @@ impl World {
             _ => { ticks.min_element() },
         };
         if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
-        Some(HitPoint {
-            position : position + velocity * ticks_to_hit, 
-            ticks_to_hit, 
-        })
+        Some(ticks_to_hit)
     }
 
     fn slide_check(&self, velocity:Vec2, position_data:[Option<LimPositionData>; 4]) -> BVec2 {
@@ -554,84 +431,5 @@ pub fn zorder_to_direction(zorder:u32) -> Vec2 {
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ZorderPath {
-    pub zorder : u32,
-    pub depth : u32
-}
-impl ZorderPath {
-    pub fn root() -> Self {
-        Self { zorder: 0, depth: 0 }
-    }
 
-    pub fn to_cell(&self) -> UVec2 {
-        let mut cell = UVec2::ZERO;
-        for layer in 0 .. self.depth {
-            cell.x |= (self.zorder >> (2 * layer) & 0b1) << layer;
-            cell.y |= (self.zorder >> (2 * layer + 1) & 0b1) << layer;
-        }
-        cell
-    }
-
-    pub fn from_cell(cell:UVec2, depth:u32) -> Self {
-        let mut zorder = 0;
-        for layer in (0 .. depth).rev() {
-            let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
-            zorder = (zorder << 2) | step;
-        }
-        Self { zorder, depth}
-    }
-
-    pub fn with_depth(&self, new_depth:u32) -> Self {
-        let mut zorder = self.zorder;   
-        if self.depth < new_depth {
-           zorder <<= 2 * (new_depth - self.depth);
-        } else {
-           zorder >>= 2 * (self.depth - new_depth);
-        };
-        Self { zorder, depth: new_depth}
-    }
-
-    pub fn move_cartesianly(&self, offset:IVec2) -> Option<Self> {
-        let cell = self.to_cell();
-        let end_cell = cell.as_ivec2() + offset;
-        if end_cell.min_element() < 0 || end_cell.max_element() >= 2u32.pow(self.depth) as i32 {
-            return None
-        }
-        Some(Self::from_cell(UVec2::new(end_cell.x as u32, end_cell.y as u32), self.depth))
-    }
-
-    pub fn read_step(&self, layer:u32) -> u32 {
-        self.with_depth(layer).zorder & 0b11
-    }
-
-    pub fn shared_parent(&self, other: Self) -> Self {
-        let common_depth = u32::max(self.depth, other.depth);
-        let a_zorder = self.with_depth(common_depth);
-        let b_zorder = other.with_depth(common_depth);
-        for layer in (0 ..= common_depth).rev() {
-            if a_zorder.with_depth(layer) == b_zorder.with_depth(layer) {
-                return a_zorder.with_depth(layer)
-            }
-        }
-        Self { zorder: 0, depth: 0 }
-    }
-
-    pub fn step_down(&self, direction:u32) -> Self {
-        Self { zorder: self.zorder << 2 | direction, depth: self.depth + 1 }
-    }
-
-    pub fn steps(&self) -> Vec<u32> {
-        let mut steps:Vec<u32> = Vec::with_capacity(self.depth as usize);
-        for layer in 1 ..= self.depth {
-            steps.push(self.read_step(layer));
-        }
-        steps
-    }
-
-    pub fn cells_intersecting_aabb(aabb:AABB, max_depth: u32) -> Vec<(u32, u32)> {
-       todo!()
-    }
-
-}
 
