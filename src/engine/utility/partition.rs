@@ -88,7 +88,6 @@ pub mod grid {
 
     }
 
-
     #[derive(Debug, Clone, Copy, new)]
     pub struct CellData {
         pub pointer : ExternalPointer,
@@ -151,10 +150,10 @@ pub mod grid {
             let mut stack = Vec::from([(start.pointer, ZorderPath::root())]);
             let mut leaves = Vec::new();
             while let Some((pointer, zorder)) = stack.pop() {
-                let children = self.node(pointer.index).unwrap().children;
-                if self.is_leaf(children[0].index) {
-                    leaves.push(CellData::new(ExternalPointer::new(children[0], zorder.depth), zorder.to_cell()));
+                if self.is_leaf(pointer.index) {
+                    leaves.push(CellData::new(ExternalPointer::new(pointer, start.height - zorder.depth), zorder.to_cell()));
                 } else { for i in 0 .. 4 {
+                        let children = self.node(pointer.index).unwrap().children;
                         stack.push((children[i], zorder.step_down(i as u32)));
                     }
                 }

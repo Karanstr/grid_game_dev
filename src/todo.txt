@@ -1,0 +1,1 @@
+- Eventually store all objects inside of a bvh to make broad phase intersection tests far faster.

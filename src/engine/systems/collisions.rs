@@ -1,20 +1,57 @@
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
-use macroquad::prelude::*;
-use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
-pub use crate::engine::graph::Index;
-use crate::engine::camera::Camera;
-use crate::engine::collision_utils::*;
-use crate::grid::CellData;
-
-//This guy needs more thought
+use std::cmp::Ordering;
+use super::*;
 
 
+#[derive(Debug, Clone, new)]
+pub struct Particle {
+    pub position : Vec2,
+    #[new(value = "0.")]
+    pub ticks_into_projection : f32,
+    #[new(value = "None")]
+    pub position_data : Option<CellData>,
+    pub configuration : Configurations,
+    pub owner : Entity,
+    pub hitting : Entity,
+}
+impl PartialOrd for Particle {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.ticks_into_projection.partial_cmp(&other.ticks_into_projection)
+    }
+}
+impl Ord for Particle {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+impl PartialEq for Particle {
+    fn eq(&self, other: &Self) -> bool {
+        self.ticks_into_projection == other.ticks_into_projection
+    }
+}
+impl Eq for Particle {} 
 
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Configurations {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight
+}
+impl Configurations {
+    pub fn from_index(index:usize) -> Self {
+        match index {
+            0 => Self::TopLeft,
+            1 => Self::TopRight,
+            2 => Self::BottomLeft,
+            3 => Self::BottomRight,
+            _ => panic!("Invalid Configuration Index")
+        }
+    }
+}
 
 
-    /*
+/*
     pub fn apply_linear_acceleration(&mut self, acceleration:Vec2) { 
         self.velocity += acceleration; 
         self.remove_neglible_vel() 
@@ -36,58 +73,7 @@ use crate::grid::CellData;
             }
         }
     }
-*/
 
-impl World {
-    pub fn render_object(&self, object_index:usize, draw_lines:bool) {
-        let object = &self.objects[object_index];
-        let blocks = self.graph.dfs_leaves(object.root.pointer);
-        for (zorder, index) in blocks {
-            match self.index_color(index) {
-                Some(color) => {
-                    let top_left_corner = object.cell_top_left_corner(zorder.to_cell(), zorder.depth);
-                    if color != BLACK {
-                        self.camera.draw_vec_rectangle(top_left_corner, object.cell_length(zorder.depth), color);
-                    }
-                    if draw_lines { self.camera.outline_vec_rectangle(top_left_corner, object.cell_length(zorder.depth), 2., WHITE) }
-                }
-                None => { eprintln!("Failed to draw {}, unregistered block", *index) }
-            }
-        }
-    }
-
-    pub fn draw_and_tick(&mut self, draw_lines:bool, cull:bool) {
-        self.render_all(draw_lines, cull);
-        self.n_body_collisions(1.)
-    }
-
-    pub fn set_cell_with_mouse(&mut self, modified_index:usize, mouse_pos:Vec2, height:u32, index:Index) -> Result<(), String> {
-        let modified = &mut self.objects[modified_index];
-        if height > modified.root.height { return Err("Attempting to edit cell larger than object".to_owned()) }
-        let depth = modified.root.height - height;
-        let shifted_point = mouse_pos/self.camera.zoom() - modified.grid_top_left_corner() + self.camera.camera_global_offset();
-        if shifted_point.min_element() <= 0. || shifted_point.max_element() >= modified.cell_length(0).x {
-            return Err("Attempting to edit beyond object domain".to_owned())
-        }
-        let cell = (shifted_point / modified.cell_length(depth)).ceil().as_uvec2() - 1;
-        let path = ZorderPath::from_cell(cell, depth).steps();
-        if let Ok(pointer) = self.graph.set_node(modified.root.pointer, &path, NodePointer::new(index)) {
-            modified.root.pointer = pointer;
-            Ok(())
-        } else { Err("Failed to modify cell. Likely means structure is corrupted.".to_owned()) }
-    }
-
-    fn index_collision(&self, index:Index) -> Option<OnTouch> {
-        if self.blocks.blocks.len() > *index {
-            Some(self.blocks.blocks[*index].collision)
-        } else { None }
-    }
-
-    fn index_color(&self, index:Index) -> Option<Color> {
-        if self.blocks.blocks.len() > *index {
-            Some(self.blocks.blocks[*index].color)
-        } else { None }
-    }
 
     //Make this not bad?
     fn exposed_corners(&self, root:Root, zorder:ZorderPath) -> u8 {
@@ -372,9 +358,7 @@ impl World {
         object.root.height -= 1;
     }
 
-}
 
-//Figure out where to put these
 pub fn hittable_walls(velocity:Vec2, configuration:Configurations) -> BVec2 {
     let (x_check, y_check) = match configuration {
         Configurations::TopLeft => {
@@ -430,6 +414,4 @@ pub fn zorder_to_direction(zorder:u32) -> Vec2 {
         if zorder & 0b10 == 0b10 { 1. } else { -1. },
     )
 }
-
-
-
+*/
