@@ -3,6 +3,7 @@ use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
 
 pub mod grid {
     use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
+    use crate::engine::components::Location;
     use super::*;
     const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
     const LIM_OFFSET: f32 = (2 / 0x10000) as f32;
@@ -32,15 +33,15 @@ pub mod grid {
                 let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
                 zorder = (zorder << 2) | step;
             }
-            Self { zorder, depth}
+            Self { zorder, depth: depth }
         }
 
         pub fn with_depth(&self, new_depth:u32) -> Self {
             let mut zorder = self.zorder;   
             if self.depth < new_depth {
-            zorder <<= 2 * (new_depth - self.depth);
+                zorder <<= 2 * (new_depth - self.depth);
             } else {
-            zorder >>= 2 * (self.depth - new_depth);
+                zorder >>= 2 * (self.depth - new_depth);
             };
             Self { zorder, depth: new_depth}
         }
@@ -71,7 +72,10 @@ pub mod grid {
         }
 
         pub fn step_down(&self, direction:u32) -> Self {
-            Self { zorder: self.zorder << 2 | direction, depth: self.depth + 1 }
+            Self { 
+                zorder: self.zorder << 2 | direction, 
+                depth: self.depth + 1 
+            }
         }
 
         pub fn steps(&self) -> Vec<u32> {
@@ -116,11 +120,12 @@ pub mod grid {
 
     pub struct Gate;
     impl Gate {
-        pub fn point_to_cells(grid_position:Vec2, cell_height:u32, root_height:u32, point:Vec2) -> [Option<UVec2>; 4]{
+        //Consider removing cell height parameter and forcing you to go through find_real_cell?
+        pub fn point_to_cells(grid_location:&Location, cell_height:u32, point:Vec2) -> [Option<UVec2>; 4]{
             let mut surrounding = [None; 4];
             let cell_length = Bounds::cell_length(cell_height);
-            let grid_length = Bounds::cell_length(root_height);
-            let origin_position = point - (grid_position - grid_length / 2.);
+            let grid_length = Bounds::cell_length(grid_location.pointer.height);
+            let origin_position = point - (grid_location.position - grid_length / 2.);
             let directions = [
                 Vec2::new(-1., -1.),
                 Vec2::new(1., -1.),
@@ -135,13 +140,25 @@ pub mod grid {
             }
             surrounding
         }
-    
-        pub fn find_real_cell(graph:&SparseDirectedGraph, pointer:ExternalPointer, cell:UVec2) -> CellData {
-            let path = ZorderPath::from_cell(cell, pointer.height);
-            let real_pointer = graph.read(pointer, &path.steps());
-            let zorder = path.with_depth(real_pointer.height);
-            CellData::new(real_pointer, zorder.to_cell())
+        
+        pub fn point_to_real_cells(graph:&SparseDirectedGraph, grid_location:&Location, point:Vec2) -> [Option<CellData>; 4] {
+            let mut surrounding = [None; 4];
+            for i in 0 .. 4 {
+                if let Some(cell) = Gate::point_to_cells(grid_location, grid_location.pointer.height, point)[i] {
+                    surrounding[i] = Some(Gate::find_real_cell(graph, grid_location.pointer, cell));
+                }
+            }
+            surrounding
         }
+        
+        //Only works if cell is at height 0
+        pub fn find_real_cell(graph:&SparseDirectedGraph, start:ExternalPointer, cell:UVec2) -> CellData {
+            let path = ZorderPath::from_cell(cell, start.height);
+            let pointer = graph.read(start, &path.steps());
+            let zorder = path.with_depth(pointer.height);
+            CellData::new(pointer, zorder.to_cell())
+        }
+    
     }
 
 

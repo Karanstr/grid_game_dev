@@ -10,8 +10,6 @@ pub struct Location {
 }
 
 #[derive(Debug, Clone, Copy, Bundle, new)]
-pub struct Motion {
-    pub velocity: Vec2,
-}
+pub struct Velocity(pub Vec2);
 
 pub struct Editing;

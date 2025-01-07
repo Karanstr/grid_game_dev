@@ -25,7 +25,7 @@ pub struct Node {
 pub struct SparseDirectedGraph {
     nodes : MemHeap<Node>,
     index_lookup : HashMap<Node, InternalPointer>,
-    pub leaf_count : u8, 
+    leaf_count : u8, 
 }
 impl SparseDirectedGraph {
     //Utility
