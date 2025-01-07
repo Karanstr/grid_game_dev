@@ -4,10 +4,10 @@ use macroquad::input::*;
 pub mod input {
     use crate::engine::systems::editing::set_grid_cell;
     use super::*;
-    pub fn handle_mouse_input(game_data: &mut GameData) {
+    pub fn handle_mouse_input(game_data: &mut GameData, color: usize) {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = game_data.camera.screen_to_world(Vec2::from(mouse_position()));
-            set_grid_cell(ExternalPointer::new(InternalPointer::new(Index(1)), 0), mouse_pos, &mut game_data.entities, &mut game_data.graph);
+            set_grid_cell(ExternalPointer::new(InternalPointer::new(Index(color)), 0), mouse_pos, &mut game_data.entities, &mut game_data.graph);
         }
     }
 }
@@ -39,7 +39,7 @@ pub mod output {
         game_data.camera.outline_vec_rectangle(
             grid_top_left,
             grid_length,
-            2.,
+            0.03,
             WHITE
         );
         let object_top_left = location.position - grid_length / 2.;
@@ -57,7 +57,7 @@ pub mod output {
             game_data.camera.outline_vec_rectangle(
             cell_top_left,
             Bounds::cell_length(leaf.pointer.height),
-            2.,
+            0.03,
             WHITE
             );
         }
@@ -133,23 +133,13 @@ impl Camera {
     pub fn outline_vec_rectangle(&self, position:Vec2, length:Vec2, line_width:f32, color:Color) {
         let pos = self.world_to_screen(position);
         let len = length * self.zoom();
-        draw_rectangle_lines(pos.x, pos.y, len.x, len.y, line_width, color);
-    }
-    
-    pub fn draw_vec_circle(&self, position:Vec2, radius:f32, color:Color) {
-        let pos = self.world_to_screen(position);
-        draw_circle(pos.x, pos.y, radius * self.zoom(), color);
-    }
-
-    pub fn outline_vec_circle(&self, position:Vec2, radius:f32, line_width:f32, color:Color) {
-        let pos = self.world_to_screen(position);
-        draw_circle_lines(pos.x, pos.y, radius * self.zoom(), line_width, color);
+        draw_rectangle_lines(pos.x, pos.y, len.x, len.y, line_width*self.zoom(), color);
     }
 
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
-        draw_line(p1.x, p1.y, p2.x, p2.y, line_width, color);
+        draw_line(p1.x, p1.y, p2.x, p2.y, line_width*self.zoom(), color);
     }
 
     pub fn outline_bounds(&self, bounds:AABB, line_width:f32, color:Color) {

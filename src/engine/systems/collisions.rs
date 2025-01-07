@@ -81,6 +81,7 @@ impl CollisionSystem {
             let (hits, ticks_to_action) = Self::find_next_action(&mut game_data.entities, &game_data.graph, &game_data.camera, corners, tick_max);
             for (_, (location, velocity)) in game_data.entities.query::<(&mut Location, &Velocity)>().iter() {
                 location.position += velocity.0 * ticks_to_action;
+                if location.position.x == -0.50000006 + 0.00000012 { dbg!(velocity.0.x); };
             }
             tick_max -= ticks_to_action;
             if hits.is_empty() { break }
@@ -129,12 +130,12 @@ impl CollisionSystem {
             if cur_corner.position_data.is_none() { continue }
             if is_ignore(cur_corner.position_data.unwrap().pointer.pointer) { }
             else if let Some(hit_walls) = determine_walls_hit(BVec2::TRUE, cur_corner.velocity, cur_corner.configuration, all_data) {
-                if cur_corner.ticks_into_projection != ticks_to_action { actions.clear() }
+                actions.clear();
                 camera.draw_vec_rectangle(
-                        cur_corner.position - Vec2::splat(0.05),
-                        Vec2::splat(0.1),
-                        ORANGE
-                    );
+                    cur_corner.position - Vec2::splat(0.05),
+                    Vec2::splat(0.1),
+                    ORANGE
+                );
                 actions.push(
                     Hit {
                         owner : cur_corner.owner,
@@ -191,8 +192,8 @@ impl CollisionSystem {
         let aabb2 =  Bounds::aabb(location2.position, location2.pointer.height).expand(velocity2.0);
         let result = aabb.intersects(aabb2) == BVec2::TRUE;
         let color = if result { GREEN } else { RED };
-        camera.outline_bounds(aabb, 2., color);
-        camera.outline_bounds(aabb2, 2., color);
+        camera.outline_bounds(aabb, 0.03, color);
+        camera.outline_bounds(aabb2, 0.03, color);
         result
     }
 
@@ -283,8 +284,8 @@ impl CornerHandling {
             let hittable = hittable_walls(rel_velocity, corner.configuration);
             if hittable == BVec2::FALSE { continue }
             let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand(rel_velocity*10.);
-            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 2., RED); continue }
-            else { camera.outline_bounds(point_aabb, 2., GREEN); }
+            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); continue }
+            else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
             let mut particle = corner.to_particle(rel_velocity, owner.0, hitting.0);
             if let Some(smallest_cell) = Gate::point_to_cells(hitting.1, 0, corner.position)[configured_direction(-rel_velocity, corner.configuration)] {
                 particle.position_data = Some(Gate::find_real_cell(graph, hitting.1.pointer, smallest_cell));
@@ -313,7 +314,6 @@ fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Co
 }
 
 fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
-    //Formalize this with some zorder arithmatic?
     let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
         (2, 1)
     } else if velocity.x < 0. && velocity.y > 0. { //(-,+)
@@ -366,8 +366,8 @@ pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
 }
 
 pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
-    let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
     if direction == Vec2::ZERO { dbg!("AHHH"); }
+    let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
     if direction.x == 0. {
         2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
     } else if direction.y == 0. {
@@ -376,11 +376,3 @@ pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usi
         2 * clamped.y as usize | clamped.x as usize
     }
 }
-
-//Why negative?
-// pub fn zorder_to_direction(zorder:u32) -> Vec2 {
-//     -Vec2::new(
-//         if zorder & 0b1 == 0b1 { 1. } else { -1. },
-//         if zorder & 0b10 == 0b10 { 1. } else { -1. },
-//     )
-// }

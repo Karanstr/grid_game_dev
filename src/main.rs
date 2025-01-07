@@ -42,6 +42,7 @@ async fn main() {
         ),
         Velocity(Vec2::ZERO),
     ));
+    let mut color = 0;
     loop {
         //Change this to an input module
         let player_velocity = game_data.entities.query_one_mut::<&mut Velocity>(player).unwrap();
@@ -50,7 +51,8 @@ async fn main() {
         if is_key_down(KeyCode::S) { player_velocity.0.y += speed; }
         if is_key_down(KeyCode::A) { player_velocity.0.x -= speed; }
         if is_key_down(KeyCode::D) { player_velocity.0.x += speed; }
-        input::handle_mouse_input(&mut game_data);
+        if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
+        input::handle_mouse_input(&mut game_data, color);
         RenderingSystem::draw_all(&mut game_data);
         CollisionSystem::n_body_collisions(&mut game_data);
         // game_data.camera.show_view();
