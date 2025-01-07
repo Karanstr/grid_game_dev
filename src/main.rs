@@ -54,7 +54,7 @@ async fn main() {
         input::handle_mouse_input(&mut game_data);
         RenderingSystem::draw_all(&mut game_data);
         CollisionSystem::n_body_collisions(&mut game_data);
-        game_data.camera.show_view();
+        // game_data.camera.show_view();
         game_data.camera.update(game_data.entities.query_one_mut::<&mut Location>(player).unwrap().position, 0.4);
         macroquad::window::next_frame().await
 
