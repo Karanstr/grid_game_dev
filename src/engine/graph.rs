@@ -165,7 +165,7 @@ impl SparseDirectedGraph {
     pub fn read(&self, start:ExternalPointer, path:&[u32]) -> ExternalPointer {
         let trail = self.get_trail(start.pointer, path);
         let Some(node_pointer) = trail.last() else { panic!("Trail is broken again") };
-        ExternalPointer::new(*node_pointer, trail.len() as u32 - 1)
+        ExternalPointer::new(*node_pointer, start.height - (trail.len() as u32 - 1))
     }
 
     pub fn bfs_nodes(&self, start:ExternalPointer) -> Vec<InternalPointer> {

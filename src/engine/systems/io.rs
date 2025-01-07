@@ -46,20 +46,20 @@ pub mod output {
         let leaves = game_data.graph.dfs_leaves(location.pointer);
         for leaf in leaves {
             let color = game_data.blocks.blocks[*leaf.pointer.pointer.index].color; 
+            let cell_top_left = object_top_left + Bounds::top_left_corner(leaf.cell, leaf.pointer.height);
             if 0 != *leaf.pointer.pointer.index {
-                let cell_top_left = object_top_left + Bounds::top_left_corner(leaf.cell, leaf.pointer.height);
                 game_data.camera.draw_vec_rectangle(
                 cell_top_left,
                 Bounds::cell_length(leaf.pointer.height),
                 color
                 );
-                game_data.camera.outline_vec_rectangle(
-                cell_top_left,
-                Bounds::cell_length(leaf.pointer.height),
-                2.,
-                WHITE
-                );
             }
+            game_data.camera.outline_vec_rectangle(
+            cell_top_left,
+            Bounds::cell_length(leaf.pointer.height),
+            2.,
+            WHITE
+            );
         }
     }
 

@@ -42,7 +42,6 @@ async fn main() {
         ),
         Velocity(Vec2::ZERO),
     ));
-
     loop {
         //Change this to an input module
         let player_velocity = game_data.entities.query_one_mut::<&mut Velocity>(player).unwrap();

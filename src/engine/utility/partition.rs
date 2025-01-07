@@ -6,7 +6,7 @@ pub mod grid {
     use crate::engine::components::Location;
     use super::*;
     const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
-    const LIM_OFFSET: f32 = (2 / 0x10000) as f32;
+    const LIM_OFFSET: f32 = 2. / 0x1000 as f32;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct ZorderPath {
@@ -119,12 +119,11 @@ pub mod grid {
     }
 
     pub struct Gate;
-    impl Gate {
-        //Consider removing cell height parameter and forcing you to go through find_real_cell?
-        pub fn point_to_cells(grid_location:&Location, cell_height:u32, point:Vec2) -> [Option<UVec2>; 4]{
+    impl Gate { 
+        pub fn point_to_cells(grid_location:&Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
             let mut surrounding = [None; 4];
-            let cell_length = Bounds::cell_length(cell_height);
             let grid_length = Bounds::cell_length(grid_location.pointer.height);
+            let cell_length = Bounds::cell_length(height);
             let origin_position = point - (grid_location.position - grid_length / 2.);
             let directions = [
                 Vec2::new(-1., -1.),
@@ -143,8 +142,9 @@ pub mod grid {
         
         pub fn point_to_real_cells(graph:&SparseDirectedGraph, grid_location:&Location, point:Vec2) -> [Option<CellData>; 4] {
             let mut surrounding = [None; 4];
+            let deepest_cells = Gate::point_to_cells(grid_location, 0, point);
             for i in 0 .. 4 {
-                if let Some(cell) = Gate::point_to_cells(grid_location, grid_location.pointer.height, point)[i] {
+                if let Some(cell) = deepest_cells[i] {
                     surrounding[i] = Some(Gate::find_real_cell(graph, grid_location.pointer, cell));
                 }
             }
@@ -155,7 +155,7 @@ pub mod grid {
         pub fn find_real_cell(graph:&SparseDirectedGraph, start:ExternalPointer, cell:UVec2) -> CellData {
             let path = ZorderPath::from_cell(cell, start.height);
             let pointer = graph.read(start, &path.steps());
-            let zorder = path.with_depth(pointer.height);
+            let zorder = path.with_depth(start.height - pointer.height);
             CellData::new(pointer, zorder.to_cell())
         }
     
