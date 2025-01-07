@@ -34,7 +34,15 @@ pub mod output {
     }
 
     pub fn draw(game_data:&mut GameData, location:&Location) {
-        let object_top_left = location.position - Bounds::cell_length(location.pointer.height) / 2.;
+        let grid_length = Bounds::cell_length(location.pointer.height);
+        let grid_top_left = location.position - grid_length / 2.;
+        game_data.camera.outline_vec_rectangle(
+            grid_top_left,
+            grid_length,
+            2.,
+            WHITE
+        );
+        let object_top_left = location.position - grid_length / 2.;
         let leaves = game_data.graph.dfs_leaves(location.pointer);
         for leaf in leaves {
             let color = game_data.blocks.blocks[*leaf.pointer.pointer.index].color; 

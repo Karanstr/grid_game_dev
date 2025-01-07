@@ -33,6 +33,7 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 
+#[derive(Debug, Clone)]
 enum Action {
     Ignore,
     Resist(BVec2),
@@ -57,6 +58,7 @@ impl Configurations {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Hit {
     pub owner : Entity,
     pub hitting : Entity,
@@ -64,7 +66,7 @@ struct Hit {
     pub action : Action
 }
 
-struct CollisionSystem;
+pub struct CollisionSystem;
 impl CollisionSystem {
     pub fn n_body_collisions(game_data:&mut GameData) {
         let mut ticks_into_projection = 0.;
@@ -86,6 +88,7 @@ impl CollisionSystem {
             ticks_into_projection += ticks_to_action;
             if ticks_into_projection == 1. { break }
             for hit in hits {
+                dbg!(hit.clone());
                 match hit.action {
                     Action::Ignore => {}
                     Action::Resist(walls_hit) => {
@@ -107,7 +110,7 @@ impl CollisionSystem {
         let drag_multiplier = 0.9;
         for (_, velocity) in game_data.entities.query::<&mut Velocity>().iter() {
             velocity.0 *= drag_multiplier;
-            if velocity.0.length() < 0.01 { velocity.0 = Vec2::ZERO }
+            if velocity.0.length() < 0.0001 { velocity.0 = Vec2::ZERO }
         }
     }
 
@@ -115,7 +118,7 @@ impl CollisionSystem {
         let mut ticks_to_action = tick_max;
         let mut actions = Vec::new(); 
         while let Some(Reverse(mut cur_corner)) = corners.pop() {
-            if cur_corner.ticks_into_projection > ticks_to_action { continue }
+            if cur_corner.ticks_into_projection >= ticks_to_action { continue }
             let hitting_location = entities.query_one_mut::<&Location>(cur_corner.hitting).unwrap();
             let Some(ticks_to_hit) = Self::next_intersection(
                 cur_corner.position,
@@ -124,7 +127,7 @@ impl CollisionSystem {
                 hitting_location
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
-            if cur_corner.ticks_into_projection > ticks_to_action { continue }
+            if cur_corner.ticks_into_projection >= ticks_to_action { continue }
             cur_corner.position += cur_corner.velocity * ticks_to_hit;
             let all_data = Gate::point_to_real_cells(graph, hitting_location, cur_corner.position);
             cur_corner.position_data = all_data[configured_direction(cur_corner.velocity, cur_corner.configuration)];
@@ -278,6 +281,7 @@ impl CornerHandling {
         let mut culled_corners = Vec::new();
         let hitting_aabb = Bounds::aabb(hitting.1.position, hitting.1.pointer.height).expand(hitting.2);
         let rel_velocity = owner.2 - hitting.2;
+        if rel_velocity.length() == 0. { return culled_corners }
         for corner in corners.into_iter() {
             let hittable = hittable_walls(rel_velocity, corner.configuration);
             if hittable == BVec2::FALSE { continue }
@@ -288,6 +292,7 @@ impl CornerHandling {
             if let Some(smallest_cell) = Gate::point_to_cells(hitting.1, 0, corner.position)[configured_direction(-owner.2, corner.configuration)] {
                 particle.position_data = Some(Gate::find_real_cell(graph, hitting.1.pointer, smallest_cell));
             }
+            camera.draw_vec_rectangle(corner.position, Vec2::splat(0.1), ORANGE);
             culled_corners.push(Reverse(particle));
         }
         culled_corners
@@ -295,46 +300,45 @@ impl CornerHandling {
 
 }
    
-    fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Configurations, position_data:[Option<CellData>; 4]) -> Option<BVec2> {
-        let hit_walls = {
-            let potential_hits = possibly_hit_walls & hittable_walls(velocity, configuration);
-            if potential_hits == BVec2::TRUE {
-                slide_check(velocity, position_data)
-            } else {
-                potential_hits
-            }
-        };
-        match hit_walls {
-            BVec2::TRUE => { Some(mag_slide_check(velocity)) }
-            BVec2::FALSE => { None }
-            _ => { Some(hit_walls) }
+fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Configurations, position_data:[Option<CellData>; 4]) -> Option<BVec2> {
+    let hit_walls = {
+        let potential_hits = possibly_hit_walls & hittable_walls(velocity, configuration);
+        if potential_hits == BVec2::TRUE {
+            slide_check(velocity, position_data)
+        } else {
+            potential_hits
         }
+    };
+    match hit_walls {
+        BVec2::TRUE => { Some(mag_slide_check(velocity)) }
+        BVec2::FALSE => { None }
+        _ => { Some(hit_walls) }
     }
+}
 
-    fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
-        //Formalize this with some zorder arithmatic?
-        let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
-            (2, 1)
-        } else if velocity.x < 0. && velocity.y > 0. { //(-,+)
-            (0, 3)
-        } else if velocity.x > 0. && velocity.y < 0. { //(+,-)
-            (3, 0)
-        } else { //(+,+)
-            (1, 2)
-        };
-        let x_ignore = if let Some(pos_data) = position_data[x_slide_check] {
-            is_ignore(pos_data.pointer.pointer)
-        } else { true };
-        let y_ignore = if let Some(pos_data) = position_data[y_slide_check] {
-            is_ignore(pos_data.pointer.pointer)
-        } else { true };
-        BVec2::new(y_ignore, x_ignore )
-    }
+fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
+    //Formalize this with some zorder arithmatic?
+    let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
+        (2, 1)
+    } else if velocity.x < 0. && velocity.y > 0. { //(-,+)
+        (0, 3)
+    } else if velocity.x > 0. && velocity.y < 0. { //(+,-)
+        (3, 0)
+    } else { //(+,+)
+        (1, 2)
+    };
+    let x_ignore = if let Some(pos_data) = position_data[x_slide_check] {
+        is_ignore(pos_data.pointer.pointer)
+    } else { true };
+    let y_ignore = if let Some(pos_data) = position_data[y_slide_check] {
+        is_ignore(pos_data.pointer.pointer)
+    } else { true };
+    BVec2::new(y_ignore, x_ignore )
+}
 
-    pub fn is_ignore(pointer:InternalPointer) -> bool {
-       *pointer.index == 0 || *pointer.index == 2
-    }
-    
+fn is_ignore(pointer:InternalPointer) -> bool {
+    *pointer.index == 0 || *pointer.index == 2
+}
 
 pub fn hittable_walls(velocity:Vec2, configuration:Configurations) -> BVec2 {
     let (x_check, y_check) = match configuration {
@@ -378,9 +382,9 @@ pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usi
 }
 
 //Why negative?
-pub fn zorder_to_direction(zorder:u32) -> Vec2 {
-    -Vec2::new(
-        if zorder & 0b1 == 0b1 { 1. } else { -1. },
-        if zorder & 0b10 == 0b10 { 1. } else { -1. },
-    )
-}
+// pub fn zorder_to_direction(zorder:u32) -> Vec2 {
+//     -Vec2::new(
+//         if zorder & 0b1 == 0b1 { 1. } else { -1. },
+//         if zorder & 0b10 == 0b10 { 1. } else { -1. },
+//     )
+// }
