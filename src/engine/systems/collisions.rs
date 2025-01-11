@@ -66,26 +66,26 @@ struct Hit {
 
 pub struct CollisionSystem;
 impl CollisionSystem {
-    pub fn n_body_collisions(game_data:&mut GameData) {
+    pub fn n_body_collisions(game_data:&mut GameData, static_thing:Entity) {
         let mut tick_max = 1.;
-        loop {
+        // loop {
             let mut corners = BinaryHeap::new();
             for (entity, (location, velocity)) in game_data.entities.query::<(&Location, &Velocity)>().iter() {
-                for (entity2, (location2, velocity2)) in game_data.entities.query::<(&Location, Option<&Velocity>)>().iter() {
-                    if entity == entity2 || velocity.0 == Vec2::ZERO { continue }
-                    if Self::within_range(&location, &location2, velocity, velocity2.unwrap_or(&Velocity(Vec2::ZERO)), &game_data.camera) {
-                        corners.extend(Self::particles(&game_data.graph, (entity, &location, velocity.0), (entity2, &location2, velocity2.unwrap_or(&Velocity(Vec2::ZERO)).0), &game_data.camera));
-                    }
+                for (entity2, (location2, velocity2)) in game_data.entities.query::<(&Location, &Velocity)>().iter() {
+                    if entity == entity2 || velocity.0 == Vec2::ZERO || entity == static_thing { continue }
+                    // if Self::within_range(&location, &location2, velocity, velocity2, &game_data.camera) {
+                        corners.extend(Self::particles(&game_data.graph, (entity, &location, velocity.0), (entity2, &location2, velocity2.0), &game_data.camera));
+                        // break;
+                    // }
                 }
             }
             let (hits, ticks_to_action) = Self::find_next_action(&mut game_data.entities, &game_data.graph, &game_data.camera, corners, tick_max);
             for (_, (location, velocity)) in game_data.entities.query::<(&mut Location, &Velocity)>().iter() {
                 location.position += velocity.0 * ticks_to_action;
-                if location.position.x == -0.50000006 + 0.00000012 { dbg!(velocity.0.x); };
             }
             tick_max -= ticks_to_action;
-            if hits.is_empty() { break }
-            for hit in hits { 
+            // if hits.is_empty() { break }
+            for hit in hits {
                 match hit.action {
                     Action::Resist(walls_hit) => {
                         let walls_as_int = IVec2::from(walls_hit).as_vec2();
@@ -93,26 +93,30 @@ impl CollisionSystem {
                         let hitting_velocity = game_data.entities.query_one_mut::<&mut Velocity>(hit.hitting).unwrap_or(&mut Velocity(Vec2::ZERO)).0;
                         let relative_velocity = owner_velocity - hitting_velocity;
                         let impulse = -relative_velocity;
-                        if let Ok(velocity) = game_data.entities.query_one_mut::<&mut Velocity>(hit.owner) {
-                            velocity.0 += impulse * walls_as_int;
+                        if hit.owner != static_thing {
+                            if let Ok(velocity) = game_data.entities.query_one_mut::<&mut Velocity>(hit.owner) {
+                                velocity.0 += impulse * walls_as_int;
+                            }
                         }
-                        if let Ok(velocity) = game_data.entities.query_one_mut::<&mut Velocity>(hit.hitting) {
-                            velocity.0 -= impulse * walls_as_int;
+                        if hit.hitting != static_thing {
+                            if let Ok(velocity) = game_data.entities.query_one_mut::<&mut Velocity>(hit.hitting) {
+                                velocity.0 -= impulse * walls_as_int;
+                            }
                         }
                     }
                 }
             }
-        }
+        // }
         let drag_multiplier = 0.9;
         for (_, velocity) in game_data.entities.query::<&mut Velocity>().iter() {
             velocity.0 *= drag_multiplier;
-            if velocity.0.length() < 0.001 { velocity.0 = Vec2::ZERO }
         }
     }
 
     fn find_next_action(entities:&mut World, graph:&SparseDirectedGraph, camera:&Camera, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
         let mut ticks_to_action = tick_max;
-        let mut actions = Vec::new(); 
+        if corners.is_empty() { return (Vec::new(), ticks_to_action) }
+        let mut actions = Vec::new();
         while let Some(Reverse(mut cur_corner)) = corners.pop() {
             if cur_corner.ticks_into_projection >= ticks_to_action { break }
             let hitting_location = entities.query_one_mut::<&Location>(cur_corner.hitting).unwrap();
@@ -131,11 +135,6 @@ impl CollisionSystem {
             if is_ignore(cur_corner.position_data.unwrap().pointer.pointer) { }
             else if let Some(hit_walls) = determine_walls_hit(BVec2::TRUE, cur_corner.velocity, cur_corner.configuration, all_data) {
                 actions.clear();
-                camera.draw_vec_rectangle(
-                    cur_corner.position - Vec2::splat(0.05),
-                    Vec2::splat(0.1),
-                    ORANGE
-                );
                 actions.push(
                     Hit {
                         owner : cur_corner.owner,
@@ -183,8 +182,8 @@ impl CollisionSystem {
             (false, true) if ticks.y == 0. => { ticks.x },
             _ => { ticks.min_element() },
         };
-        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { return None }
-        Some(ticks_to_hit)
+        if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { None }
+        else { Some(ticks_to_hit) }
     }
 
     pub fn within_range(location:&Location, location2:&Location, velocity:&Velocity, velocity2:&Velocity, camera:&Camera) -> bool { 
@@ -199,11 +198,13 @@ impl CollisionSystem {
 
     pub fn particles(graph:&SparseDirectedGraph, object1:(Entity, &Location, Vec2), object2:(Entity, &Location, Vec2), camera:&Camera ) -> BinaryHeap<Reverse<Particle>> {
         let all_corners1 = CornerHandling::tree_corners(graph, object1.1);
-        let all_corners2 = CornerHandling::tree_corners(graph, object2.1);
-        let mut result = BinaryHeap::from(CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera));
-        result.extend(CornerHandling::cull_and_fill_corners(graph, all_corners2, object2, object1, camera));
-        result
+        // let all_corners2 = CornerHandling::tree_corners(graph, object2.1);
+        // let mut result = BinaryHeap::from(CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera));
+        let corner = CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera);
+        BinaryHeap::from(corner)
+        // result.extend(CornerHandling::cull_and_fill_corners(graph, all_corners2, object2, object1, camera));
     }
+
 
 }
 
@@ -282,9 +283,9 @@ impl CornerHandling {
         let hitting_aabb = Bounds::aabb(hitting.1.position, hitting.1.pointer.height);
         for corner in corners.into_iter() {
             let hittable = hittable_walls(rel_velocity, corner.configuration);
-            if hittable == BVec2::FALSE { continue }
+            // if hittable == BVec2::FALSE { continue }
             let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand(rel_velocity*10.);
-            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); continue }
+            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); /*continue*/ }
             else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
             let mut particle = corner.to_particle(rel_velocity, owner.0, hitting.0);
             if let Some(smallest_cell) = Gate::point_to_cells(hitting.1, 0, corner.position)[configured_direction(-rel_velocity, corner.configuration)] {

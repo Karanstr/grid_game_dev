@@ -5,7 +5,7 @@ pub mod grid {
     use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
     use crate::engine::components::Location;
     use super::*;
-    const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
+    pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
     pub const LIM_OFFSET: f32 = 2. / 0x1000 as f32;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
