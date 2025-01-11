@@ -3,7 +3,7 @@ use crate::engine::utility::partition::AABB;
 use crate::engine::systems::io::Camera;
 use crate::engine::components::*;
 use crate::GameData;
-use crate::grid::*;
+use crate::engine::utility::partition::grid::*;
 use macroquad::miniquad::window::screen_size;
 use macroquad::math::{Vec2, IVec2, UVec2, BVec2};
 use macroquad::color::{colors::*, Color};
