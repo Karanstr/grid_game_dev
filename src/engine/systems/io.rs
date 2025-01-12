@@ -4,10 +4,14 @@ use macroquad::input::*;
 pub mod input {
     use crate::engine::systems::editing::set_grid_cell;
     use super::*;
-    pub fn handle_mouse_input(game_data: &mut GameData, color: usize) {
+    pub fn handle_mouse_input(game_data: &mut GameData, edit_id:ID, color: usize) {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = game_data.camera.screen_to_world(Vec2::from(mouse_position()));
-            set_grid_cell(ExternalPointer::new(InternalPointer::new(Index(color)), 0), mouse_pos, &mut game_data.entities, &mut game_data.graph);
+            let editing = game_data.get_mut_entity(edit_id).unwrap().location;
+            let new_pointer = ExternalPointer::new(InternalPointer::new(Index(color)), 0);
+            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, editing, &mut game_data.graph) {
+                game_data.get_mut_entity(edit_id).unwrap().location.pointer = pointer;
+            }
         }
     }
 }
@@ -23,7 +27,8 @@ pub mod output {
 
     pub fn draw_all(game_data: &mut GameData) {
         let mut locations_to_draw = Vec::new();
-        for (_, location) in game_data.entities.query_mut::<&mut Location>() {
+        for thing in game_data.entities.iter() {
+            let location = thing.location;
             if game_data.camera.aabb.intersects(Bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
                 locations_to_draw.push(location.clone());
             }

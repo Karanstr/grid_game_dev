@@ -1,9 +1,9 @@
 use derive_new::new;
 use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
+use crate::Location;
 
 pub mod grid {
     use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
-    use crate::engine::components::Location;
     use super::*;
     pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
     pub const LIM_OFFSET: f32 = 2. / 0x1000 as f32;
@@ -120,7 +120,7 @@ pub mod grid {
 
     pub struct Gate;
     impl Gate { 
-        pub fn point_to_cells(grid_location:&Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
+        pub fn point_to_cells(grid_location:Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
             let mut surrounding = [None; 4];
             let grid_length = Bounds::cell_length(grid_location.pointer.height);
             let cell_length = Bounds::cell_length(height);
@@ -140,7 +140,7 @@ pub mod grid {
             surrounding
         }
         
-        pub fn point_to_real_cells(graph:&SparseDirectedGraph, grid_location:&Location, point:Vec2) -> [Option<CellData>; 4] {
+        pub fn point_to_real_cells(graph:&SparseDirectedGraph, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
             let mut surrounding = [None; 4];
             let deepest_cells = Gate::point_to_cells(grid_location, 0, point);
             for i in 0 .. 4 {
@@ -160,7 +160,6 @@ pub mod grid {
         }
     
     }
-
 
     impl SparseDirectedGraph {
         pub fn dfs_leaves(&self, start:ExternalPointer) -> Vec<CellData> {

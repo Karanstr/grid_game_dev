@@ -66,21 +66,23 @@ struct Hit {
 
 pub struct CollisionSystem;
 impl CollisionSystem {
-    pub fn n_body_collisions(game_data:&mut GameData, static_thing:Entity, debug:bool) {
+    pub fn n_body_collisions(game_data:&mut GameData) {
         let mut tick_max = 1.;
-        // loop {
+        loop {
             let mut corners = BinaryHeap::new();
+            let objects = game_data.entities.query::<(&Location, &Option<Velocity>)>().iter().collect::<Vec<_>>();
+            
             for (entity, (location, velocity)) in game_data.entities.query::<(&Location, &Velocity)>().iter() {
                 for (entity2, (location2, velocity2)) in game_data.entities.query::<(&Location, &Velocity)>().iter() {
                     if entity == entity2 || velocity.0 == Vec2::ZERO || entity == static_thing { continue }
-                    // if Self::within_range(&location, &location2, velocity, velocity2, &game_data.camera) {
+                    if Self::within_range(&location, &location2, velocity, velocity2, &game_data.camera) {
                         corners.extend(Self::particles(&game_data.graph, (entity, &location, velocity.0), (entity2, &location2, velocity2.0), &game_data.camera));
-                        // break;
-                    // }
+                        break;
+                    }
                 }
             }
             let (hits, ticks_to_action) = Self::find_next_action(&mut game_data.entities, &game_data.graph, &game_data.camera, corners, tick_max);
-            for (name, (location, velocity)) in game_data.entities.query::<(&mut Location, &Velocity)>().iter() {
+            for (_, (location, velocity)) in game_data.entities.query::<(&mut Location, &Velocity)>().iter() {
                 location.position += velocity.0 * ticks_to_action;
                 if location.position.x == -0.5 + 0.00000006 {
                     location.position.x = -0.5;
@@ -93,7 +95,7 @@ impl CollisionSystem {
                 if ticks_to_action < 0. { dbg!("Backwards"); }
             }
             tick_max -= ticks_to_action;
-            // if hits.is_empty() { break }
+            if hits.is_empty() { break }
             for hit in hits {
                 match hit.action {
                     Action::Resist(walls_hit) => {
@@ -115,7 +117,7 @@ impl CollisionSystem {
                     }
                 }
             }
-        // }
+        }
         let drag_multiplier = 0.9;
         for (_, velocity) in game_data.entities.query::<&mut Velocity>().iter() {
             velocity.0 *= drag_multiplier;
@@ -208,14 +210,10 @@ impl CollisionSystem {
 
     pub fn particles(graph:&SparseDirectedGraph, object1:(Entity, &Location, Vec2), object2:(Entity, &Location, Vec2), camera:&Camera ) -> BinaryHeap<Reverse<Particle>> {
         let all_corners1 = CornerHandling::tree_corners(graph, object1.1);
-        // let all_corners2 = CornerHandling::tree_corners(graph, object2.1);
-        // let mut result = BinaryHeap::from(CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera));
-        let corner = CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera);
-        match corner.last() {
-            Some(particle) => { BinaryHeap::from([particle.clone()]) }
-            None => { BinaryHeap::new() }
-        }
-        // result.extend(CornerHandling::cull_and_fill_corners(graph, all_corners2, object2, object1, camera));
+        let all_corners2 = CornerHandling::tree_corners(graph, object2.1);
+        let mut result = BinaryHeap::from(CornerHandling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera));
+        result.extend(CornerHandling::cull_and_fill_corners(graph, all_corners2, object2, object1, camera));
+        result
     }
 
 
@@ -289,17 +287,17 @@ impl CornerHandling {
         corners
     }
 
-    //Should be able to cull even more based on hang_check principle. (Please fact check when not hungry)
+    //Should be able to cull even more based on hang_check principle
     pub fn cull_and_fill_corners(graph:&SparseDirectedGraph, corners:Vec<Corner>, owner:(Entity, &Location, Vec2), hitting:(Entity, &Location, Vec2), camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
         let rel_velocity = owner.2 - hitting.2;
-        // let hitting_aabb = Bounds::aabb(hitting.1.position, hitting.1.pointer.height);
+        let hitting_aabb = Bounds::aabb(hitting.1.position, hitting.1.pointer.height);
         for corner in corners.into_iter() {
-            // let hittable = hittable_walls(rel_velocity, corner.configuration);
-            // if hittable == BVec2::FALSE { continue }
-            // let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand(rel_velocity*10.);
-            // if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); /*continue*/ }
-            // else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
+            let hittable = hittable_walls(rel_velocity, corner.configuration);
+            if hittable == BVec2::FALSE { continue }
+            let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand(rel_velocity*10.);
+            if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); /*continue*/ }
+            else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
             let mut particle = corner.to_particle(rel_velocity, owner.0, hitting.0);
             if let Some(smallest_cell) = Gate::point_to_cells(hitting.1, 0, corner.position)[configured_direction(-rel_velocity, corner.configuration)] {
                 particle.position_data = Some(Gate::find_real_cell(graph, hitting.1.pointer, smallest_cell));
