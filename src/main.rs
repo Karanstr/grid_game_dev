@@ -58,13 +58,13 @@ async fn main() {
     );
     let terrain = game_data.add_entity(
         Location::new(
-            ExternalPointer::new(InternalPointer::new(Index(0)), 2), 
+            ExternalPointer::new(InternalPointer(0), 2), 
             Vec2::new(0., 0.)
         ), Vec2::ZERO
     );
     let player = game_data.add_entity(
         Location::new(
-            ExternalPointer::new(InternalPointer::new(Index(3)), 0), 
+            ExternalPointer::new(InternalPointer(3), 0), 
             Vec2::new(-2., 0.)
         ),
         Vec2::ZERO,

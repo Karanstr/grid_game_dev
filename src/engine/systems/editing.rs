@@ -1,5 +1,5 @@
 use super::*;
-
+//Move into io
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {

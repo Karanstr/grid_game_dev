@@ -166,10 +166,10 @@ pub mod grid {
             let mut stack = Vec::from([(start.pointer, ZorderPath::root())]);
             let mut leaves = Vec::new();
             while let Some((pointer, zorder)) = stack.pop() {
-                if self.is_leaf(pointer.index) {
+                if self.is_leaf(pointer) {
                     leaves.push(CellData::new(ExternalPointer::new(pointer, start.height - zorder.depth), zorder.to_cell()));
                 } else { for i in 0 .. 4 {
-                        let children = self.node(pointer.index).unwrap().children;
+                        let children = self.node(pointer).unwrap().children;
                         stack.push((children[i], zorder.step_down(i as u32)));
                     }
                 }

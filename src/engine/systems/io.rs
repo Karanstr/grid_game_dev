@@ -8,7 +8,7 @@ pub mod input {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = game_data.camera.screen_to_world(Vec2::from(mouse_position()));
             let editing = game_data.get_mut_entity(edit_id).unwrap().location;
-            let new_pointer = ExternalPointer::new(InternalPointer::new(Index(color)), 0);
+            let new_pointer = ExternalPointer::new(InternalPointer(color), 0);
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, editing, &mut game_data.graph) {
                 game_data.get_mut_entity(edit_id).unwrap().location.pointer = pointer;
             }
@@ -50,9 +50,9 @@ pub mod output {
         let object_top_left = location.position - grid_length / 2.;
         let leaves = game_data.graph.dfs_leaves(location.pointer);
         for leaf in leaves {
-            let color = game_data.blocks.blocks[*leaf.pointer.pointer.index].color; 
+            let color = game_data.blocks.blocks[*leaf.pointer.pointer].color; 
             let cell_top_left = object_top_left + Bounds::top_left_corner(leaf.cell, leaf.pointer.height);
-            if 0 != *leaf.pointer.pointer.index {
+            if 0 != *leaf.pointer.pointer{
                 game_data.camera.draw_vec_rectangle(
                 cell_top_left,
                 Bounds::cell_length(leaf.pointer.height),
