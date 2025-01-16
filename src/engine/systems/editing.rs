@@ -1,9 +1,9 @@
 use super::*;
 //Move into io
-pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph) -> Option<ExternalPointer> {
+pub fn set_grid_cell<T : GraphNode + std::hash::Hash + Eq>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {
-        let cell = Gate::point_to_cells(location, height, world_point)[0];
+        let cell = Gate::<T>::point_to_cells(location, height, world_point)[0];
         if let Some(cell) = cell {
             let path = ZorderPath::from_cell(cell, location.pointer.height - height);
             if let Ok(pointer) = graph.set_node(location.pointer, &path.steps(), to.pointer) {

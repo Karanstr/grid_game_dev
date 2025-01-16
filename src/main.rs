@@ -30,7 +30,7 @@ struct GameData {
     #[new(value = "0")]
     id_counter: u32,
     camera: Camera,
-    graph: SparseDirectedGraph,
+    graph: SparseDirectedGraph<Node>,
     blocks: BlockPalette,
 }
 impl GameData {

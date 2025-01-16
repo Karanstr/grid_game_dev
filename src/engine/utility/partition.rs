@@ -1,6 +1,7 @@
 use derive_new::new;
 use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
 use crate::Location;
+use crate::engine::graph::GraphNode;
 
 pub mod grid {
     use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
@@ -118,8 +119,10 @@ pub mod grid {
 
     }
 
-    pub struct Gate;
-    impl Gate { 
+    pub struct Gate<T> where T: GraphNode + std::hash::Hash + Eq {
+        _phantom: std::marker::PhantomData<T>
+    }
+    impl<T> Gate<T> where T: GraphNode + std::hash::Hash + Eq { 
         pub fn point_to_cells(grid_location:Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
             let mut surrounding = [None; 4];
             let grid_length = Bounds::cell_length(grid_location.pointer.height);
@@ -140,19 +143,19 @@ pub mod grid {
             surrounding
         }
         
-        pub fn point_to_real_cells(graph:&SparseDirectedGraph, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
+        pub fn point_to_real_cells(graph:&SparseDirectedGraph<T>, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
             let mut surrounding = [None; 4];
-            let deepest_cells = Gate::point_to_cells(grid_location, 0, point);
+            let deepest_cells = Gate::<T>::point_to_cells(grid_location, 0, point);
             for i in 0 .. 4 {
                 if let Some(cell) = deepest_cells[i] {
-                    surrounding[i] = Some(Gate::find_real_cell(graph, grid_location.pointer, cell));
+                    surrounding[i] = Some(Gate::<T>::find_real_cell(graph, grid_location.pointer, cell));
                 }
             }
             surrounding
         }
         
         //Only works if cell is at height 0
-        pub fn find_real_cell(graph:&SparseDirectedGraph, start:ExternalPointer, cell:UVec2) -> CellData {
+        pub fn find_real_cell(graph:&SparseDirectedGraph<T>, start:ExternalPointer, cell:UVec2) -> CellData {
             let path = ZorderPath::from_cell(cell, start.height);
             let pointer = graph.read(start, &path.steps()).unwrap();
             let zorder = path.with_depth(start.height - pointer.height);
@@ -161,7 +164,7 @@ pub mod grid {
     
     }
 
-    impl SparseDirectedGraph {
+    impl<T> SparseDirectedGraph<T> where T : GraphNode + std::hash::Hash + Eq {
         pub fn dfs_leaves(&self, start:ExternalPointer) -> Vec<CellData> {
             let mut stack = Vec::from([(start.pointer, ZorderPath::root())]);
             let mut leaves = Vec::new();
@@ -169,7 +172,7 @@ pub mod grid {
                 if self.is_leaf(pointer) {
                     leaves.push(CellData::new(ExternalPointer::new(pointer, start.height - zorder.depth), zorder.to_cell()));
                 } else { for i in 0 .. 4 {
-                        let children = self.node(pointer).unwrap().children;
+                        let children = self.node(pointer).unwrap().children();
                         stack.push((children[i], zorder.step_down(i as u32)));
                     }
                 }
