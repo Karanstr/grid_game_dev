@@ -1,10 +1,6 @@
-use derive_new::new;
-use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
-use crate::Location;
-use crate::engine::graph::GraphNode;
+use super::*;
 
 pub mod grid {
-    use crate::engine::graph::{ExternalPointer, SparseDirectedGraph};
     use super::*;
     pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
     pub const LIM_OFFSET: f32 = 2. / 0x1000 as f32;
@@ -99,34 +95,33 @@ pub mod grid {
         pub cell : UVec2,
     }
 
-    pub struct Bounds;
-    impl Bounds {
+    pub mod bounds {
+        use super::*;
+
         pub fn cell_length(height:u32) -> Vec2 {
             MIN_CELL_LENGTH.powf(height as f32)
         }
 
         fn center_to_edges(height:u32) -> Vec2 {
-            Self::cell_length(height) / 2.
+            cell_length(height) / 2.
         }
 
         pub fn aabb(position:Vec2, height:u32) -> AABB {
-            AABB::new(position, Self::center_to_edges(height))
+            AABB::new(position, center_to_edges(height))
         }
 
         pub fn top_left_corner(cell:UVec2, height:u32) -> Vec2 {
-            cell.as_vec2() * Self::cell_length(height) 
+            cell.as_vec2() * cell_length(height) 
         }
 
     }
 
-    pub struct Gate<T> where T: GraphNode + std::hash::Hash + Eq {
-        _phantom: std::marker::PhantomData<T>
-    }
-    impl<T> Gate<T> where T: GraphNode + std::hash::Hash + Eq { 
+    pub mod gate {
+        use super::*;
         pub fn point_to_cells(grid_location:Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
             let mut surrounding = [None; 4];
-            let grid_length = Bounds::cell_length(grid_location.pointer.height);
-            let cell_length = Bounds::cell_length(height);
+            let grid_length = bounds::cell_length(grid_location.pointer.height);
+            let cell_length = bounds::cell_length(height);
             let origin_position = point - (grid_location.position - grid_length / 2.);
             let directions = [
                 Vec2::new(-1., -1.),
@@ -143,29 +138,29 @@ pub mod grid {
             surrounding
         }
         
-        pub fn point_to_real_cells(graph:&SparseDirectedGraph<T>, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
+        pub fn point_to_real_cells<T : GraphNode>(graph:&SparseDirectedGraph<T>, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
             let mut surrounding = [None; 4];
-            let deepest_cells = Gate::<T>::point_to_cells(grid_location, 0, point);
+            let deepest_cells = point_to_cells(grid_location, 0, point);
             for i in 0 .. 4 {
                 if let Some(cell) = deepest_cells[i] {
-                    surrounding[i] = Some(Gate::<T>::find_real_cell(graph, grid_location.pointer, cell));
+                    surrounding[i] = Some(find_real_cell(graph, grid_location.pointer, cell));
                 }
             }
             surrounding
         }
         
         //Only works if cell is at height 0
-        pub fn find_real_cell(graph:&SparseDirectedGraph<T>, start:ExternalPointer, cell:UVec2) -> CellData {
+        pub fn find_real_cell<T : GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, cell:UVec2) -> CellData {
             let path = ZorderPath::from_cell(cell, start.height);
             let pointer = graph.read(start, &path.steps()).unwrap();
             let zorder = path.with_depth(start.height - pointer.height);
             CellData::new(pointer, zorder.to_cell())
         }
-    
+
     }
 
-    impl<T> SparseDirectedGraph<T> where T : GraphNode + std::hash::Hash + Eq {
-        pub fn dfs_leaves(&self, start:ExternalPointer) -> Vec<CellData> {
+    impl<T> SparseDirectedGraph<T> where T : GraphNode {
+        pub fn dfs_leave_cells(&self, start:ExternalPointer) -> Vec<CellData> {
             let mut stack = Vec::from([(start.pointer, ZorderPath::root())]);
             let mut leaves = Vec::new();
             while let Some((pointer, zorder)) = stack.pop() {

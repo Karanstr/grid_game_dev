@@ -1,8 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-pub use vec_mem_heap::{NodeField, Index, prelude::AccessError};
-use std::hash::Hash;
+pub use vec_mem_heap::Index;
+use vec_mem_heap::prelude::{NodeField, AccessError};
 use derive_new::new;
+
+pub trait GraphNode : Node + std::fmt::Debug + Clone + std::hash::Hash + Eq {}
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, new)]
 pub struct ExternalPointer {
@@ -10,22 +12,23 @@ pub struct ExternalPointer {
     pub height : u32
 }
 
-pub trait GraphNode : Clone {
+pub trait Node : Clone {
     fn new(children:[Index; 4]) -> Self;
     fn children(&self) -> [Index; 4];
     fn set_child(&mut self, child:usize, index:Index);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Node {
+pub struct BasicNode {
     children : [Index; 4],
 }
-impl GraphNode for Node {
+impl Node for BasicNode {
     fn new(children:[Index; 4]) -> Self { Self { children } }
     fn children(&self) -> [Index; 4] { self.children }
     fn set_child(&mut self, child:usize, index:Index) { self.children[child] = index }
 }
-impl<T> GraphNode for vec_mem_heap::internals::MemorySlot<T> where T: GraphNode{
+impl GraphNode for BasicNode {}
+impl<T> Node for vec_mem_heap::internals::MemorySlot<T> where T: GraphNode {
     fn new(_:[Index; 4]) -> Self { panic!("Don't do that!") }
     fn children(&self) -> [Index; 4] {
         match self.unwrap_steward() {
@@ -40,12 +43,12 @@ impl<T> GraphNode for vec_mem_heap::internals::MemorySlot<T> where T: GraphNode{
         }
     }
 }
-pub struct SparseDirectedGraph<T: GraphNode + Hash + Eq> {
+pub struct SparseDirectedGraph<T: GraphNode> {
     pub nodes : NodeField<T>,
     pub index_lookup : HashMap<T, Index>,
     leaf_count : u8, 
 }
-impl<T: GraphNode + Hash + Eq> SparseDirectedGraph<T> {
+impl<T: GraphNode> SparseDirectedGraph<T> {
     //Utility
     pub fn new(leaf_count:u8) -> Self {
         let mut instance = Self {
@@ -164,7 +167,7 @@ struct TreeStorage<T : GraphNode> {
     root: ExternalPointer,
 }
 //Assumes constant leaf count. Eventually add more metadata
-impl<T: GraphNode + Clone + Hash + Eq + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
+impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
     pub fn save_object_json(&self, start:ExternalPointer) -> String {
         let mut object_graph = Self::new(self.leaf_count);
         let root_index = object_graph.clone_graph(self.nodes.internal_memory(), start.pointer);
@@ -181,7 +184,7 @@ impl<T: GraphNode + Clone + Hash + Eq + Serialize + DeserializeOwned> SparseDire
     }
 
     //Assumes equal leaf count (between the two graphs)
-    fn clone_graph<N : GraphNode> (&mut self, from:&Vec<N>, start:Index) -> Index {
+    fn clone_graph<N : Node> (&mut self, from:&Vec<N>, start:Index) -> Index {
         let mut remapped = HashMap::new();
         for i in 0 .. self.leaf_count as usize { remapped.insert(Index(i), Index(i)); }
         for pointer in bfs_nodes(from, start, self.leaf_count as usize).into_iter().rev() {
@@ -202,7 +205,7 @@ impl<T: GraphNode + Clone + Hash + Eq + Serialize + DeserializeOwned> SparseDire
 }
 
 //Assumes leaves are stored contiguously at the front of the slice.
-pub fn bfs_nodes<N: GraphNode>(nodes:&Vec<N>, start:Index, last_leaf:usize) -> Vec<Index> {
+pub fn bfs_nodes<N: Node>(nodes:&Vec<N>, start:Index, last_leaf:usize) -> Vec<Index> {
     let mut queue = VecDeque::from([start]);
     let mut bfs_indexes = Vec::new();
     while let Some(index) = queue.pop_front() {

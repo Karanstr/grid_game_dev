@@ -1,6 +1,4 @@
-use macroquad::color::colors::*;
-use macroquad::color::Color;
-use derive_new::new;
+use super::*;
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Block {

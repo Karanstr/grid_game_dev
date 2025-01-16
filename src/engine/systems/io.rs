@@ -1,76 +1,109 @@
 use super::*;
-use macroquad::input::*;
 
 pub mod input {
-    use crate::engine::systems::editing::set_grid_cell;
     use super::*;
-    pub fn handle_mouse_input(game_data: &mut GameData, edit_id:ID, color: usize) {
+    //I don't like this, use set_grid_cell directly?
+    pub fn handle_mouse_input<T:GraphNode>(camera:&Camera, graph:&mut SparseDirectedGraph<T>, location:&mut Location, color: usize, height: u32) {
         if is_mouse_button_down(MouseButton::Left) {
-            let mouse_pos = game_data.camera.screen_to_world(Vec2::from(mouse_position()));
-            let editing = game_data.get_mut_entity(edit_id).unwrap().location;
-            let new_pointer = ExternalPointer::new(Index(color), 0);
-            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, editing, &mut game_data.graph) {
-                game_data.get_mut_entity(edit_id).unwrap().location.pointer = pointer;
+            let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
+            let new_pointer = ExternalPointer::new(Index(color), height);
+            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, *location, graph) {
+                location.pointer = pointer;
             }
         }
     }
+
+    use editing::*;
+    mod editing {
+        use super::*;
+        pub fn set_grid_cell<T : GraphNode + std::hash::Hash + Eq>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
+            let height = to.height;
+            if height <= location.pointer.height {
+                let cell = gate::point_to_cells(location, height, world_point)[0];
+                if let Some(cell) = cell {
+                    let path = ZorderPath::from_cell(cell, location.pointer.height - height);
+                    if let Ok(pointer) = graph.set_node(location.pointer, &path.steps(), to.pointer) {
+                        return Some(pointer)
+                    } else {dbg!("Write failure. That's really bad.");}
+                }
+            }
+            None
+        }
+
+        /*
+        pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
+            let object = &mut self.objects[object_index];
+            //Prevent zorder overflow for now
+            if object.root.height == 15 { dbg!("We don't overflow around here"); return }
+            object.position += object.cell_length(0) * zorder_to_direction(direction as u32)/2.;
+            let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root.pointer).unwrap();
+            self.graph.swap_root(object.root.pointer, new_root);
+            object.root.pointer = new_root;
+            object.root.height += 1;
+        }
+
+        pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
+            let object = &mut self.objects[object_index];
+            if object.root.height == 0 { return }
+            object.position += object.cell_length(0) * -zorder_to_direction(preserve_direction as u32)/4.;
+            let new_root = self.graph.set_node(object.root.pointer, &[], self.graph.child(object.root.pointer, preserve_direction).unwrap()).unwrap();
+            self.graph.swap_root(object.root.pointer, new_root);
+            object.root.pointer = new_root;
+            object.root.height -= 1;
+        }*/
+    }
+
 }
 
-
 pub mod output {
-    use crate::GameData;
-
     use super::*;
-    #[derive(new)]
-    pub struct RenderingSystem;
-    impl RenderingSystem {
 
-    pub fn draw_all(game_data: &mut GameData) {
-        let mut locations_to_draw = Vec::new();
-        for thing in game_data.entities.iter() {
-            let location = thing.location;
-            if game_data.camera.aabb.intersects(Bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                locations_to_draw.push(location.clone());
+    pub mod render {
+        use super::*;
+        
+        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette) {
+            let mut locations_to_draw = Vec::new();
+            for entity in entities.entities.iter() {
+                let location = entity.location;
+                if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
+                    locations_to_draw.push(location.clone());
+                }
+            }
+            for location in locations_to_draw {
+                draw(camera, graph, &location, blocks);
             }
         }
-        for location in locations_to_draw {
-            Self::draw(game_data, &location);
-        }
-    }
-
-    pub fn draw(game_data:&mut GameData, location:&Location) {
-        let grid_length = Bounds::cell_length(location.pointer.height);
-        let grid_top_left = location.position - grid_length / 2.;
-        game_data.camera.outline_vec_rectangle(
-            grid_top_left,
-            grid_length,
-            0.03,
-            WHITE
-        );
-        let object_top_left = location.position - grid_length / 2.;
-        let leaves = game_data.graph.dfs_leaves(location.pointer);
-        for leaf in leaves {
-            let color = game_data.blocks.blocks[*leaf.pointer.pointer].color; 
-            let cell_top_left = object_top_left + Bounds::top_left_corner(leaf.cell, leaf.pointer.height);
-            if 0 != *leaf.pointer.pointer{
-                game_data.camera.draw_vec_rectangle(
+    
+        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, location:&Location, blocks:&BlockPalette) {
+            let grid_length = bounds::cell_length(location.pointer.height);
+            let grid_top_left = location.position - grid_length / 2.;
+            camera.outline_vec_rectangle(
+                grid_top_left,
+                grid_length,
+                0.03,
+                WHITE
+            );
+            let object_top_left = location.position - grid_length / 2.;
+            let leaves = graph.dfs_leave_cells(location.pointer);
+            for leaf in leaves {
+                let color = blocks.blocks[*leaf.pointer.pointer].color; 
+                let cell_top_left = object_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height);
+                if 0 != *leaf.pointer.pointer{
+                    camera.draw_vec_rectangle(
+                    cell_top_left,
+                    bounds::cell_length(leaf.pointer.height),
+                    color
+                    );
+                }
+                camera.outline_vec_rectangle(
                 cell_top_left,
-                Bounds::cell_length(leaf.pointer.height),
-                color
+                bounds::cell_length(leaf.pointer.height),
+                0.03,
+                WHITE
                 );
             }
-            game_data.camera.outline_vec_rectangle(
-            cell_top_left,
-            Bounds::cell_length(leaf.pointer.height),
-            0.03,
-            WHITE
-            );
         }
     }
-
-    }
-
-
 
 }
 
