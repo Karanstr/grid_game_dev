@@ -8,7 +8,7 @@ pub mod input {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = game_data.camera.screen_to_world(Vec2::from(mouse_position()));
             let editing = game_data.get_mut_entity(edit_id).unwrap().location;
-            let new_pointer = ExternalPointer::new(InternalPointer(color), 0);
+            let new_pointer = ExternalPointer::new(Index(color), 0);
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, editing, &mut game_data.graph) {
                 game_data.get_mut_entity(edit_id).unwrap().location.pointer = pointer;
             }

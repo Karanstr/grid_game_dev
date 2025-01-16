@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{Deserialize, Serialize};
-pub use vec_mem_heap::{NodeField, Index as InternalPointer, prelude::AccessError};
+pub use vec_mem_heap::{NodeField, Index, prelude::AccessError};
 use std::hash::Hash;
 use derive_new::new;
 
@@ -8,18 +8,18 @@ use derive_new::new;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, new)]
 pub struct ExternalPointer {
-    pub pointer : InternalPointer,
+    pub pointer : Index,
     pub height : u32
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, new)]
 pub struct Node {
-    pub children : [InternalPointer; 4],
+    pub children : [Index; 4],
 }
 
 pub struct SparseDirectedGraph {
-    nodes : NodeField<Node>,
-    index_lookup : HashMap<Node, InternalPointer>,
+    pub nodes : NodeField<Node>,
+    pub index_lookup : HashMap<Node, Index>,
     leaf_count : u8, 
 }
 impl SparseDirectedGraph {
@@ -31,16 +31,16 @@ impl SparseDirectedGraph {
             leaf_count
         };
         for i in 0 .. leaf_count {
-            instance.add_node(Node::new([InternalPointer(i as usize); 4]));
+            instance.add_node(Node { children : [Index(i as usize); 4] });
         }
         instance
     }
     
-    pub fn is_leaf(&self, index:InternalPointer) -> bool {
+    pub fn is_leaf(&self, index:Index) -> bool {
         *index < self.leaf_count as usize
     }
 
-    fn get_trail(&self, start:InternalPointer, path:&[u32]) -> Vec<InternalPointer>  {
+    fn get_trail(&self, start:Index, path:&[u32]) -> Vec<Index>  {
         let mut trail = vec![start];
         for step in 0 .. path.len() {
             let parent = trail[step];
@@ -53,119 +53,110 @@ impl SparseDirectedGraph {
         trail 
     }
 
-    /*pub fn profile(&self) {
+    pub fn profile(&self) {
         println!("---------- STATUS ----------");
         let mut free_memory = 0;
         let mut reserved_memory = 0;
-        for index in 0 .. self.nodes.length() {
-            let cur_index = InternalPointer(index);
+        for index in 0 .. self.nodes.internal_memory().len() {
+            let cur_index = Index(index);
             if let Ok(status) = self.nodes.status(cur_index) {
-                if let Ownership::Fine(_) = status {
-                    reserved_memory += 1;
-                } else { free_memory += 1 }
+                reserved_memory += 1;
             } else { free_memory += 1 }
         }
 
-        println!("There are {} nodes within the tree, consisting of:", reserved_memory);
-        println!("{} dangling nodes and {} free slots", dangling - self.leaf_count, free_memory);
-
-    }*/
+        println!("There are {} slots within the graph, consisting of:", reserved_memory);
+        println!("{} free slots", free_memory);
+    }
 
     //Private functions used for writing
-    fn find_index(&self, node:&Node) -> Option<InternalPointer> {
+    fn find_index(&self, node:&Node) -> Option<Index> {
         self.index_lookup.get(node).copied()
     }
 
-    fn dec_owners(&mut self, pointer:InternalPointer) {
-        let mut stack = Vec::from([pointer]);
-        while let Some(next_index) = stack.pop() {
-            if self.is_leaf(next_index) { continue; }
-            match self.nodes.remove_ref(next_index) {
-                Ok(Some(node)) => {
-                    for child in node.children {
-                        stack.push(child)
-                    }
-                    self.index_lookup.remove(&node);
-                },
-                Err( error ) => { dbg!(error, "decrease owners"); }
-                Ok(None) => {},
-            }
-        }
-    }
-
-    fn add_node(&mut self, node:Node) -> InternalPointer {
-        match self.find_index(&node) {
-            Some(pointer) => pointer,
-            None => {
-                let pointer = self.nodes.push(node.clone());
-                self.index_lookup.insert(node, pointer);
-                if self.is_leaf(pointer) { return pointer }
-                let children = self.node(pointer).unwrap().children;
-                for child in children {
-                    if let Err( error) = self.nodes.add_ref(child) {
-                        dbg!(error, "add ref");
-                    }
-                }
-                pointer
-            }
-        }
+    fn add_node(&mut self, node:Node) -> Index {
+        let index = self.nodes.push(node.clone());
+        self.index_lookup.insert(node, index);
+        index
     }
 
     //Public functions used for writing
-    pub fn set_node(&mut self, start:ExternalPointer, path:&[u32], new_pointer:InternalPointer) -> Result<ExternalPointer, AccessError> {
+    pub fn set_node(&mut self, start:ExternalPointer, path:&[u32], new_pointer:Index) -> Result<ExternalPointer, AccessError> {
+        if let Some(pointer) = self.read(start, path) { 
+            if pointer.pointer == new_pointer { return Ok(start) }
+        } else { return Err(AccessError::OperationFailed) }
         let trail = self.get_trail(start.pointer, path);
-        let mut cur_pointer = new_pointer;
+        let mut cur_pointer = ExternalPointer::new(new_pointer, start.height - path.len() as u32);
+        let mut old_parent = new_pointer;
+        let mut early_exit = false;
+        let mut early_node = None;
         for cur_depth in (0 .. path.len()).rev() {
-            let parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
-            let parent_node_pointer =  {
-                let mut new_parent = self.node(parent)?.clone();
-                new_parent.children[path[cur_depth] as usize] = cur_pointer;
+            //If it trails off early we know it's at a leaf so we can just repeat that leaf
+            old_parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
+            let new_parent_node =  {
+                let mut new_parent = self.node(old_parent)?.clone();
+                new_parent.children[path[cur_depth] as usize] = cur_pointer.pointer;
                 new_parent
             };
-            cur_pointer = self.add_node(parent_node_pointer);
+            cur_pointer.height += 1;
+            cur_pointer.pointer = match self.find_index(&new_parent_node) {
+                Some(pointer) => pointer,
+                None => {
+                    if self.nodes.status(old_parent).unwrap().get() == 2 && !self.is_leaf(old_parent) {
+                        early_node = Some(new_parent_node);
+                        cur_pointer.pointer = old_parent;
+                        early_exit = true;
+                        break
+                    } else { self.add_node(new_parent_node) }
+                }
+            };
         }
-        self.swap_root(start.pointer, cur_pointer);
-        Ok( ExternalPointer::new( cur_pointer, start.height ) )
+        let old_nodes = self.bfs_nodes(ExternalPointer::new(old_parent, cur_pointer.height)); 
+        if let Some(node) = early_node {
+            let old_node = self.nodes.replace(old_parent, node.clone()).unwrap();
+            self.index_lookup.remove(&old_node);
+            self.index_lookup.insert(node, old_parent);
+        } 
+        for index in self.bfs_nodes(cur_pointer) {  self.nodes.add_ref(index).unwrap() }
+        for index in old_nodes {
+            self.nodes.remove_ref(index).unwrap();
+            if self.nodes.status(index).unwrap().get() == 1 && !self.is_leaf(index) {
+                self.index_lookup.remove(&self.nodes.remove_ref(index).unwrap().unwrap());
+            }
+        }
+        if early_exit { Ok(start) } else { Ok(cur_pointer) }
     }
 
-    pub fn swap_root(&mut self, old_root:InternalPointer, new_root:InternalPointer) {
-        if let Err( error) = self.nodes.add_ref(new_root) {
-            dbg!(error, "swap root");
-        }
-        if let Err( error) = self.nodes.remove_ref(old_root) {
-            dbg!(error, "swap root");
-        }
-    }
 
     //Public functions used for reading
-    pub fn node(&self, pointer:InternalPointer) -> Result<&Node, AccessError> {
+    pub fn node(&self, pointer:Index) -> Result<&Node, AccessError> {
         self.nodes.data(pointer)
     }
 
-    pub fn child(&self, node:InternalPointer, zorder:usize) -> Result<InternalPointer, AccessError> {
+    pub fn child(&self, node:Index, zorder:usize) -> Result<Index, AccessError> {
         Ok( self.node(node)?.children[zorder] )
     }
-
-    pub fn read(&self, start:ExternalPointer, path:&[u32]) -> ExternalPointer {
+    
+    pub fn read(&self, start:ExternalPointer, path:&[u32]) -> Option<ExternalPointer> {
         let trail = self.get_trail(start.pointer, path);
-        let Some(node_pointer) = trail.last() else { panic!("Trail is broken again") };
-        ExternalPointer::new(*node_pointer, start.height - (trail.len() as u32 - 1))
+        let Some(node_pointer) = trail.last() else { return None };
+        Some(ExternalPointer::new(*node_pointer, start.height - (trail.len() as u32 - 1)))
     }
 
-    pub fn bfs_nodes(&self, start:ExternalPointer) -> Vec<InternalPointer> {
+    pub fn bfs_nodes(&self, start:ExternalPointer) -> Vec<Index> {
         let mut queue = VecDeque::from([start.pointer]);
         let mut bfs_node_pointers = Vec::new();
         while let Some(node_pointer) = queue.pop_front() {
-            if let Ok(node) = self.node(node_pointer) {
-                bfs_node_pointers.push(node_pointer);
-                for child in node.children {
-                    if !self.is_leaf(child) {
-                        queue.push_back(child);
-                    }
-                }
+            bfs_node_pointers.push(node_pointer);
+            if !self.is_leaf(node_pointer) { 
+                queue.extend(self.node(node_pointer).unwrap().children) 
             }
         }
         bfs_node_pointers
+    }
+
+    pub fn get_root(&mut self, leaf:usize, height:u32) -> ExternalPointer {
+        for _ in 0 .. 1 { self.nodes.add_ref(Index(leaf)).unwrap() }
+        ExternalPointer::new(Index(leaf), height)
     }
 
 }
@@ -192,16 +183,16 @@ impl SparseDirectedGraph {
         let temp:TreeStorage = serde_json::from_str(&json).unwrap();
         let mut data = Vec::new();
         for index in 0 .. temp.nodes.internal_memory().len() {
-            data.push(InternalPointer(index))
+            data.push(Index(index))
         }
         let pointer = Self::map_to(&temp.nodes, self, &data, self.leaf_count).unwrap_or(temp.root.pointer);
         ExternalPointer::new(pointer, temp.root.height)
     }
 
-    fn map_to(source:&NodeField<Node>, to:&mut Self, data:&[InternalPointer], leaf_count:u8) -> Option<InternalPointer> {
+    fn map_to(source:&NodeField<Node>, to:&mut Self, data:&[Index], leaf_count:u8) -> Option<Index> {
         let mut remapped = HashMap::new();
         for i in 0 .. leaf_count as usize {
-            remapped.insert(InternalPointer(i), InternalPointer(i));
+            remapped.insert(Index(i), Index(i));
         }
         for pointer in data {
             let old_node = source.data(*pointer).unwrap();

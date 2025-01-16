@@ -1,4 +1,4 @@
-use crate::engine::graph::{SparseDirectedGraph, ExternalPointer, InternalPointer};
+use crate::engine::graph::{SparseDirectedGraph, ExternalPointer, Index};
 use crate::engine::utility::partition::AABB;
 use crate::engine::systems::io::Camera;
 use crate::GameData;
