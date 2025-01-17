@@ -58,16 +58,20 @@ async fn main() {
     let mut camera = Camera::new( AABB::new(Vec2::ZERO, Vec2::splat(4.)), 0.9);
     let mut graph = SparseDirectedGraph::<engine::graph::BasicNode>::new(4);
     let blocks = BlockPalette::new();
+
+    let string = std::fs::read_to_string("src/save.json").unwrap();
+    let world_pointer = if string.len() == 0 { graph.get_root(0, 4)}
+    else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
     let terrain = entities.add_entity(
         Location::new(
-            graph.get_root(0, 3),
+            world_pointer,
             Vec2::new(0., 0.)
         ), Vec2::ZERO
     );
     let player = entities.add_entity(
         Location::new(
             graph.get_root(3, 0),
-            Vec2::new(-2., 0.)
+            Vec2::new(0., 0.)
         ),
         Vec2::ZERO,
     );
