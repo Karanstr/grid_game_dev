@@ -1,25 +1,19 @@
 mod engine;
 mod imports {
     use super::*;
-    pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
-    pub use macroquad::miniquad::window::screen_size;
-    pub use derive_new::new;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, ExternalPointer, Index};
-    pub use engine::utility::partition::AABB;
-    pub use engine::utility::partition::grid::*;
+    pub use engine::systems::io::{input, output::*, Camera};
+    pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
+    pub use engine::utility::partition::{AABB, grid::*};
+    pub use super::{EntityPool, ID, Entity, Location};
     pub use engine::systems::collisions;
     pub use macroquad::color::colors::*;
-    pub use macroquad::color::Color;
-    pub use macroquad::shapes::*;
-    pub use engine::systems::io::Camera;
-    pub use super::{EntityPool, ID, Entity, Location};
     pub use engine::utility::blocks::*;
+    pub use macroquad::color::Color;
     pub use macroquad::input::*;
-    pub use output::*;
-    pub use engine::systems::io::*;
-    // pub use engine::systems::collisions::*;
-
+    pub use derive_new::new;
 }
+
 use imports::*;
 
 #[derive(Debug, Clone, Copy, new)]
@@ -90,10 +84,18 @@ async fn main() {
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
+        if is_key_pressed(KeyCode::K) {
+            let save_state = graph.save_object_json(entities.get_entity(terrain).unwrap().location.pointer);
+            std::fs::write("src/save.json", save_state).unwrap();
+        }
+        if is_key_pressed(KeyCode::L) {
+            let save_state = std::fs::read_to_string("src/save.json").unwrap();
+            entities.get_mut_entity(terrain).unwrap().location.pointer = graph.load_object_json(save_state);
+        }
         input::handle_mouse_input(&camera, &mut graph, &mut entities.get_mut_entity(terrain).unwrap().location, color, height);
         render::draw_all(&camera, &graph, &entities, &blocks);
         collisions::n_body_collisions(&mut entities, &graph, &camera, terrain);
-        // camera.show_view();
+        camera.show_view();
         camera.update(entities.get_entity(player).unwrap().location.position, 0.4);
         macroquad::window::next_frame().await
 

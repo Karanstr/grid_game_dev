@@ -197,7 +197,8 @@ impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
                     *remapped.get(&old_kids[3]).unwrap()
                 ]);
                 remapped.insert(pointer, self.add_node(new_node));
-            } else { self.nodes.add_ref(*remapped.get(&pointer).unwrap()); }
+            }
+            self.nodes.add_ref(*remapped.get(&pointer).unwrap()).unwrap();
         }
         *remapped.get(&start).unwrap()
     }
@@ -214,3 +215,4 @@ pub fn bfs_nodes<N: Node>(nodes:&Vec<N>, start:Index, last_leaf:usize) -> Vec<In
     }
     bfs_indexes
 }
+

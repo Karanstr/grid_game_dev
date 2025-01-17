@@ -107,7 +107,8 @@ pub mod output {
 
 }
 
-
+use macroquad::shapes::{draw_rectangle, draw_rectangle_lines, draw_line};
+use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
     pub aabb : AABB,
     scale_zoom: f32,
@@ -140,7 +141,7 @@ impl Camera {
     fn zoom(&self) -> f32 { self.zoom * self.scale_zoom }
 
     pub fn show_view(&self) {
-        self.outline_bounds(self.aabb, 2., WHITE);
+        self.outline_bounds(self.aabb, 0.05, WHITE);
     }
 
     fn lerp_position(&mut self, position:Vec2, smoothing:f32) {
