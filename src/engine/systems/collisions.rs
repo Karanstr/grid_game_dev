@@ -88,7 +88,6 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                 entity.location.position.y = -0.5;
                 dbg!("FIXED! (You better actually fix me)");
             }
-            if ticks_to_action < 0. { dbg!("Backwards"); }
         }
         tick_max -= ticks_to_action;
         if hits.is_empty() { break }
@@ -108,7 +107,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
             }
         }
     }
-    let drag_multiplier = 0.9;
+    let drag_multiplier = 0.95;
     for entity in &mut entities.entities { entity.velocity *= drag_multiplier }
 }
 
@@ -181,7 +180,6 @@ fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, 
         (false, true) if ticks.y == 0. => { ticks.x },
         _ => { ticks.min_element() },
     };
-    if ticks_to_hit < 0. { dbg!("Backwards"); }
     if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { None }
     else { Some(ticks_to_hit) }
 }
@@ -335,6 +333,8 @@ fn is_ignore(index:Index) -> bool {
     *index == 0 || *index == 2
 }
 
+//Compares configuration to velocity to determine which walls you're allowed to hit
+//(A corner on the top of a block can't hit a wall below it, the block is in the way)
 pub fn hittable_walls(velocity:Vec2, configuration:Configurations) -> BVec2 {
     let (x_check, y_check) = match configuration {
         Configurations::TopLeft => {
@@ -364,6 +364,7 @@ pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
     }
 }
 
+//Uses configuration to decide which cell you're hitting while moving along a single axis.
 pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
     if direction == Vec2::ZERO { dbg!("AHHH"); }
     let clamped: Vec2 = direction.signum().max(Vec2::ZERO);

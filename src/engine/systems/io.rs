@@ -61,53 +61,38 @@ pub mod output {
     pub mod render {
         use super::*;
         
-        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette) {
-            let mut locations_to_draw = Vec::new();
+        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
             for entity in entities.entities.iter() {
                 let location = entity.location;
                 if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    locations_to_draw.push(location.clone());
+                    draw(camera, graph, location, entity.rotation, blocks, outline);
                 }
-            }
-            for location in locations_to_draw {
-                draw(camera, graph, &location, blocks);
             }
         }
     
-        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, location:&Location, blocks:&BlockPalette) {
+        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, location:Location, rotation:f32, blocks:&BlockPalette, outline:bool) {
             let grid_length = bounds::cell_length(location.pointer.height);
             let grid_top_left = location.position - grid_length / 2.;
-            camera.outline_vec_rectangle(
-                grid_top_left,
-                grid_length,
-                0.03,
-                WHITE
-            );
-            let object_top_left = location.position - grid_length / 2.;
             let leaves = graph.dfs_leave_cells(location.pointer);
             for leaf in leaves {
                 let color = blocks.blocks[*leaf.pointer.pointer].color; 
-                let cell_top_left = object_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height);
+                let cell_top_left = grid_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height);
                 if 0 != *leaf.pointer.pointer{
-                    camera.draw_vec_rectangle(
-                    cell_top_left,
-                    bounds::cell_length(leaf.pointer.height),
-                    color
+                    camera.draw_rotated_rectangle(cell_top_left, 
+                        bounds::cell_length(leaf.pointer.height), 
+                        rotation, 
+                        color
                     );
                 }
-                camera.outline_vec_rectangle(
-                cell_top_left,
-                bounds::cell_length(leaf.pointer.height),
-                0.03,
-                WHITE
-                );
+                
             }
         }
+    
     }
 
 }
 
-use macroquad::shapes::{draw_rectangle, draw_rectangle_lines, draw_line};
+use macroquad::shapes::{draw_rectangle, draw_rectangle_lines, draw_line, draw_triangle};
 use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
     pub aabb : AABB,
@@ -115,6 +100,7 @@ pub struct Camera {
     zoom:f32,
     screen_percentage: f32,
 }
+#[allow(dead_code)]
 impl Camera {
     pub fn new(aabb:AABB, screen_percentage:f32) -> Self {
         let scale_zoom = (Vec2::from(screen_size()) * screen_percentage).min_element() / (2. * aabb.radius().min_element());
@@ -174,7 +160,8 @@ impl Camera {
         let len = length * self.zoom();
         draw_rectangle_lines(pos.x, pos.y, len.x, len.y, line_width*self.zoom(), color);
     }
-
+    
+    #[allow(dead_code)]
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
@@ -184,5 +171,40 @@ impl Camera {
     pub fn outline_bounds(&self, bounds:AABB, line_width:f32, color:Color) {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
+
+    pub fn draw_rotated_rectangle(&self, position: Vec2, length: Vec2, angle: f32, color: Color) {
+        let pos = self.world_to_screen(position + length / 2.);
+        let len = length * self.zoom();
+        let half_len = len / 2.0;
+        
+        // Calculate the four corners of the rotated rectangle
+        let cos_angle = angle.cos();
+        let sin_angle = angle.sin();
+        
+        let corners = [
+            Vec2::new(-half_len.x, -half_len.y),
+            Vec2::new(half_len.x, -half_len.y),
+            Vec2::new(half_len.x, half_len.y),
+            Vec2::new(-half_len.x, half_len.y),
+        ].map(|corner| {
+            Vec2::new(
+                corner.x * cos_angle - corner.y * sin_angle + pos.x,
+                corner.x * sin_angle + corner.y * cos_angle + pos.y
+            )
+        });
+
+        draw_triangle(
+            corners[0],
+            corners[1],
+            corners[2],
+            color
+        );
+        draw_triangle(
+            corners[0],
+            corners[2],
+            corners[3],
+            color
+        );
+    }
 
 }

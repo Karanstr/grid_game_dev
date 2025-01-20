@@ -24,11 +24,36 @@ pub struct Location {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ID(pub u32);
-#[derive(new)]
 pub struct Entity {
     id : ID,
     location: Location,
+    forward: Vec2,
+    rotation: f32,
     velocity: Vec2,
+}
+impl Entity {
+    pub fn new(id:ID, location:Location, orientation:f32, velocity:Vec2) -> Self {
+        Self { 
+            id, 
+            location, 
+            forward: Vec2::from_angle(orientation),
+            rotation: orientation,
+            velocity
+        }
+    }
+    pub fn rel_rotate(&mut self, angle:f32) {
+        let cos = angle.cos();
+        let sin = angle.sin();
+        self.forward.x = self.forward.x * cos - self.forward.y * sin;
+        self.forward.y = self.forward.x * sin + self.forward.y * cos;
+        self.forward = self.forward.normalize();
+        self.rotation = self.forward.y.atan2(self.forward.x);
+    }
+    pub fn set_rotation(&mut self, angle:f32) { 
+        self.forward = Vec2::from_angle(angle);
+        self.rotation = angle;
+    }
+    pub fn move_forward(&mut self, speed:f32) { self.velocity += self.forward * speed }
 }
 #[derive(new)]
 pub struct EntityPool {
@@ -38,9 +63,9 @@ pub struct EntityPool {
     id_counter: u32,
 }
 impl EntityPool {
-    fn add_entity(&mut self, location:Location, velocity:Vec2) -> ID {
+    fn add_entity(&mut self, location:Location, orientation:f32, velocity:Vec2) -> ID {
         self.id_counter += 1;
-        self.entities.push(Entity::new(ID(self.id_counter), location, velocity));
+        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, velocity));
         ID(self.id_counter)
     }
     fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
@@ -63,28 +88,34 @@ async fn main() {
     let world_pointer = if string.len() == 0 { graph.get_root(0, 4)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
     let terrain = entities.add_entity(
-        Location::new(
-            world_pointer,
-            Vec2::new(0., 0.)
-        ), Vec2::ZERO
+        Location::new(world_pointer, Vec2::new(0., 0.)),
+        0.,
+        Vec2::ZERO
     );
     let player = entities.add_entity(
         Location::new(
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
+        0.,
         Vec2::ZERO,
     );
     let mut color = 0;
     let mut height = 0;
     loop {
-        // Change this to an input module
         let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
-        if is_key_down(KeyCode::W) { player_entity.velocity.y -= speed; }
-        if is_key_down(KeyCode::S) { player_entity.velocity.y += speed; }
-        if is_key_down(KeyCode::A) { player_entity.velocity.x -= speed; }
-        if is_key_down(KeyCode::D) { player_entity.velocity.x += speed; }
+        let rot_speed = 0.1;
+        if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
+        if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
+        if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
+        if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
+        // let jump_impulse = 0.2;
+        // let gravity = Vec2::new(0., 0.009);
+        // player_entity.velocity += gravity;
+        // if is_key_pressed(KeyCode::W) { player_entity.velocity.y -= jump_impulse; }
+        // if is_key_down(KeyCode::A) { player_entity.velocity.x -= speed; }
+        // if is_key_down(KeyCode::D) { player_entity.velocity.x += speed; }
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
@@ -97,9 +128,15 @@ async fn main() {
             entities.get_mut_entity(terrain).unwrap().location.pointer = graph.load_object_json(save_state);
         }
         input::handle_mouse_input(&camera, &mut graph, &mut entities.get_mut_entity(terrain).unwrap().location, color, height);
-        render::draw_all(&camera, &graph, &entities, &blocks);
+        render::draw_all(&camera, &graph, &entities, &blocks, false);
+        let player_entity = entities.get_mut_entity(player).unwrap();
+        camera.draw_vec_line(
+            player_entity.location.position,
+            player_entity.location.position + player_entity.forward / 2.,
+            0.05, WHITE
+        );
         collisions::n_body_collisions(&mut entities, &graph, &camera, terrain);
-        camera.show_view();
+        // camera.show_view();
         camera.update(entities.get_entity(player).unwrap().location.position, 0.4);
         macroquad::window::next_frame().await
 

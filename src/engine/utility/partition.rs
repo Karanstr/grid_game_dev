@@ -3,7 +3,9 @@ use super::*;
 pub mod grid {
     use super::*;
     pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
-    pub const LIM_OFFSET: f32 = 2. / 0x1000 as f32;
+    //Value loosely tuned to prevent both phasing and sticking on corners
+    //Used to sample area around a point to determine what cell(s) it's in
+    pub const LIM_OFFSET: f32 = 2. / 0xFFF as f32;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct ZorderPath {
@@ -84,7 +86,7 @@ pub mod grid {
         }
 
         pub fn cells_intersecting_aabb(aabb:AABB, max_depth: u32) -> Vec<(u32, u32)> {
-        todo!()
+            todo!()
         }
 
     }
