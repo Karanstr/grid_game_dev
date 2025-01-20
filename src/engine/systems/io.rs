@@ -61,16 +61,16 @@ pub mod output {
     pub mod render {
         use super::*;
         
-        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
+        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette) {
             for entity in entities.entities.iter() {
                 let location = entity.location;
                 if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(camera, graph, entity, blocks, outline);
+                    draw(camera, graph, entity, blocks);
                 }
             }
         }
     
-        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entity:&Entity, blocks:&BlockPalette, outline:bool) {
+        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entity:&Entity, blocks:&BlockPalette) {
             let grid_length = bounds::cell_length(entity.location.pointer.height);
             let grid_top_left = entity.location.position - grid_length / 2.;
             let grid_center = entity.location.position;
@@ -81,18 +81,17 @@ pub mod output {
                     let color = blocks.blocks[*leaf.pointer.pointer].color; 
                     let length = bounds::cell_length(leaf.pointer.height);
                     let center = grid_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height) + length / 2.;
-                    let mut origin_center = center - grid_center;
-                    origin_center.x = origin_center.x * angle.x - origin_center.y * angle.y;
-                    origin_center.y = origin_center.x * angle.y + origin_center.y * angle.x;
-                    let cell_center = grid_center + origin_center;
+                    let origin_center = center - grid_center;
+                    let rotated = Vec2::new(
+                        origin_center.x * angle.x - origin_center.y * angle.y,
+                        origin_center.x * angle.y + origin_center.y * angle.x
+                    );
+                    let cell_center = grid_center + rotated;
                     camera.draw_rotated_rectangle(cell_center, length, entity.rotation, color);
                 }
-                
             }
         }
-    
     }
-
 }
 
 use macroquad::shapes::{draw_rectangle, draw_rectangle_lines, draw_line, draw_triangle};

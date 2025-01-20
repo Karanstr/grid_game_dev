@@ -43,9 +43,11 @@ impl Entity {
     pub fn rel_rotate(&mut self, angle:f32) {
         let cos = angle.cos();
         let sin = angle.sin();
-        self.forward.x = self.forward.x * cos - self.forward.y * sin;
-        self.forward.y = self.forward.x * sin + self.forward.y * cos;
-        self.forward = self.forward.normalize();
+        let new_forward = Vec2::new(
+            self.forward.x * cos - self.forward.y * sin,
+            self.forward.x * sin + self.forward.y * cos
+        ).normalize();
+        self.forward = new_forward;
         self.rotation = self.forward.y.atan2(self.forward.x);
     }
     pub fn set_rotation(&mut self, angle:f32) { 
@@ -83,33 +85,34 @@ async fn main() {
     let mut graph = SparseDirectedGraph::<engine::graph::BasicNode>::new(4);
     let blocks = BlockPalette::new();
 
-    // let string = std::fs::read_to_string("src/save.json").unwrap();
-    // let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
-    // else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
-    let world_pointer = graph.get_root(0, 3);
+    let string = std::fs::read_to_string("src/save.json").unwrap();
+    let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
+    else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    // let world_pointer = graph.get_root(0, 3);
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         0.,
         Vec2::ZERO
     );
-    let player = entities.add_entity(
-        Location::new(
-            graph.get_root(3, 0),
-            Vec2::new(0., 0.)
-        ),
-        0.,
-        Vec2::ZERO,
-    );
+    // let player = entities.add_entity(
+    //     Location::new(
+    //         graph.get_root(3, 0),
+    //         Vec2::new(0., 0.)
+    //     ),
+    //     0.,
+    //     Vec2::ZERO,
+    // );
     let mut color = 0;
     let mut height = 0;
     loop {
-        let player_entity = entities.get_mut_entity(player).unwrap();
+        // let player_entity = entities.get_mut_entity(player).unwrap();
+        let terrain_entity = entities.get_mut_entity(terrain).unwrap();
         let speed = 0.01;
         let rot_speed = 0.1;
-        if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
-        if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
-        if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
-        if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
+        if is_key_down(KeyCode::A) { terrain_entity.rel_rotate(-rot_speed); }
+        if is_key_down(KeyCode::D) { terrain_entity.rel_rotate(rot_speed); }
+        // if is_key_down(KeyCode::W) { terrain_entity.move_forward(speed); }
+        // if is_key_down(KeyCode::S) { terrain_entity.move_forward(-speed); }
         // let jump_impulse = 0.2;
         // let gravity = Vec2::new(0., 0.009);
         // player_entity.velocity += gravity;
@@ -137,16 +140,16 @@ async fn main() {
             graph.mass_remove(&old_removal);
         }
         input::handle_mouse_input(&camera, &mut graph, &mut entities.get_mut_entity(terrain).unwrap().location, color, height);
-        render::draw_all(&camera, &graph, &entities, &blocks, false);
-        let player_entity = entities.get_mut_entity(player).unwrap();
-        camera.draw_vec_line(
-            player_entity.location.position,
-            player_entity.location.position + player_entity.forward / 2.,
-            0.05, WHITE
-        );
+        render::draw_all(&camera, &graph, &entities, &blocks);
+        // let player_entity = entities.get_mut_entity(player).unwrap();
+        // camera.draw_vec_line(
+        //     player_entity.location.position,
+        //     player_entity.location.position + player_entity.forward / 2.,
+        //     0.05, WHITE
+        // );
         collisions::n_body_collisions(&mut entities, &graph, &camera, terrain);
         // camera.show_view();
-        camera.update(entities.get_entity(player).unwrap().location.position, 0.4);
+        // camera.update(entities.get_entity(player).unwrap().location.position, 0.4);
         macroquad::window::next_frame().await
 
     }
