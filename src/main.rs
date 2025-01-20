@@ -13,7 +13,6 @@ mod imports {
     pub use macroquad::input::*;
     pub use derive_new::new;
 }
-
 use imports::*;
 
 #[derive(Debug, Clone, Copy, new)]
@@ -84,9 +83,10 @@ async fn main() {
     let mut graph = SparseDirectedGraph::<engine::graph::BasicNode>::new(4);
     let blocks = BlockPalette::new();
 
-    let string = std::fs::read_to_string("src/save.json").unwrap();
-    let world_pointer = if string.len() == 0 { graph.get_root(0, 4)}
-    else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    // let string = std::fs::read_to_string("src/save.json").unwrap();
+    // let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
+    // else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    let world_pointer = graph.get_root(0, 3);
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         0.,
@@ -120,12 +120,21 @@ async fn main() {
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
         if is_key_pressed(KeyCode::K) {
-            let save_state = graph.save_object_json(entities.get_entity(terrain).unwrap().location.pointer);
-            std::fs::write("src/save.json", save_state).unwrap();
+            std::fs::write(
+                "src/save.json", 
+                graph.save_object_json(entities.get_entity(terrain).unwrap().location.pointer)
+            ).unwrap();
         }
         if is_key_pressed(KeyCode::L) {
-            let save_state = std::fs::read_to_string("src/save.json").unwrap();
-            entities.get_mut_entity(terrain).unwrap().location.pointer = graph.load_object_json(save_state);
+            let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+            let new_pointer = graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap());
+            let old_removal = engine::graph::bfs_nodes(
+                &graph.nodes.internal_memory(),
+                terrain_entity.location.pointer.pointer,
+                3
+            );
+            terrain_entity.location.pointer = new_pointer;
+            graph.mass_remove(&old_removal);
         }
         input::handle_mouse_input(&camera, &mut graph, &mut entities.get_mut_entity(terrain).unwrap().location, color, height);
         render::draw_all(&camera, &graph, &entities, &blocks, false);

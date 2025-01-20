@@ -98,7 +98,7 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
         } else { return Err(AccessError::OperationFailed) }
         let trail = self.get_trail(start.pointer, path);
         let mut cur_pointer = ExternalPointer::new(new_pointer, start.height - path.len() as u32);
-        let mut old_parent = new_pointer;
+        let mut old_parent = start.pointer;
         let mut early_exit = false;
         let mut early_node = None;
         for cur_depth in (0 .. path.len()).rev() {
@@ -130,13 +130,17 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
             self.index_lookup.insert(node, old_parent);
         } 
         for index in bfs_nodes(self.nodes.internal_memory(), cur_pointer.pointer, last_leaf) {  self.nodes.add_ref(index).unwrap() }
-        for index in old_nodes {
-            self.nodes.remove_ref(index).unwrap();
-            if self.nodes.status(index).unwrap().get() == 1 && !self.is_leaf(index) {
-                self.index_lookup.remove(&self.nodes.remove_ref(index).unwrap().unwrap());
+        self.mass_remove(&old_nodes);
+        if early_exit { Ok(start) } else { Ok(cur_pointer) }
+    }
+
+    pub fn mass_remove(&mut self, indices:&[Index]) {
+        for index in indices {
+            self.nodes.remove_ref(*index).unwrap();
+            if self.nodes.status(*index).unwrap().get() == 1 && !self.is_leaf(*index) {
+                self.index_lookup.remove(&self.nodes.remove_ref(*index).unwrap().unwrap());
             }
         }
-        if early_exit { Ok(start) } else { Ok(cur_pointer) }
     }
 
     //Public functions used for reading
@@ -187,7 +191,7 @@ impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
     fn clone_graph<N : Node> (&mut self, from:&Vec<N>, start:Index) -> Index {
         let mut remapped = HashMap::new();
         for i in 0 .. self.leaf_count as usize { remapped.insert(Index(i), Index(i)); }
-        for pointer in bfs_nodes(from, start, self.leaf_count as usize).into_iter().rev() {
+        for pointer in bfs_nodes(from, start, self.leaf_count as usize - 1).into_iter().rev() {
             if !remapped.contains_key(&pointer) {
                 let old_kids = &from[*pointer].children();
                 let new_node = T::new([

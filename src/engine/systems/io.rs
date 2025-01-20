@@ -65,24 +65,27 @@ pub mod output {
             for entity in entities.entities.iter() {
                 let location = entity.location;
                 if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(camera, graph, location, entity.rotation, blocks, outline);
+                    draw(camera, graph, entity, blocks, outline);
                 }
             }
         }
     
-        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, location:Location, rotation:f32, blocks:&BlockPalette, outline:bool) {
-            let grid_length = bounds::cell_length(location.pointer.height);
-            let grid_top_left = location.position - grid_length / 2.;
-            let leaves = graph.dfs_leave_cells(location.pointer);
+        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entity:&Entity, blocks:&BlockPalette, outline:bool) {
+            let grid_length = bounds::cell_length(entity.location.pointer.height);
+            let grid_top_left = entity.location.position - grid_length / 2.;
+            let grid_center = entity.location.position;
+            let leaves = graph.dfs_leave_cells(entity.location.pointer);
+            let angle = entity.forward;
             for leaf in leaves {
-                let color = blocks.blocks[*leaf.pointer.pointer].color; 
-                let cell_top_left = grid_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height);
-                if 0 != *leaf.pointer.pointer{
-                    camera.draw_rotated_rectangle(cell_top_left, 
-                        bounds::cell_length(leaf.pointer.height), 
-                        rotation, 
-                        color
-                    );
+                if 0 != *leaf.pointer.pointer {
+                    let color = blocks.blocks[*leaf.pointer.pointer].color; 
+                    let length = bounds::cell_length(leaf.pointer.height);
+                    let center = grid_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height) + length / 2.;
+                    let mut origin_center = center - grid_center;
+                    origin_center.x = origin_center.x * angle.x - origin_center.y * angle.y;
+                    origin_center.y = origin_center.x * angle.y + origin_center.y * angle.x;
+                    let cell_center = grid_center + origin_center;
+                    camera.draw_rotated_rectangle(cell_center, length, entity.rotation, color);
                 }
                 
             }
@@ -172,8 +175,8 @@ impl Camera {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
 
-    pub fn draw_rotated_rectangle(&self, position: Vec2, length: Vec2, angle: f32, color: Color) {
-        let pos = self.world_to_screen(position + length / 2.);
+    pub fn draw_rotated_rectangle(&self, center: Vec2, length: Vec2, angle: f32, color: Color) {
+        let pos = self.world_to_screen(center);
         let len = length * self.zoom();
         let half_len = len / 2.0;
         
