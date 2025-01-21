@@ -2,33 +2,10 @@ use super::*;
 
 pub mod input {
     use super::*;
-    //I don't like this, use set_grid_cell directly?
-    pub fn handle_mouse_input<T:GraphNode>(camera:&Camera, graph:&mut SparseDirectedGraph<T>, location:&mut Location, color: usize, height: u32) {
-        if is_mouse_button_down(MouseButton::Left) {
-            let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
-            let new_pointer = ExternalPointer::new(Index(color), height);
-            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, *location, graph) {
-                location.pointer = pointer;
-            }
-        }
-    }
-
     use editing::*;
     mod editing {
         use super::*;
-        pub fn set_grid_cell<T : GraphNode + std::hash::Hash + Eq>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
-            let height = to.height;
-            if height <= location.pointer.height {
-                let cell = gate::point_to_cells(location, height, world_point)[0];
-                if let Some(cell) = cell {
-                    let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-                    if let Ok(pointer) = graph.set_node(location.pointer, &path.steps(), to.pointer) {
-                        return Some(pointer)
-                    } else {dbg!("Write failure. That's really bad.");}
-                }
-            }
-            None
-        }
+        
 
         /*
         pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
@@ -61,33 +38,28 @@ pub mod output {
     pub mod render {
         use super::*;
         
-        pub fn draw_all<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entities:&EntityPool, blocks:&BlockPalette) {
+        pub fn draw_all(camera:&Camera, entities:&EntityPool, blocks:&BlockPalette) {
             for entity in entities.entities.iter() {
                 let location = entity.location;
                 if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(camera, graph, entity, blocks);
+                    draw(camera, entity, blocks);
                 }
             }
         }
     
-        pub fn draw<T:GraphNode>(camera:&Camera, graph:&SparseDirectedGraph<T>, entity:&Entity, blocks:&BlockPalette) {
-            let grid_length = bounds::cell_length(entity.location.pointer.height);
-            let grid_top_left = entity.location.position - grid_length / 2.;
-            let grid_center = entity.location.position;
-            let leaves = graph.dfs_leave_cells(entity.location.pointer);
+        pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
             let angle = entity.forward;
-            for leaf in leaves {
-                if 0 != *leaf.pointer.pointer {
-                    let color = blocks.blocks[*leaf.pointer.pointer].color; 
-                    let length = bounds::cell_length(leaf.pointer.height);
-                    let center = grid_top_left + bounds::top_left_corner(leaf.cell, leaf.pointer.height) + length / 2.;
-                    let origin_center = center - grid_center;
-                    let rotated = Vec2::new(
-                        origin_center.x * angle.x - origin_center.y * angle.y,
-                        origin_center.x * angle.y + origin_center.y * angle.x
-                    );
-                    let cell_center = grid_center + rotated;
-                    camera.draw_rotated_rectangle(cell_center, length, entity.rotation, color);
+            for cell in entity.cells.iter() {
+                if *cell.pointer.pointer != 0 {
+                    let color = blocks.blocks[*cell.pointer.pointer as usize].color;
+                    let rotated_points:Vec<Vec2> = cell.corners.iter().map(|(point, _)| {
+                        Vec2::new(
+                            point.x * angle.x - point.y * angle.y,
+                            point.x * angle.y + point.y * angle.x
+                        ) + entity.location.position
+                    }).collect();
+
+                    camera.draw_rectangle_from_corners(&rotated_points, color);
                 }
             }
         }
@@ -151,6 +123,7 @@ impl Camera {
     }
 }
 impl Camera {
+    #[allow(dead_code)]
     pub fn draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {
         let pos = self.world_to_screen(position);
         let len = length * self.zoom();
@@ -174,27 +147,8 @@ impl Camera {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
 
-    pub fn draw_rotated_rectangle(&self, center: Vec2, length: Vec2, angle: f32, color: Color) {
-        let pos = self.world_to_screen(center);
-        let len = length * self.zoom();
-        let half_len = len / 2.0;
-        
-        // Calculate the four corners of the rotated rectangle
-        let cos_angle = angle.cos();
-        let sin_angle = angle.sin();
-        
-        let corners = [
-            Vec2::new(-half_len.x, -half_len.y),
-            Vec2::new(half_len.x, -half_len.y),
-            Vec2::new(half_len.x, half_len.y),
-            Vec2::new(-half_len.x, half_len.y),
-        ].map(|corner| {
-            Vec2::new(
-                corner.x * cos_angle - corner.y * sin_angle + pos.x,
-                corner.x * sin_angle + corner.y * cos_angle + pos.y
-            )
-        });
-
+    pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color) {
+        let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
         draw_triangle(
             corners[0],
             corners[1],
@@ -202,7 +156,7 @@ impl Camera {
             color
         );
         draw_triangle(
-            corners[0],
+            corners[1],
             corners[2],
             corners[3],
             color

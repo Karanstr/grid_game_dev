@@ -195,28 +195,21 @@ pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
 }
 
 pub fn particles<T:GraphNode>(graph:&SparseDirectedGraph<T>, object1:&Entity, object2:&Entity, camera:&Camera ) -> BinaryHeap<Reverse<Particle>> {
-    let all_corners1 = corner_handling::tree_corners(graph, object1.location);
-    let all_corners2 = corner_handling::tree_corners(graph, object2.location);
-    let mut result = BinaryHeap::from(corner_handling::cull_and_fill_corners(graph, all_corners1, object1, object2, camera));
-    result.extend(corner_handling::cull_and_fill_corners(graph, all_corners2, object2, object1, camera));
+    let mut result = BinaryHeap::from(corner_handling::actionable_corners(graph, &object1.cells, object1, object2, camera));
+    result.extend(corner_handling::actionable_corners(graph, &object2.cells, object2, object1, camera));
     result
 }
 
 pub mod corner_handling {
     use super::*;
 
-    #[derive(Debug, new)]
-    pub struct Corner {
-        pub position:Vec2,
-        pub configuration:Configurations,
-    }
-    impl Corner {
-        pub fn to_particle(&self, velocity:Vec2, owner:ID, hitting:ID) -> Particle {
-            Particle::new(self.position, velocity, self.configuration, owner, hitting)
-        }
+    #[derive(new)]
+    pub struct CellCorners {
+        pub pointer : ExternalPointer,
+        pub corners : [(Vec2, bool); 4]
     }
 
-    pub fn cell_corner_mask<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, zorder:ZorderPath) -> u8 {
+    fn cell_corner_mask<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, zorder:ZorderPath) -> u8 {
             let mut exposed_mask = 0b1111;
             //Replace these with Configurations?
             let checks = [
@@ -251,46 +244,53 @@ pub mod corner_handling {
             exposed_mask
         }
     
-    pub fn tree_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, location:Location) -> Vec<Corner> {
-            let leaves = graph.dfs_leave_cells(location.pointer);
+    //Returns all corners of each block in the tree and whether that corner is exposed
+    //The corners are centered around the center of the tree
+    pub fn tree_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer) -> Vec<CellCorners> {
+            let leaves = graph.dfs_leaf_cells(start);
             let mut corners = Vec::new();
-            let offset = location.position - bounds::cell_length(location.pointer.height) / 2.;
+            let half_length = bounds::cell_length(start.height) / 2.;
             for cell in leaves {
-                if is_ignore(cell.pointer.pointer) { continue }
-                let zorder = ZorderPath::from_cell(cell.cell, location.pointer.height);
-                let corner_mask = cell_corner_mask(graph, location.pointer, zorder);
-                let top_left_corner = bounds::top_left_corner(cell.cell, cell.pointer.height);
+                let zorder = ZorderPath::from_cell(cell.cell, start.height);
+                let corner_mask = if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(graph, start, zorder) };
+                let top_left_corner = bounds::top_left_corner(cell.cell, cell.pointer.height) - half_length;
                 let cell_length = bounds::cell_length(cell.pointer.height);
-                for i in 0 .. 4 {
-                    if corner_mask & 1 << i != 0 {
-                        corners.push(
-                            Corner::new(offset + top_left_corner + cell_length * IVec2::new(i & 1, i >> 1).as_vec2(), Configurations::from_index(i as usize))
-                        );
-                    }
-                }
+                corners.push( CellCorners::new(
+                    cell.pointer,
+                    [
+                        (top_left_corner, corner_mask & 1 != 0),
+                        (top_left_corner + Vec2::new(cell_length.x, 0.), corner_mask & 0b10 != 0),
+                        (top_left_corner + Vec2::new(0., cell_length.y), corner_mask & 0b100 != 0),
+                        (top_left_corner + cell_length, corner_mask & 0b1000 != 0),
+                    ]
+                ));
             }
             corners
         }
     
     //Should be able to cull even more based on hang_check principle
-    pub fn cull_and_fill_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, corners:Vec<Corner>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
-            let mut culled_corners = Vec::new();
-            let rel_velocity = owner.velocity - hitting.velocity;
-            let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-            for corner in corners.into_iter() {
-                let hittable = hittable_walls(rel_velocity, corner.configuration);
-                if hittable == BVec2::FALSE { continue }
-                let point_aabb = AABB::new(corner.position, Vec2::ZERO).expand(rel_velocity);
+    pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, corners:&Vec<CellCorners>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
+        let mut culled_corners = Vec::new();
+        let rel_velocity = owner.velocity - hitting.velocity;
+        let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
+        for cell_corners in corners {
+            for (i, (corner, is_exposed)) in cell_corners.corners.iter().enumerate() {
+                if !is_exposed { continue }
+                let configuration = Configurations::from_index(i);
+                if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
+                let corner = *corner + owner.location.position;
+                let point_aabb = AABB::new(corner, Vec2::ZERO).expand(rel_velocity);
                 if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); continue }
                 else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
-                let mut particle = corner.to_particle(rel_velocity, owner.id, hitting.id);
-                if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, corner.position)[configured_direction(-rel_velocity, corner.configuration)] {
+                let mut particle = Particle::new(corner, rel_velocity, configuration, owner.id, hitting.id);
+                if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, corner)[configured_direction(-rel_velocity, configuration)] {
                     particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));
                 }
                 culled_corners.push(Reverse(particle));
             }
-            culled_corners
         }
+        culled_corners
+    }
     
 }
 
@@ -299,9 +299,7 @@ fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Co
         let potential_hits = possibly_hit_walls & hittable_walls(velocity, configuration);
         if potential_hits == BVec2::TRUE {
             slide_check(velocity, position_data)
-        } else {
-            potential_hits
-        }
+        } else { potential_hits }
     };
     match hit_walls {
         BVec2::TRUE => { Some(mag_slide_check(velocity)) }
@@ -365,6 +363,8 @@ pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
 }
 
 //Uses configuration to decide which cell you're hitting while moving along a single axis.
+//We can assume a corner would've been culled if it is irrelevant
+//This meaning we only care about corners on the y wall and the x wall
 pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
     if direction == Vec2::ZERO { dbg!("AHHH"); }
     let clamped: Vec2 = direction.signum().max(Vec2::ZERO);

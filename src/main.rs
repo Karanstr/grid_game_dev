@@ -1,8 +1,9 @@
 mod engine;
 mod imports {
     use super::*;
-    pub use engine::graph::{SparseDirectedGraph, GraphNode, ExternalPointer, Index};
+    pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
     pub use engine::systems::io::{input, output::*, Camera};
+    pub use engine::systems::collisions::corner_handling::*;
     pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
     pub use engine::utility::partition::{AABB, grid::*};
     pub use super::{EntityPool, ID, Entity, Location};
@@ -29,15 +30,17 @@ pub struct Entity {
     forward: Vec2,
     rotation: f32,
     velocity: Vec2,
+    cells : Vec<CellCorners>,
 }
 impl Entity {
-    pub fn new(id:ID, location:Location, orientation:f32, velocity:Vec2) -> Self {
+    pub fn new(id:ID, location:Location, orientation:f32, velocity:Vec2, graph:&SparseDirectedGraph<engine::graph::BasicNode>) -> Self {
         Self { 
             id, 
             location, 
             forward: Vec2::from_angle(orientation),
             rotation: orientation,
-            velocity
+            velocity,
+            cells : crate::collisions::corner_handling::tree_corners(&graph, location.pointer),
         }
     }
     pub fn rel_rotate(&mut self, angle:f32) {
@@ -64,9 +67,9 @@ pub struct EntityPool {
     id_counter: u32,
 }
 impl EntityPool {
-    fn add_entity(&mut self, location:Location, orientation:f32, velocity:Vec2) -> ID {
+    fn add_entity(&mut self, location:Location, orientation:f32, velocity:Vec2, graph:&SparseDirectedGraph<BasicNode>) -> ID {
         self.id_counter += 1;
-        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, velocity));
+        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, velocity, graph));
         ID(self.id_counter)
     }
     fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
@@ -82,43 +85,54 @@ async fn main() {
     macroquad::window::request_new_screen_size(512., 512.);
     let mut entities = EntityPool::new();
     let mut camera = Camera::new( AABB::new(Vec2::ZERO, Vec2::splat(4.)), 0.9);
-    let mut graph = SparseDirectedGraph::<engine::graph::BasicNode>::new(4);
+    let mut graph = SparseDirectedGraph::<BasicNode>::new(4);
     let blocks = BlockPalette::new();
-
     let string = std::fs::read_to_string("src/save.json").unwrap();
     let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
-    // let world_pointer = graph.get_root(0, 3);
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         0.,
-        Vec2::ZERO
+        Vec2::ZERO,
+        &graph
     );
-    // let player = entities.add_entity(
-    //     Location::new(
-    //         graph.get_root(3, 0),
-    //         Vec2::new(0., 0.)
-    //     ),
-    //     0.,
-    //     Vec2::ZERO,
-    // );
+    let player = entities.add_entity(
+        Location::new(
+            graph.get_root(3, 0),
+            Vec2::new(0., 0.)
+        ),
+        0.,
+        Vec2::ZERO,
+        &graph
+    );
     let mut color = 0;
     let mut height = 0;
     loop {
-        // let player_entity = entities.get_mut_entity(player).unwrap();
-        let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+        let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
         let rot_speed = 0.1;
-        if is_key_down(KeyCode::A) { terrain_entity.rel_rotate(-rot_speed); }
-        if is_key_down(KeyCode::D) { terrain_entity.rel_rotate(rot_speed); }
-        // if is_key_down(KeyCode::W) { terrain_entity.move_forward(speed); }
-        // if is_key_down(KeyCode::S) { terrain_entity.move_forward(-speed); }
+        if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
+        if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
+        if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
+        if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
         // let jump_impulse = 0.2;
         // let gravity = Vec2::new(0., 0.009);
         // player_entity.velocity += gravity;
         // if is_key_pressed(KeyCode::W) { player_entity.velocity.y -= jump_impulse; }
         // if is_key_down(KeyCode::A) { player_entity.velocity.x -= speed; }
         // if is_key_down(KeyCode::D) { player_entity.velocity.x += speed; }
+        
+        if is_mouse_button_down(MouseButton::Left) {
+            let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+            let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
+            let new_pointer = ExternalPointer::new(Index(color), height);
+            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location, &mut graph) {
+                terrain_entity.location.pointer = pointer;
+                terrain_entity.cells = collisions::corner_handling::tree_corners(&graph, pointer);
+            }
+        }
+        
+        
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
@@ -138,20 +152,35 @@ async fn main() {
             );
             terrain_entity.location.pointer = new_pointer;
             graph.mass_remove(&old_removal);
+            terrain_entity.cells = collisions::corner_handling::tree_corners(&graph, new_pointer);
         }
-        input::handle_mouse_input(&camera, &mut graph, &mut entities.get_mut_entity(terrain).unwrap().location, color, height);
-        render::draw_all(&camera, &graph, &entities, &blocks);
-        // let player_entity = entities.get_mut_entity(player).unwrap();
-        // camera.draw_vec_line(
-        //     player_entity.location.position,
-        //     player_entity.location.position + player_entity.forward / 2.,
-        //     0.05, WHITE
-        // );
+        render::draw_all(&camera, &entities, &blocks);
+        let player_entity = entities.get_mut_entity(player).unwrap();
+        camera.draw_vec_line(
+            player_entity.location.position,
+            player_entity.location.position + player_entity.forward / 2.,
+            0.05, WHITE
+        );
         collisions::n_body_collisions(&mut entities, &graph, &camera, terrain);
-        // camera.show_view();
-        // camera.update(entities.get_entity(player).unwrap().location.position, 0.4);
+        camera.show_view();
+        camera.update(entities.get_entity(player).unwrap().location.position, 0.1);
         macroquad::window::next_frame().await
 
     }
 
+}
+
+
+pub fn set_grid_cell<T : GraphNode>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
+    let height = to.height;
+    if height <= location.pointer.height {
+        let cell = gate::point_to_cells(location, height, world_point)[0];
+        if let Some(cell) = cell {
+            let path = ZorderPath::from_cell(cell, location.pointer.height - height);
+            if let Ok(pointer) = graph.set_node(location.pointer, &path.steps(), to.pointer) {
+                return Some(pointer)
+            } else {dbg!("Write failure. That's really bad.");}
+        }
+    }
+    None
 }

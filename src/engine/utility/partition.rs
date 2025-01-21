@@ -162,7 +162,7 @@ pub mod grid {
     }
 
     impl<T> SparseDirectedGraph<T> where T : GraphNode {
-        pub fn dfs_leave_cells(&self, start:ExternalPointer) -> Vec<CellData> {
+        pub fn dfs_leaf_cells(&self, start:ExternalPointer) -> Vec<CellData> {
             let mut stack = Vec::from([(start.pointer, ZorderPath::root())]);
             let mut leaves = Vec::new();
             while let Some((pointer, zorder)) = stack.pop() {
