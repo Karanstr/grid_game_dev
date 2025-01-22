@@ -267,11 +267,13 @@ pub mod corner_handling {
         let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
         //Rotate this based on things
         let to_be_rotated:Vec<CellCorners> = owner.cells.iter().filter(|cell| !is_ignore(cell.cell.pointer.pointer)).cloned().collect();
-        let rotated = gate::rotated_cell_corners(owner.forward, &to_be_rotated, owner.location);
-        for (index, cell_corners) in rotated.iter().enumerate() {
+        let rotated = gate::rotated_cell_corners(owner.forward, &to_be_rotated, owner.location, true);
+        let mut cur_point = 0;
+        for index in 0 .. to_be_rotated.len() {
             for i in 0 .. 4 {
-                let point = cell_corners[i];
                 if to_be_rotated[index].corners & (1 << i) == 0 { continue }
+                let point = rotated[cur_point];
+                cur_point += 1;
                 let configuration = Configurations::from_index(i);
                 if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
                 let point_aabb = AABB::new(point, Vec2::ZERO).expand(rel_velocity);

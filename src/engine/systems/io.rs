@@ -39,9 +39,9 @@ pub mod output {
     
         pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
             let corners_to_rotate: Vec<CellCorners> = entity.cells.iter().filter(|cell| *cell.cell.pointer.pointer != 0).cloned().collect();
-            let rotated_cells = gate::rotated_cell_corners(entity.forward, &corners_to_rotate, entity.location);
-            for (index, corners) in rotated_cells.iter().enumerate() {
-                    camera.draw_rectangle_from_corners(corners, blocks.blocks[*corners_to_rotate[index].cell.pointer.pointer as usize].color);
+            let rotated_points = gate::rotated_cell_corners(entity.forward, &corners_to_rotate, entity.location, false);
+            for index in 0..corners_to_rotate.len() {
+                    camera.draw_rectangle_from_corners(&rotated_points[index * 4 .. index * 4 + 4], blocks.blocks[*corners_to_rotate[index].cell.pointer.pointer as usize].color);
                 }
             }
     }
