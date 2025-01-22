@@ -2,7 +2,7 @@ mod engine;
 mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
-    pub use engine::systems::io::{input, output::*, Camera};
+    pub use engine::systems::io::{Camera,output::*};
     pub use engine::systems::collisions::corner_handling::*;
     pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
     pub use engine::utility::partition::{AABB, grid::*};
@@ -15,6 +15,8 @@ mod imports {
     pub use derive_new::new;
 }
 use imports::*;
+
+//Add a method which updates the location of an entity and handles corner recalculation
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Location {
@@ -121,7 +123,6 @@ async fn main() {
         // if is_key_pressed(KeyCode::W) { player_entity.velocity.y -= jump_impulse; }
         // if is_key_down(KeyCode::A) { player_entity.velocity.x -= speed; }
         // if is_key_down(KeyCode::D) { player_entity.velocity.x += speed; }
-        
         if is_mouse_button_down(MouseButton::Left) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
@@ -131,8 +132,6 @@ async fn main() {
                 terrain_entity.cells = collisions::corner_handling::tree_corners(&graph, pointer);
             }
         }
-        
-        
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
@@ -170,7 +169,7 @@ async fn main() {
 
 }
 
-
+//Put this somewhere proper.
 pub fn set_grid_cell<T : GraphNode>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {

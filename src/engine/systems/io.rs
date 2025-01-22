@@ -1,36 +1,26 @@
 use super::*;
 
-pub mod input {
-    use super::*;
-    use editing::*;
-    mod editing {
-        use super::*;
-        
-
-        /*
-        pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
-            let object = &mut self.objects[object_index];
-            //Prevent zorder overflow for now
-            if object.root.height == 15 { dbg!("We don't overflow around here"); return }
-            object.position += object.cell_length(0) * zorder_to_direction(direction as u32)/2.;
-            let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root.pointer).unwrap();
-            self.graph.swap_root(object.root.pointer, new_root);
-            object.root.pointer = new_root;
-            object.root.height += 1;
-        }
-
-        pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
-            let object = &mut self.objects[object_index];
-            if object.root.height == 0 { return }
-            object.position += object.cell_length(0) * -zorder_to_direction(preserve_direction as u32)/4.;
-            let new_root = self.graph.set_node(object.root.pointer, &[], self.graph.child(object.root.pointer, preserve_direction).unwrap()).unwrap();
-            self.graph.swap_root(object.root.pointer, new_root);
-            object.root.pointer = new_root;
-            object.root.height -= 1;
-        }*/
+    /*
+    pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
+        let object = &mut self.objects[object_index];
+        //Prevent zorder overflow for now
+        if object.root.height == 15 { dbg!("We don't overflow around here"); return }
+        object.position += object.cell_length(0) * zorder_to_direction(direction as u32)/2.;
+        let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root.pointer).unwrap();
+        self.graph.swap_root(object.root.pointer, new_root);
+        object.root.pointer = new_root;
+        object.root.height += 1;
     }
 
-}
+    pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
+        let object = &mut self.objects[object_index];
+        if object.root.height == 0 { return }
+        object.position += object.cell_length(0) * -zorder_to_direction(preserve_direction as u32)/4.;
+        let new_root = self.graph.set_node(object.root.pointer, &[], self.graph.child(object.root.pointer, preserve_direction).unwrap()).unwrap();
+        self.graph.swap_root(object.root.pointer, new_root);
+        object.root.pointer = new_root;
+        object.root.height -= 1;
+    }*/
 
 pub mod output {
     use super::*;
@@ -48,21 +38,12 @@ pub mod output {
         }
     
         pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
-            let angle = entity.forward;
-            for cell in entity.cells.iter() {
-                if *cell.pointer.pointer != 0 {
-                    let color = blocks.blocks[*cell.pointer.pointer as usize].color;
-                    let rotated_points:Vec<Vec2> = cell.corners.iter().map(|(point, _)| {
-                        Vec2::new(
-                            point.x * angle.x - point.y * angle.y,
-                            point.x * angle.y + point.y * angle.x
-                        ) + entity.location.position
-                    }).collect();
-
-                    camera.draw_rectangle_from_corners(&rotated_points, color);
+            let corners_to_rotate: Vec<CellCorners> = entity.cells.iter().filter(|cell| *cell.cell.pointer.pointer != 0).cloned().collect();
+            let rotated_cells = gate::rotated_cell_corners(entity.forward, &corners_to_rotate, entity.location);
+            for (index, corners) in rotated_cells.iter().enumerate() {
+                    camera.draw_rectangle_from_corners(corners, blocks.blocks[*corners_to_rotate[index].cell.pointer.pointer as usize].color);
                 }
             }
-        }
     }
 }
 

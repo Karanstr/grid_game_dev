@@ -159,6 +159,33 @@ pub mod grid {
             CellData::new(pointer, zorder.to_cell())
         }
 
+        pub fn rotated_cell_corners(angle:Vec2, cells:&[CellCorners], root_location:Location) -> Vec<[Vec2; 4]> {
+            let mut results = Vec::new();
+            let x_block = MIN_CELL_LENGTH.x * angle;
+            let y_block = {
+                let temp = MIN_CELL_LENGTH.y * angle;
+                Vec2::new(-temp.y, temp.x)
+            };
+            let entity_radius = bounds::cell_length(root_location.pointer.height) / 2.;
+            let starting_corner = root_location.position - Vec2::new(
+                entity_radius.x * angle.x - entity_radius.y * angle.y,
+                entity_radius.x * angle.y + entity_radius.y * angle.x
+            );
+
+            for cell in cells.iter() {
+                //Why is this divide by 2?
+                let scale = 2_i32.pow(cell.cell.pointer.height) as f32 / 2.;
+                let cell_start = starting_corner + (cell.cell.cell.x as f32 * x_block + cell.cell.cell.y as f32 * y_block) * scale;
+                results.push([
+                    cell_start,
+                    cell_start + x_block * scale,
+                    cell_start + y_block * scale,
+                    cell_start + (x_block + y_block) * scale,
+                ]);
+            }
+            results
+        }
+
     }
 
     impl<T> SparseDirectedGraph<T> where T : GraphNode {
