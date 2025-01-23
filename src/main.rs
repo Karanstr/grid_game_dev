@@ -3,11 +3,11 @@ mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
     pub use engine::systems::io::{Camera,output::*};
-    pub use engine::systems::collisions::corner_handling::*;
     pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
     pub use engine::utility::partition::{AABB, grid::*};
     pub use super::{EntityPool, ID, Entity, Location};
     pub use engine::systems::collisions;
+    pub use engine::systems::collisions::{Corners, corner_handling::*};
     pub use macroquad::color::colors::*;
     pub use engine::utility::blocks::*;
     pub use macroquad::color::Color;
@@ -15,6 +15,7 @@ mod imports {
     pub use derive_new::new;
 }
 use imports::*;
+use std::f32::consts::PI;
 
 //Add a method which updates the location of an entity and handles corner recalculation
 
@@ -24,6 +25,7 @@ pub struct Location {
     pub position: Vec2,
 }
 
+//Chunking in 256 to allow for storage in u8s
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ID(pub u32);
 pub struct Entity {
@@ -32,7 +34,7 @@ pub struct Entity {
     forward: Vec2,
     rotation: f32,
     velocity: Vec2,
-    cells : Vec<CellCorners>,
+    corners : Vec<Corners>,
 }
 impl Entity {
     pub fn new(id:ID, location:Location, orientation:f32, velocity:Vec2, graph:&SparseDirectedGraph<engine::graph::BasicNode>) -> Self {
@@ -42,7 +44,7 @@ impl Entity {
             forward: Vec2::from_angle(orientation),
             rotation: orientation,
             velocity,
-            cells : crate::collisions::corner_handling::tree_corners(&graph, location.pointer),
+            corners : tree_corners(graph, location.pointer),
         }
     }
     pub fn rel_rotate(&mut self, angle:f32) {
@@ -60,6 +62,7 @@ impl Entity {
         self.rotation = angle;
     }
     pub fn move_forward(&mut self, speed:f32) { self.velocity += self.forward * speed }
+    pub fn move_perpendicular(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
 }
 #[derive(new)]
 pub struct EntityPool {
@@ -94,7 +97,7 @@ async fn main() {
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        0.,
+        PI/8.,
         Vec2::ZERO,
         &graph
     );
@@ -103,7 +106,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        0.,
+        PI/8.,
         Vec2::ZERO,
         &graph
     );
@@ -113,23 +116,22 @@ async fn main() {
         let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
         let rot_speed = 0.1;
-        if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
-        if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
-        if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
-        if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
-        // let jump_impulse = 0.2;
-        // let gravity = Vec2::new(0., 0.009);
-        // player_entity.velocity += gravity;
-        // if is_key_pressed(KeyCode::W) { player_entity.velocity.y -= jump_impulse; }
-        // if is_key_down(KeyCode::A) { player_entity.velocity.x -= speed; }
-        // if is_key_down(KeyCode::D) { player_entity.velocity.x += speed; }
+        // if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
+        // if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
+        // if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
+        // if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
+        if is_key_down(KeyCode::W) { player_entity.move_perpendicular(-speed); }
+        if is_key_down(KeyCode::S) { player_entity.move_perpendicular(speed); }
+        if is_key_down(KeyCode::A) { player_entity.move_forward(-speed); }
+        if is_key_down(KeyCode::D) { player_entity.move_forward(speed); }
+        if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
         if is_mouse_button_down(MouseButton::Left) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
             let new_pointer = ExternalPointer::new(Index(color), height);
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location, &mut graph) {
                 terrain_entity.location.pointer = pointer;
-                terrain_entity.cells = collisions::corner_handling::tree_corners(&graph, pointer);
+                terrain_entity.corners = tree_corners(&graph, pointer);
             }
         }
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
@@ -151,7 +153,7 @@ async fn main() {
             );
             terrain_entity.location.pointer = new_pointer;
             graph.mass_remove(&old_removal);
-            terrain_entity.cells = collisions::corner_handling::tree_corners(&graph, new_pointer);
+            terrain_entity.corners = tree_corners(&graph, new_pointer);
         }
         render::draw_all(&camera, &entities, &blocks);
         let player_entity = entities.get_mut_entity(player).unwrap();
@@ -164,7 +166,6 @@ async fn main() {
         camera.show_view();
         camera.update(entities.get_entity(player).unwrap().location.position, 0.1);
         macroquad::window::next_frame().await
-
     }
 
 }

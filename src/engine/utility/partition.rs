@@ -104,16 +104,12 @@ pub mod grid {
             MIN_CELL_LENGTH.powf(height as f32)
         }
 
-        fn center_to_edges(height:u32) -> Vec2 {
+        pub fn center_to_edge(height:u32) -> Vec2 {
             cell_length(height) / 2.
         }
 
         pub fn aabb(position:Vec2, height:u32) -> AABB {
-            AABB::new(position, center_to_edges(height))
-        }
-
-        pub fn top_left_corner(cell:UVec2, height:u32) -> Vec2 {
-            cell.as_vec2() * cell_length(height) 
+            AABB::new(position, center_to_edge(height))
         }
 
     }
@@ -159,36 +155,6 @@ pub mod grid {
             CellData::new(pointer, zorder.to_cell())
         }
 
-        pub fn rotated_cell_corners(angle:Vec2, cells:&[CellCorners], root_location:Location, care_about_corner_mask:bool) -> Vec<Vec2> {
-            let mut results = Vec::new();
-            let x_block = MIN_CELL_LENGTH.x * angle;
-            let y_block = {
-                let temp = MIN_CELL_LENGTH.y * angle;
-                Vec2::new(-temp.y, temp.x)
-            };
-            let entity_radius = bounds::cell_length(root_location.pointer.height) / 2.;
-            let starting_corner = root_location.position - Vec2::new(
-                entity_radius.x * angle.x - entity_radius.y * angle.y,
-                entity_radius.x * angle.y + entity_radius.y * angle.x
-            );
-            let offsets = [
-                Vec2::ZERO,
-                x_block,
-                y_block,
-                (x_block + y_block),
-            ];
-            for cell in cells.iter() {
-                //Why is this divide by 2?
-                let scale = 2_i32.pow(cell.cell.pointer.height) as f32 / 2.;
-                let cell_start = starting_corner + (cell.cell.cell.x as f32 * x_block + cell.cell.cell.y as f32 * y_block) * scale;
-                for i in 0 .. 4 {
-                    if cell.corners & (1 << i) == 0 && care_about_corner_mask { continue }
-                    results.push(cell_start + offsets[i] * scale);
-                }
-            }
-            results
-        }
-
     }
 
     impl<T> SparseDirectedGraph<T> where T : GraphNode {
@@ -209,6 +175,7 @@ pub mod grid {
     }
 
 }
+
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct AABB {

@@ -38,16 +38,24 @@ pub mod output {
         }
     
         pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
-            let corners_to_rotate: Vec<CellCorners> = entity.cells.iter().filter(|cell| *cell.cell.pointer.pointer != 0).cloned().collect();
-            let rotated_points = gate::rotated_cell_corners(entity.forward, &corners_to_rotate, entity.location, false);
-            for index in 0..corners_to_rotate.len() {
-                    camera.draw_rectangle_from_corners(&rotated_points[index * 4 .. index * 4 + 4], blocks.blocks[*corners_to_rotate[index].cell.pointer.pointer as usize].color);
-                }
+            let point_offset = bounds::center_to_edge(entity.location.pointer.height);
+            let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
+                if *cell.index == 0 { None } else { Some(([
+                        (cell.points[0] - point_offset).rotate(entity.forward) + entity.location.position,
+                        (cell.points[1] - point_offset).rotate(entity.forward) + entity.location.position,
+                        (cell.points[2] - point_offset).rotate(entity.forward) + entity.location.position,
+                        (cell.points[3] - point_offset).rotate(entity.forward) + entity.location.position
+                    ], *cell.index
+                ))}
+            }).collect();
+            for (points, index) in points_list {
+                camera.draw_rectangle_from_corners(&points, blocks.blocks[index].color);
             }
+        }
     }
 }
 
-use macroquad::shapes::{draw_rectangle, draw_rectangle_lines, draw_line, draw_triangle};
+use macroquad::shapes::{draw_circle, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle};
 use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
     pub aabb : AABB,
@@ -117,6 +125,11 @@ impl Camera {
         draw_rectangle_lines(pos.x, pos.y, len.x, len.y, line_width*self.zoom(), color);
     }
     
+    pub fn draw_point(&self, position:Vec2, radius:f32, color:Color) {
+        let pos = self.world_to_screen(position);
+        draw_circle(pos.x, pos.y, radius*self.zoom(), color);
+    }
+
     #[allow(dead_code)]
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
         let p1 = self.world_to_screen(point1);

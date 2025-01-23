@@ -73,42 +73,51 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                 let other = &entities.entities[other_idx];
                 if within_range(&entity, &other, camera) {
                     corners.extend(particles(graph, &entity, &other, &camera));
-                    break;
                 }
             }
         }
         let (hits, ticks_to_action) = find_next_action(&entities, &graph, corners, tick_max);
+        // let ticks_to_action = 1.; 
         for entity in &mut entities.entities{
             entity.location.position += entity.velocity * ticks_to_action;
-            if entity.location.position.x == -0.5 + 0.00000006 {
-                entity.location.position.x = -0.5;
-                dbg!("FIXED! (You better actually fix me)");
-            }
-            if entity.location.position.y == -0.5 + 0.00000006 {
-                entity.location.position.y = -0.5;
-                dbg!("FIXED! (You better actually fix me)");
-            }
+            // if entity.location.position.x == -0.5 + 0.00000006 {
+            //     entity.location.position.x = -0.5;
+            //     dbg!("FIXED! (You better actually fix me)");
+            // }
+            // if entity.location.position.y == -0.5 + 0.00000006 {
+            //     entity.location.position.y = -0.5;
+            //     dbg!("FIXED! (You better actually fix me)");
+            // }
         }
+        // break;
         tick_max -= ticks_to_action;
         if hits.is_empty() { break }
         for hit in hits {
             match hit.action {
                 Action::Resist(walls_hit) => {
+                    //We need to eliminate the velocity in terms of the rotation
                     let walls_as_int = IVec2::from(walls_hit).as_vec2();
                     let relative_velocity = entities.get_entity(hit.owner).unwrap().velocity - entities.get_entity(hit.hitting).unwrap().velocity;
                     let impulse = -relative_velocity;
                     if hit.owner != static_thing {
-                        entities.get_mut_entity(hit.owner).unwrap().velocity += impulse * walls_as_int;
+                        // entities.get_mut_entity(hit.owner).unwrap().velocity += impulse * walls_as_int;
+                        entities.get_mut_entity(hit.owner).unwrap().velocity = Vec2::ZERO;
+                        
                     }
                     if hit.hitting != static_thing {
-                        entities.get_mut_entity(hit.hitting).unwrap().velocity -= impulse * walls_as_int;
+                        // entities.get_mut_entity(hit.hitting).unwrap().velocity -= impulse * walls_as_int;
+                        entities.get_mut_entity(hit.hitting).unwrap().velocity = Vec2::ZERO;
                     }
                 }
             }
         }
     }
     let drag_multiplier = 0.95;
-    for entity in &mut entities.entities { entity.velocity *= drag_multiplier }
+    for entity in &mut entities.entities { 
+        entity.velocity *= drag_multiplier;
+        entity.velocity = remove_pointless_velocity(entity.velocity);
+    }
+
 }
 
 fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
@@ -188,10 +197,10 @@ pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
     let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
     let aabb2 =  bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
     let result = aabb.intersects(aabb2) == BVec2::TRUE;
-    let color = if result { GREEN } else { RED };
+    let color = if result { RED } else { RED };
     camera.outline_bounds(aabb, 0.05, color);
     camera.outline_bounds(aabb2, 0.05, color);
-    result
+    true // result
 }
 
 pub fn particles<T:GraphNode>(graph:&SparseDirectedGraph<T>, object1:&Entity, object2:&Entity, camera:&Camera ) -> BinaryHeap<Reverse<Particle>> {
@@ -200,15 +209,28 @@ pub fn particles<T:GraphNode>(graph:&SparseDirectedGraph<T>, object1:&Entity, ob
     result
 }
 
+//Make this value relative (if one is massively larger than the other, make the smaller one 0)
+//This sounds like the kind of thing which causes problems for people ^^
+pub fn remove_pointless_velocity(velocity:Vec2) -> Vec2 {
+    let epsilon = 0.001;
+    let abs = velocity.abs();
+    let mut new_vel = velocity;
+    if abs.x < epsilon { new_vel.x = 0. }
+    if abs.y < epsilon { new_vel.y = 0. }
+    new_vel
+}
+
+#[derive(Debug, new)]
+pub struct Corners {
+    pub points : [Vec2; 4],
+    pub index : Index,
+    pub mask : u8,
+}
+
 pub mod corner_handling {
     use super::*;
 
-    #[derive(new, Clone)]
-    pub struct CellCorners {
-        pub cell : CellData,
-        pub corners : u8
-    }
-
+    //Figure out if this can be improved?
     fn cell_corner_mask<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, zorder:ZorderPath) -> u8 {
             let mut exposed_mask = 0b1111;
             let checks = [
@@ -230,7 +252,7 @@ pub mod corner_handling {
                     let (offset, direction) = checks[i*3 + j];
                     let Some(mut check_zorder) = zorder.move_cartesianly(offset) else { continue };
                     for _ in 0 .. start.height - zorder.depth {
-                        check_zorder = check_zorder.step_down(direction);
+                        check_zorder = check_zorder.step_down(direction)
                     }
                     let pointer = graph.read(start, &check_zorder.steps()).unwrap();
                     //Add proper block lookup
@@ -243,38 +265,48 @@ pub mod corner_handling {
             exposed_mask
         }
     
-    //Returns list of cells (CellData) and a mask for whether each corner is solid and exposed 
-    pub fn tree_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer) -> Vec<CellCorners> {
-            let leaves = graph.dfs_leaf_cells(start);
-            let mut corners = Vec::new();
-            for cell in leaves {
-                let zorder = ZorderPath::from_cell(cell.cell, start.height);
-                corners.push( CellCorners::new(
-                    cell,
-                    if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(graph, start, zorder) }
-                ));
-            }
-            corners
+    //The top left corner of the root is (0, 0)
+    fn cell_corners(cell_height:u32, cell:UVec2) -> [Vec2; 4] {
+        let cell_size = bounds::cell_length(cell_height);
+        let top_left_corner = cell.as_vec2() * cell_size;
+        [
+            top_left_corner,
+            top_left_corner.with_x(top_left_corner.x + cell_size.x),
+            top_left_corner.with_y(top_left_corner.y + cell_size.y),
+            top_left_corner + cell_size,
+        ]
+    }
+
+    pub fn tree_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer) -> Vec<Corners> {
+        let leaves = graph.dfs_leaf_cells(start);
+        let mut corners = Vec::new();
+        for cell in leaves {
+            let zorder = ZorderPath::from_cell(cell.cell, start.height);
+            corners.push( Corners::new(
+                cell_corners(cell.pointer.height, cell.cell),
+                cell.pointer.pointer,
+                if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(graph, start, zorder) }
+            ));
         }
+        corners
+    }
     
-    //PERFORMANCE
-    //Consider that we're rotating all four corners of any solid cell. This is bad and should be cleaned up once we can actually collide while rotated correctly.
     //Should be able to cull even more based on hang_check principle
+    //Ignoring configurations for now.
     pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
-        let rel_velocity = owner.velocity - hitting.velocity;
-        //Maybe store entity aabb to handle rotation?
+        let undo_hitting = Vec2::from_angle(-hitting.rotation);
+        let offset = bounds::center_to_edge(owner.location.pointer.height);
+        let rel_velocity = remove_pointless_velocity((owner.velocity - hitting.velocity).rotate(undo_hitting));
         let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-        //Rotate this based on things
-        let to_be_rotated:Vec<CellCorners> = owner.cells.iter().filter(|cell| !is_ignore(cell.cell.pointer.pointer)).cloned().collect();
-        let rotated = gate::rotated_cell_corners(owner.forward, &to_be_rotated, owner.location, true);
-        let mut cur_point = 0;
-        for index in 0 .. to_be_rotated.len() {
+        let rel_owner_pos = (owner.location.position - hitting.location.position).rotate(undo_hitting) + hitting.location.position;
+        camera.draw_point(rel_owner_pos, 0.1, GREEN);
+        for corners in owner.corners.iter() {
             for i in 0 .. 4 {
-                if to_be_rotated[index].corners & (1 << i) == 0 { continue }
-                let point = rotated[cur_point];
-                cur_point += 1;
-                let configuration = Configurations::from_index(i);
+                if corners.mask & (1 << i) == 0 { continue }
+                let point = (corners.points[i] - offset).rotate(owner.forward).rotate(undo_hitting) + rel_owner_pos;
+                camera.draw_point(point, 0.1, RED);
+                let configuration = Configurations::from_index(i, );
                 if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
                 let point_aabb = AABB::new(point, Vec2::ZERO).expand(rel_velocity);
                 if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); continue }
@@ -288,6 +320,7 @@ pub mod corner_handling {
         }
         culled_corners
     }
+
     
 }
 
@@ -361,7 +394,7 @@ pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
 
 //Uses configuration to decide which cell you're hitting while moving along a single axis.
 //We can assume a corner would've been culled if it is irrelevant
-//This meaning we only care about corners on the y wall and the x wall
+//This meaning we only care about corners on the y wall and the x wall (This isn't true..?)
 pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
     if direction == Vec2::ZERO { dbg!("AHHH"); }
     let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
