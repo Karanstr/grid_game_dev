@@ -12,6 +12,10 @@ fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
     approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
 }
 
+fn vec2_remove_err(a: Vec2) -> Vec2 {
+    Vec2::new(if a.x.abs() < EPSILON { 0. } else {a.x}, if a.y.abs() < EPSILON { 0. } else {a.y})
+}
+
 //Decide whether to remember particle velocity
 #[derive(Debug, Clone, new)]
 pub struct Particle {
@@ -112,17 +116,17 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                         entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
                     );
                     
-                    let impulse = world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int);
-                    // if vec2_approx_eq(impulse, Vec2::ZERO) { break 'logic }
+                    let impulse = vec2_remove_err(world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int));
                     
                     if hit.owner != static_thing {
                         let entity = entities.get_mut_entity(hit.owner).unwrap();
                         entity.velocity += impulse;
-                        
-                        // Normalize velocity if it's very small to prevent accumulation of tiny values
-                        if entity.velocity.length() < EPSILON {
-                            entity.velocity = Vec2::ZERO;
-                        }
+                        entity.velocity = vec2_remove_err(entity.velocity);
+                    }
+                    if hit.hitting != static_thing {
+                        let entity = entities.get_mut_entity(hit.hitting).unwrap();
+                        entity.velocity -= impulse;
+                        entity.velocity = vec2_remove_err(entity.velocity);
                     }
                 }
             }
@@ -131,7 +135,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
     let drag_multiplier = 0.95;
     for entity in &mut entities.entities { 
         entity.velocity *= drag_multiplier;
-        // entity.velocity = remove_pointless_velocity(entity.velocity);
+        entity.velocity = vec2_remove_err(entity.velocity);
     }
 
 }
@@ -270,7 +274,7 @@ pub mod corner_handling {
             }
             exposed_mask
         }
-    
+
     //The top left corner of the root is (0, 0)
     fn cell_corners(cell_height:u32, cell:UVec2) -> [Vec2; 4] {
         let cell_size = bounds::cell_length(cell_height);
@@ -302,16 +306,16 @@ pub mod corner_handling {
     pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
         
-        let world_to_hitting = Mat2::from_angle(-hitting.rotation);
+        let undo_hitting = Vec2::from_angle(-hitting.rotation);
         let offset = bounds::center_to_edge(owner.location.pointer.height);
         
-        let rel_velocity = world_to_hitting.mul_vec2(owner.velocity - hitting.velocity);
+        let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(undo_hitting));
         if vec2_approx_eq(rel_velocity, Vec2::ZERO) {
             return culled_corners;
         }
         
         let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-        let rel_owner_pos = world_to_hitting.mul_vec2(owner.location.position - hitting.location.position) + hitting.location.position;
+        let rel_owner_pos = (owner.location.position - hitting.location.position).rotate(undo_hitting) + hitting.location.position;
         
         camera.draw_point(rel_owner_pos, 0.1, GREEN);
         
@@ -319,7 +323,7 @@ pub mod corner_handling {
             for i in 0..4 {
                 if corners.mask & (1 << i) == 0 { continue }
                 
-                let point = world_to_hitting.mul_vec2((corners.points[i] - offset).rotate(owner.forward)) + rel_owner_pos;
+                let point = (corners.points[i] - offset).rotate(undo_hitting).rotate(owner.forward) + rel_owner_pos;
                 
                 camera.draw_point(point, 0.1, RED);
                 let configuration = Configurations::from_index(i);
