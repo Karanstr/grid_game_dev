@@ -38,13 +38,14 @@ pub mod output {
         }
     
         pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
+            let rotation = entity.forward;
             let point_offset = bounds::center_to_edge(entity.location.pointer.height);
             let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
                 if *cell.index == 0 { None } else { Some(([
-                        (cell.points[0] - point_offset).rotate(entity.forward) + entity.location.position,
-                        (cell.points[1] - point_offset).rotate(entity.forward) + entity.location.position,
-                        (cell.points[2] - point_offset).rotate(entity.forward) + entity.location.position,
-                        (cell.points[3] - point_offset).rotate(entity.forward) + entity.location.position
+                        (cell.points[0] - point_offset).rotate(rotation) + entity.location.position,
+                        (cell.points[1] - point_offset).rotate(rotation) + entity.location.position,
+                        (cell.points[2] - point_offset).rotate(rotation) + entity.location.position,
+                        (cell.points[3] - point_offset).rotate(rotation) + entity.location.position
                     ], *cell.index
                 ))}
             }).collect();

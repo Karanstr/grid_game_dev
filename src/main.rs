@@ -3,7 +3,7 @@ mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
     pub use engine::systems::io::{Camera,output::*};
-    pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2};
+    pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2, Mat2};
     pub use engine::utility::partition::{AABB, grid::*};
     pub use super::{EntityPool, ID, Entity, Location};
     pub use engine::systems::collisions;
@@ -95,9 +95,10 @@ async fn main() {
     let string = std::fs::read_to_string("src/save.json").unwrap();
     let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    let rotation = PI/16.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        PI/8.,
+        rotation,
         Vec2::ZERO,
         &graph
     );
@@ -106,7 +107,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        PI/8.,
+        rotation,
         Vec2::ZERO,
         &graph
     );

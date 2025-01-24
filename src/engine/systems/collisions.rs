@@ -2,6 +2,16 @@ use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
 use super::*;
 
+const EPSILON: f32 = 1e-6;
+
+fn approx_eq(a: f32, b: f32) -> bool {
+    (a - b).abs() < EPSILON
+}
+
+fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
+    approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
+}
+
 //Decide whether to remember particle velocity
 #[derive(Debug, Clone, new)]
 pub struct Particle {
@@ -76,37 +86,42 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                 }
             }
         }
+        
         let (hits, ticks_to_action) = find_next_action(&entities, &graph, corners, tick_max);
-        // let ticks_to_action = 1.; 
-        for entity in &mut entities.entities{
-            entity.location.position += entity.velocity * ticks_to_action;
-            // if entity.location.position.x == -0.5 + 0.00000006 {
-            //     entity.location.position.x = -0.5;
-            //     dbg!("FIXED! (You better actually fix me)");
-            // }
-            // if entity.location.position.y == -0.5 + 0.00000006 {
-            //     entity.location.position.y = -0.5;
-            //     dbg!("FIXED! (You better actually fix me)");
-            // }
+        // Update positions with error checking
+        for entity in &mut entities.entities {
+            let delta = entity.velocity * ticks_to_action;
+            // Skip tiny movements that could cause precision issues
+            if !vec2_approx_eq(delta, Vec2::ZERO) {
+                entity.location.position += delta;
+            }
         }
-        // break;
+        
         tick_max -= ticks_to_action;
         if hits.is_empty() { break }
+        
         for hit in hits {
             match hit.action {
                 Action::Resist(walls_hit) => {
-                    //We need to eliminate the velocity in terms of the rotation
+                    let hitting = entities.get_entity(hit.hitting).unwrap();
+                    let world_to_hitting = Mat2::from_angle(-hitting.rotation);
+                    
                     let walls_as_int = IVec2::from(walls_hit).as_vec2();
-                    let relative_velocity = entities.get_entity(hit.owner).unwrap().velocity - entities.get_entity(hit.hitting).unwrap().velocity;
-                    let impulse = -relative_velocity;
+                    let relative_velocity = world_to_hitting.mul_vec2(
+                        entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
+                    );
+                    
+                    let impulse = world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int);
+                    // if vec2_approx_eq(impulse, Vec2::ZERO) { break 'logic }
+                    
                     if hit.owner != static_thing {
-                        // entities.get_mut_entity(hit.owner).unwrap().velocity += impulse * walls_as_int;
-                        entities.get_mut_entity(hit.owner).unwrap().velocity = Vec2::ZERO;
+                        let entity = entities.get_mut_entity(hit.owner).unwrap();
+                        entity.velocity += impulse;
                         
-                    }
-                    if hit.hitting != static_thing {
-                        // entities.get_mut_entity(hit.hitting).unwrap().velocity -= impulse * walls_as_int;
-                        entities.get_mut_entity(hit.hitting).unwrap().velocity = Vec2::ZERO;
+                        // Normalize velocity if it's very small to prevent accumulation of tiny values
+                        if entity.velocity.length() < EPSILON {
+                            entity.velocity = Vec2::ZERO;
+                        }
                     }
                 }
             }
@@ -115,7 +130,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
     let drag_multiplier = 0.95;
     for entity in &mut entities.entities { 
         entity.velocity *= drag_multiplier;
-        entity.velocity = remove_pointless_velocity(entity.velocity);
+        // entity.velocity = remove_pointless_velocity(entity.velocity);
     }
 
 }
@@ -209,17 +224,6 @@ pub fn particles<T:GraphNode>(graph:&SparseDirectedGraph<T>, object1:&Entity, ob
     result
 }
 
-//Make this value relative (if one is massively larger than the other, make the smaller one 0)
-//This sounds like the kind of thing which causes problems for people ^^
-pub fn remove_pointless_velocity(velocity:Vec2) -> Vec2 {
-    let epsilon = 0.001;
-    let abs = velocity.abs();
-    let mut new_vel = velocity;
-    if abs.x < epsilon { new_vel.x = 0. }
-    if abs.y < epsilon { new_vel.y = 0. }
-    new_vel
-}
-
 #[derive(Debug, new)]
 pub struct Corners {
     pub points : [Vec2; 4],
@@ -295,27 +299,39 @@ pub mod corner_handling {
     //Ignoring configurations for now.
     pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
-        let undo_hitting = Vec2::from_angle(-hitting.rotation);
+        
+        let world_to_hitting = Mat2::from_angle(-hitting.rotation);
         let offset = bounds::center_to_edge(owner.location.pointer.height);
-        let rel_velocity = remove_pointless_velocity((owner.velocity - hitting.velocity).rotate(undo_hitting));
+        
+        let rel_velocity = world_to_hitting.mul_vec2(owner.velocity - hitting.velocity);
+        if vec2_approx_eq(rel_velocity, Vec2::ZERO) {
+            return culled_corners;
+        }
+        
         let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-        let rel_owner_pos = (owner.location.position - hitting.location.position).rotate(undo_hitting) + hitting.location.position;
+        let rel_owner_pos = world_to_hitting.mul_vec2(owner.location.position - hitting.location.position) + hitting.location.position;
+        
         camera.draw_point(rel_owner_pos, 0.1, GREEN);
+        
         for corners in owner.corners.iter() {
-            for i in 0 .. 4 {
+            for i in 0..4 {
                 if corners.mask & (1 << i) == 0 { continue }
-                let point = (corners.points[i] - offset).rotate(owner.forward).rotate(undo_hitting) + rel_owner_pos;
+                
+                let point = world_to_hitting.mul_vec2((corners.points[i] - offset).rotate(owner.forward)) + rel_owner_pos;
+                
                 camera.draw_point(point, 0.1, RED);
-                let configuration = Configurations::from_index(i, );
+                let configuration = Configurations::from_index(i);
+                
                 if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
-                let point_aabb = AABB::new(point, Vec2::ZERO).expand(rel_velocity);
-                if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { camera.outline_bounds(point_aabb, 0.03, RED); continue }
-                else { camera.outline_bounds(point_aabb, 0.03, GREEN); }
+                
+                let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
+                if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
+                
                 let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
                 if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
                     particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));
+                    culled_corners.push(Reverse(particle));
                 }
-                culled_corners.push(Reverse(particle));
             }
         }
         culled_corners
@@ -406,4 +422,3 @@ pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usi
         2 * clamped.y as usize | clamped.x as usize
     }
 }
-
