@@ -61,8 +61,9 @@ impl Entity {
         self.forward = Vec2::from_angle(angle);
         self.rotation = angle;
     }
-    pub fn move_forward(&mut self, speed:f32) { self.velocity += self.forward * speed }
-    pub fn move_perpendicular(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
+    pub fn apply_forward_velocity(&mut self, speed:f32) { self.velocity += self.forward * speed }
+    pub fn apply_perp_velocity(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
+    pub fn apply_abs_velocity(&mut self, delta:Vec2) { self.velocity += delta; }
 }
 #[derive(new)]
 pub struct EntityPool {
@@ -95,7 +96,7 @@ async fn main() {
     let string = std::fs::read_to_string("src/save.json").unwrap();
     let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
-    let rotation = PI/16.;
+    let rotation = PI/8.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
@@ -107,7 +108,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        rotation,
+        rotation + 0.5,
         Vec2::ZERO,
         &graph
     );
@@ -116,15 +117,16 @@ async fn main() {
     loop {
         let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
-        let rot_speed = 0.1;
+        // let rot_speed = 0.1;
         // if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
         // if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
         // if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
         // if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
-        if is_key_down(KeyCode::W) { player_entity.move_perpendicular(-speed); }
-        if is_key_down(KeyCode::S) { player_entity.move_perpendicular(speed); }
-        if is_key_down(KeyCode::A) { player_entity.move_forward(-speed); }
-        if is_key_down(KeyCode::D) { player_entity.move_forward(speed); }
+        // player_entity.apply_abs_velocity(Vec2::new(0., speed/2.));
+        if is_key_down(KeyCode::W) { player_entity.apply_perp_velocity(-speed); }
+        if is_key_down(KeyCode::S) { player_entity.apply_perp_velocity(speed); }
+        if is_key_down(KeyCode::A) { player_entity.apply_forward_velocity(-speed); }
+        if is_key_down(KeyCode::D) { player_entity.apply_forward_velocity(speed); }
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
         if is_mouse_button_down(MouseButton::Left) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();

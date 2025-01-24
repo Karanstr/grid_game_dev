@@ -95,11 +95,8 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
         // Update positions with error checking
         for entity in &mut entities.entities {
             let delta = entity.velocity * ticks_to_action;
-            if delta.length() > 2. { dbg!(ticks_to_action ); }
             // Skip tiny movements that could cause precision issues
-            if !vec2_approx_eq(delta, Vec2::ZERO) {
-                entity.location.position += delta;
-            }
+            if !vec2_approx_eq(delta, Vec2::ZERO) { entity.location.position += delta;}
         }
         
         tick_max -= ticks_to_action;
@@ -244,16 +241,16 @@ pub mod corner_handling {
     fn cell_corner_mask<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, zorder:ZorderPath) -> u8 {
             let mut exposed_mask = 0b1111;
             let checks = [
-                (IVec2::new(-1, 0), 0b01), //Top Left
+                (IVec2::new(-1, 0), 0b01), //Top Left 0
                 (IVec2::new(0, -1), 0b10),
                 (IVec2::new(-1, -1), 0b11),
-                (IVec2::new(1, 0), 0b00), //Top Right
+                (IVec2::new(1, 0), 0b00), //Top Right 1
                 (IVec2::new(0, -1), 0b11),
                 (IVec2::new(1, -1), 0b10),
-                (IVec2::new(-1, 0), 0b11), //Bottom Left
+                (IVec2::new(-1, 0), 0b11), //Bottom Left 2
                 (IVec2::new(0, 1), 0b00),
                 (IVec2::new(-1, 1), 0b01),
-                (IVec2::new(1, 0), 0b10), //Bottom Right
+                (IVec2::new(1, 0), 0b10), //Bottom Right 3
                 (IVec2::new(0, 1), 0b01),
                 (IVec2::new(1, 1), 0b00),
             ];
@@ -261,24 +258,21 @@ pub mod corner_handling {
                 for j in 0 .. 3 {
                     let (offset, direction) = checks[i*3 + j];
                     let Some(mut check_zorder) = zorder.move_cartesianly(offset) else { continue };
-                    for _ in 0 .. start.height - zorder.depth {
+                    for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
                     let pointer = graph.read(start, &check_zorder.steps()).unwrap();
                     //Add proper block lookup
-                    if !is_ignore(pointer.pointer) {
-                        exposed_mask -= 1 << i;
-                        break
-                    }
+                    if !is_ignore(pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
             }
             exposed_mask
         }
 
     //The top left corner of the root is (0, 0)
-    fn cell_corners(cell_height:u32, cell:UVec2) -> [Vec2; 4] {
-        let cell_size = bounds::cell_length(cell_height);
-        let top_left_corner = cell.as_vec2() * cell_size;
+    fn cell_corners(cell:CellData) -> [Vec2; 4] {
+        let cell_size = bounds::cell_length(cell.pointer.height);
+        let top_left_corner = cell.cell.as_vec2() * cell_size;
         [
             top_left_corner,
             top_left_corner.with_x(top_left_corner.x + cell_size.x),
@@ -291,14 +285,14 @@ pub mod corner_handling {
         let leaves = graph.dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
-            let zorder = ZorderPath::from_cell(cell.cell, start.height);
+            let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
             corners.push( Corners::new(
-                cell_corners(cell.pointer.height, cell.cell),
+                cell_corners(cell),
                 cell.pointer.pointer,
                 if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(graph, start, zorder) }
             ));
         }
-        corners
+        corners 
     }
     
     //Should be able to cull even more based on hang_check principle
@@ -310,11 +304,8 @@ pub mod corner_handling {
         let offset = bounds::center_to_edge(owner.location.pointer.height);
         
         let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(undo_hitting));
-        if vec2_approx_eq(rel_velocity, Vec2::ZERO) {
-            return culled_corners;
-        }
         
-        let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
+        // let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
         let rel_owner_pos = (owner.location.position - hitting.location.position).rotate(undo_hitting) + hitting.location.position;
         
         camera.draw_point(rel_owner_pos, 0.1, GREEN);
@@ -326,12 +317,13 @@ pub mod corner_handling {
                 let point = (corners.points[i] - offset).rotate(undo_hitting).rotate(owner.forward) + rel_owner_pos;
                 
                 camera.draw_point(point, 0.1, RED);
+                
                 let configuration = Configurations::from_index(i);
                 
                 if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
                 
-                let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
-                if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
+                // let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
+                // if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
                 
                 let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
                 if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
