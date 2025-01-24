@@ -91,6 +91,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
         // Update positions with error checking
         for entity in &mut entities.entities {
             let delta = entity.velocity * ticks_to_action;
+            if delta.length() > 2. { dbg!(ticks_to_action ); }
             // Skip tiny movements that could cause precision issues
             if !vec2_approx_eq(delta, Vec2::ZERO) {
                 entity.location.position += delta;
@@ -148,6 +149,7 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
             cur_corner.position_data,
             hitting_location
         ) else { continue };
+        if ticks_to_hit < -ticks_to_action { continue }
         cur_corner.ticks_into_projection += ticks_to_hit;
         if cur_corner.ticks_into_projection >= ticks_to_action { continue }
         cur_corner.position += cur_corner.velocity * ticks_to_hit;
