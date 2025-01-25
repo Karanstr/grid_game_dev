@@ -96,10 +96,10 @@ async fn main() {
     let string = std::fs::read_to_string("src/save.json").unwrap();
     let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
-    let rotation = PI/8.;
+    let rotation = 0.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        rotation,
+        rotation+0.5,
         Vec2::ZERO,
         &graph
     );
@@ -108,7 +108,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        rotation + 0.5,
+        rotation,
         Vec2::ZERO,
         &graph
     );

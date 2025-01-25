@@ -139,6 +139,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 
 fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
     let mut ticks_to_action = tick_max;
+    // dbg!(&corners);
     if corners.is_empty() { return (Vec::new(), ticks_to_action) }
     let mut actions = Vec::new();
     while let Some(Reverse(mut cur_corner)) = corners.pop() {
@@ -296,25 +297,24 @@ pub mod corner_handling {
     }
     
     //Should be able to cull even more based on hang_check principle
-    //Ignoring configurations for now.
     pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
         
-        let undo_hitting = Vec2::from_angle(-hitting.rotation);
+        let align_hitting = Vec2::from_angle(-hitting.rotation);
         let offset = bounds::center_to_edge(owner.location.pointer.height);
         
-        let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(undo_hitting));
+        let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_hitting));
         
         // let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-        let rel_owner_pos = (owner.location.position - hitting.location.position).rotate(undo_hitting) + hitting.location.position;
+        let aligned_owner_pos = (owner.location.position - hitting.location.position).rotate(align_hitting) + hitting.location.position;
         
-        camera.draw_point(rel_owner_pos, 0.1, GREEN);
+        camera.draw_point(aligned_owner_pos, 0.1, GREEN);
         
         for corners in owner.corners.iter() {
             for i in 0..4 {
                 if corners.mask & (1 << i) == 0 { continue }
                 
-                let point = (corners.points[i] - offset).rotate(undo_hitting).rotate(owner.forward) + rel_owner_pos;
+                let point = (corners.points[i] - offset).rotate(align_hitting).rotate(owner.forward) + aligned_owner_pos;
                 
                 camera.draw_point(point, 0.1, RED);
                 
@@ -328,8 +328,8 @@ pub mod corner_handling {
                 let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
                 if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
                     particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));
-                    culled_corners.push(Reverse(particle));
                 }
+                culled_corners.push(Reverse(particle));
             }
         }
         culled_corners
