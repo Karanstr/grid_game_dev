@@ -183,16 +183,17 @@ fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, 
     let within_bounds = hitting_aabb.contains(point);
     let (cell, height) = match position_data {
         Some(data) => { (data.cell.as_vec2(), data.pointer.height) }
+        //Redocument this code please, I'm not 100% clear what it does anymore.
         None => {
             let mut cell = Vec2::ZERO;
-            if point.x <= top_left.x {
+            if point.x <= top_left.x + EPSILON {
                 if velocity.x > 0. { cell.x = -1. } else { return None }
-            } else if point.x >= bottom_right.x {
+            } else if point.x >= bottom_right.x - EPSILON {
                 if velocity.x < 0. { cell.x = 1. } else { return None }
             }
-            if point.y <= top_left.y {
+            if point.y <= top_left.y + EPSILON {
                 if velocity.y > 0. { cell.y = -1. } else { return None }
-            } else if point.y >= bottom_right.y {
+            } else if point.y >= bottom_right.y - EPSILON {
                 if velocity.y < 0. { cell.y = 1. } else { return None }
             }
             (cell, hitting_location.pointer.height)
@@ -313,18 +314,12 @@ pub mod corner_handling {
         for corners in owner.corners.iter() {
             for i in 0..4 {
                 if corners.mask & (1 << i) == 0 { continue }
-                
                 let point = (corners.points[i] - offset).rotate(align_hitting).rotate(owner.forward) + aligned_owner_pos;
-                
                 camera.draw_point(point, 0.1, RED);
-                
                 let configuration = Configurations::from_index(i);
-                
                 if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
-                
                 // let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
                 // if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
-                
                 let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
                 if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
                     particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));

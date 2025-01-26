@@ -41,13 +41,15 @@ pub mod output {
             let rotation = entity.forward;
             let point_offset = bounds::center_to_edge(entity.location.pointer.height);
             let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
-                if *cell.index == 0 { None } else { Some(([
+                // if *cell.index == 0 { None } else { 
+                    Some(([
                         (cell.points[0] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[1] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[2] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[3] - point_offset).rotate(rotation) + entity.location.position
                     ], *cell.index
-                ))}
+                ))
+            // }
             }).collect();
             for (points, index) in points_list {
                 camera.draw_rectangle_from_corners(&points, blocks.blocks[index].color);
@@ -56,7 +58,7 @@ pub mod output {
     }
 }
 
-use macroquad::shapes::{draw_circle, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle};
+use macroquad::shapes::{draw_circle, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
 use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
     pub aabb : AABB,
@@ -150,11 +152,26 @@ impl Camera {
             corners[2],
             color
         );
+        draw_triangle_lines(
+            corners[0],
+            corners[1],
+            corners[2],
+            2.,
+            WHITE
+        );
+        
         draw_triangle(
             corners[1],
             corners[2],
             corners[3],
             color
+        );
+        draw_triangle_lines(
+            corners[1],
+            corners[2],
+            corners[3],
+            2.,
+            WHITE
         );
     }
 
