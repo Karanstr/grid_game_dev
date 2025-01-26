@@ -45,7 +45,15 @@ impl PartialEq for Particle {
     }
 }
 impl Eq for Particle {} 
-
+impl Particle {
+    fn move_by_ticks(&mut self, ticks:f32) { 
+        self.ticks_into_projection += ticks; 
+        self.position += self.velocity * ticks;
+    }
+    fn update_position_data(&mut self, data:&[Option<CellData>; 4]) {
+        self.position_data = data[configured_direction(self.velocity, self.configuration)];
+    }
+}
 #[derive(Debug, Clone)]
 enum Action {
     Resist(BVec2),
@@ -137,37 +145,36 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 
 }
 
+//Currently every potential corner must be checked at least once, meaning the most gains will be made from culling corners (?).
 fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
     let mut ticks_to_action = tick_max;
-    // dbg!(&corners);
     if corners.is_empty() { return (Vec::new(), ticks_to_action) }
     let mut actions = Vec::new();
     while let Some(Reverse(mut cur_corner)) = corners.pop() {
+        //Add epsilon here as well when we're returning all hits?
         if cur_corner.ticks_into_projection >= ticks_to_action { break }
         let hitting_location = entities.get_entity(cur_corner.hitting).unwrap().location;
         let Some(ticks_to_hit) = next_intersection(
             cur_corner.position,
             cur_corner.velocity,
             cur_corner.position_data,
-            hitting_location
+            hitting_location,
+            ticks_to_action - cur_corner.ticks_into_projection
         ) else { continue };
-        if ticks_to_hit < -ticks_to_action { continue }
-        cur_corner.ticks_into_projection += ticks_to_hit;
-        if cur_corner.ticks_into_projection >= ticks_to_action { continue }
-        cur_corner.position += cur_corner.velocity * ticks_to_hit;
+        cur_corner.move_by_ticks(ticks_to_hit);
+        //It may be reasonable to not find real cells here, since that will result to far less graph traversals than if we do it as needed in slide check and update_pos_data
         let all_data = gate::point_to_real_cells(graph, hitting_location, cur_corner.position);
-        cur_corner.position_data = all_data[configured_direction(cur_corner.velocity, cur_corner.configuration)];
+        cur_corner.update_position_data(&all_data);
         if cur_corner.position_data.is_none() { continue }
         if is_ignore(cur_corner.position_data.unwrap().pointer.pointer) { }
         else if let Some(hit_walls) = determine_walls_hit(BVec2::TRUE, cur_corner.velocity, cur_corner.configuration, all_data) {
+            //Eventually don't clear actions and instead return any actions within EPSILON of each other?
             actions.clear();
-            actions.push(
-                Hit {
+            actions.push( Hit {
                     owner : cur_corner.owner,
                     hitting : cur_corner.hitting,
                     action : Action::Resist(hit_walls)
-                }
-            );
+            } );
             ticks_to_action = cur_corner.ticks_into_projection;
             continue
         }
@@ -176,7 +183,9 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
     (actions, ticks_to_action)
 }
 
-fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, hitting_location:Location) -> Option<f32> {
+use roots::find_root_brent;
+
+fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, hitting_location:Location, tick_max:f32) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
@@ -202,6 +211,7 @@ fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, 
     let quadrant = velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
     let boundary_corner = top_left + cell * cell_length + cell_length * quadrant;
+    //Insert Brent's root finder here, bounded by [-ticks_max, ticks_max]
     let ticks = (boundary_corner - point) / velocity; 
     let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
         (false, false) => { ticks.max_element() },
@@ -209,7 +219,7 @@ fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, 
         (false, true) if ticks.y == 0. => { ticks.x },
         _ => { ticks.min_element() },
     };
-    if ticks_to_hit.is_nan() || ticks_to_hit.is_infinite() { None }
+    if ticks_to_hit.is_nan() || ticks_to_hit.abs() > tick_max + EPSILON { None }
     else { Some(ticks_to_hit) }
 }
 
@@ -298,6 +308,7 @@ pub mod corner_handling {
     }
     
     //Should be able to cull even more based on hang_check principle
+    //Fix these bound checks
     pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
         let mut culled_corners = Vec::new();
         
@@ -321,6 +332,7 @@ pub mod corner_handling {
                 // let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
                 // if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
                 let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
+                //We do this manually to reduce the number of graph traversals
                 if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
                     particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));
                 }
@@ -330,7 +342,6 @@ pub mod corner_handling {
         culled_corners
     }
 
-    
 }
 
 fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Configurations, position_data:[Option<CellData>; 4]) -> Option<BVec2> {

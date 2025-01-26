@@ -108,7 +108,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        rotation + 0.5,
+        rotation,
         Vec2::ZERO,
         &graph
     );
