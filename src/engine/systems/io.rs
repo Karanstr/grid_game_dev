@@ -28,31 +28,29 @@ pub mod output {
     pub mod render {
         use super::*;
         
-        pub fn draw_all(camera:&Camera, entities:&EntityPool, blocks:&BlockPalette) {
+        pub fn draw_all(camera:&Camera, entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
             for entity in entities.entities.iter() {
                 let location = entity.location;
                 if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(camera, entity, blocks);
+                    draw(camera, entity, blocks, outline);
                 }
             }
         }
     
-        pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette) {
+        pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette, outline:bool) {
             let rotation = entity.forward;
             let point_offset = bounds::center_to_edge(entity.location.pointer.height);
             let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
-                // if *cell.index == 0 { None } else { 
-                    Some(([
+                if *cell.index == 0 && !outline { None } else { Some(([
                         (cell.points[0] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[1] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[2] - point_offset).rotate(rotation) + entity.location.position,
                         (cell.points[3] - point_offset).rotate(rotation) + entity.location.position
                     ], *cell.index
-                ))
-            // }
+                ))}
             }).collect();
             for (points, index) in points_list {
-                camera.draw_rectangle_from_corners(&points, blocks.blocks[index].color);
+                camera.draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
             }
         }
     }
@@ -144,7 +142,7 @@ impl Camera {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
 
-    pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color) {
+    pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, outline:bool) {
         let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
         draw_triangle(
             corners[0],
@@ -152,27 +150,29 @@ impl Camera {
             corners[2],
             color
         );
-        draw_triangle_lines(
-            corners[0],
-            corners[1],
-            corners[2],
-            2.,
-            WHITE
-        );
-        
         draw_triangle(
             corners[1],
             corners[2],
             corners[3],
             color
         );
-        draw_triangle_lines(
-            corners[1],
-            corners[2],
-            corners[3],
-            2.,
-            WHITE
-        );
+        if outline {
+            draw_triangle_lines(
+                corners[0],
+                corners[1],
+                corners[2],
+                2.,
+                WHITE
+            );
+            draw_triangle_lines(
+                corners[1],
+                corners[2],
+                corners[3],
+                2.,
+                WHITE
+            );
+        }
+        
     }
 
 }

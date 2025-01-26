@@ -158,7 +158,7 @@ async fn main() {
             graph.mass_remove(&old_removal);
             terrain_entity.corners = tree_corners(&graph, new_pointer);
         }
-        render::draw_all(&camera, &entities, &blocks);
+        render::draw_all(&camera, &entities, &blocks, true);
         let player_entity = entities.get_mut_entity(player).unwrap();
         camera.draw_vec_line(
             player_entity.location.position,
