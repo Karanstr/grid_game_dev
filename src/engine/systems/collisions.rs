@@ -16,7 +16,7 @@ fn vec2_remove_err(a: Vec2) -> Vec2 {
     Vec2::new(if a.x.abs() < EPSILON { 0. } else {a.x}, if a.y.abs() < EPSILON { 0. } else {a.y})
 }
 
-//Decide whether to remember particle velocity
+
 #[derive(Debug, Clone, new)]
 pub struct Particle {
     pub position : Vec2,
@@ -145,7 +145,19 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 
 }
 
-//Currently every potential corner must be checked at least once, meaning the most gains will be made from culling corners (?).
+//Instead of passing in a list of corners, pass in a Vec of 
+/*
+{
+    owner : ID,
+    hitting : ID,
+    center_of_rotation : Vec2,
+    initial_rotation : f32,
+    relative_velocity : Vec2,
+    relative_angular_velocity : f32,
+    corners : BinaryHeap<Reverse<Particle>>, 
+
+}
+*/
 fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
     let mut ticks_to_action = tick_max;
     if corners.is_empty() { return (Vec::new(), ticks_to_action) }
@@ -185,6 +197,7 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
 
 use roots::find_root_brent;
 
+//Allow the bounding shape to be specified as anything which can be represented as a 
 fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, hitting_location:Location, tick_max:f32) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
