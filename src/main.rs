@@ -99,24 +99,39 @@ async fn main() {
     macroquad::window::request_new_screen_size(512., 512.);
     let mut entities = EntityPool::new();
     let blocks = BlockPalette::new();
-    let string = std::fs::read_to_string("src/save.json").unwrap();
-    let world_pointer = if string.len() == 0 { GRAPH.lock().unwrap().get_root(0, 3)}
-    else { GRAPH.lock().unwrap().load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    
+    // Load world state once at startup
+    let world_pointer = {
+        let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
+        let mut graph = GRAPH.lock().unwrap();
+        if string.is_empty() { 
+            graph.get_root(0, 3)
+        } else { 
+            graph.load_object_json(string)
+        }
+    };
+    
     let rotation = 0.5;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
     );
-    let new_root = &mut GRAPH.lock().unwrap().get_root(3, 0);
-    let player = entities.add_entity(
-        Location::new(
-            new_root.clone(),
-            Vec2::new(0., 0.)
-        ),
-        rotation + 0.5,
-    );
+    
+    // Initialize player
+    let player = {
+        let new_root = {GRAPH.lock().unwrap().get_root(3, 0)};
+        entities.add_entity(
+            Location::new(
+                new_root,
+                Vec2::new(0., 0.)
+            ),
+            rotation + 0.5,
+        )
+    };
+    
     let mut color = 0;
     let mut height = 0;
+
     loop {
         let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
@@ -131,30 +146,53 @@ async fn main() {
         if is_key_down(KeyCode::A) { player_entity.apply_forward_velocity(-speed); }
         if is_key_down(KeyCode::D) { player_entity.apply_forward_velocity(speed); }
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
+        
+        // Handle mouse input with minimized lock scope
         if is_mouse_button_down(MouseButton::Left) {
-            let mouse_pos = CAMERA.lock().unwrap().screen_to_world(Vec2::from(mouse_position()));
-            let mut graph = GRAPH.lock().unwrap();
+            let mouse_pos = {
+                let camera = CAMERA.lock().unwrap();
+                camera.screen_to_world(Vec2::from(mouse_position()))
+            };
+            
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let new_pointer = graph.get_root(0, 3);
+            let new_pointer = {
+                let mut graph = GRAPH.lock().unwrap();
+                graph.get_root(color, height)
+            };
+            
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
                 terrain_entity.location.pointer = pointer;
                 terrain_entity.corners = tree_corners(pointer);
             }
         }
-        if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
+
+        if is_key_pressed(KeyCode::V) { color += 1; color %= 4; }
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
-        if is_key_pressed(KeyCode::P) { dbg!(GRAPH.lock().unwrap().nodes.internal_memory()); }
-        if is_key_pressed(KeyCode::K) {
+        
+        // Debug output with minimized lock scope
+        if is_key_pressed(KeyCode::P) { 
             let graph = GRAPH.lock().unwrap();
-            std::fs::write(
-                "src/save.json", 
-                graph.save_object_json(entities.get_entity(terrain).unwrap().location.pointer)
-            ).unwrap();
+            dbg!(graph.nodes.internal_memory()); 
         }
+        
+        // Save game state with minimized lock scope
+        if is_key_pressed(KeyCode::K) {
+            let save_data = {
+                let graph = GRAPH.lock().unwrap();
+                let terrain_entity = entities.get_entity(terrain).unwrap();
+                graph.save_object_json(terrain_entity.location.pointer)
+            };
+            std::fs::write("src/save.json", save_data).unwrap();
+        }
+        
+        // Load game state with minimized lock scope
         if is_key_pressed(KeyCode::L) {
-            let mut graph = GRAPH.lock().unwrap();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let new_pointer = graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap());
+            let mut graph = GRAPH.lock().unwrap();
+            
+            let save_data = std::fs::read_to_string("src/save.json").unwrap();
+            let new_pointer = graph.load_object_json(save_data);
+            
             let old_removal = engine::graph::bfs_nodes(
                 &graph.nodes.internal_memory(),
                 terrain_entity.location.pointer.pointer,
@@ -164,21 +202,30 @@ async fn main() {
             graph.mass_remove(&old_removal);
             terrain_entity.corners = tree_corners(new_pointer);
         }
+        
+        // Rendering with minimized lock scope
         render::draw_all(&entities, &blocks, true);
-        let player_entity = entities.get_mut_entity(player).unwrap();
-        CAMERA.lock().unwrap().draw_vec_line(
-            player_entity.location.position,
-            player_entity.location.position + player_entity.forward / 2.,
-            0.05, WHITE
-        );
+        
+        let (player_pos, player_forward) = {
+            let player_entity = entities.get_entity(player).unwrap();
+            (player_entity.location.position, player_entity.forward)
+        };
+        
+        {
+            let mut camera = CAMERA.lock().unwrap();
+            camera.draw_vec_line(
+                player_pos,
+                player_pos + player_forward / 2.,
+                0.05, WHITE
+            );
+            camera.update(player_pos, 0.1);
+        }
+        
         collisions::n_body_collisions(&mut entities, terrain);
-        CAMERA.lock().unwrap().update(entities.get_entity(player).unwrap().location.position, 0.1);
         macroquad::window::next_frame().await
     }
-
 }
 
-//Put this somewhere proper.
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {
