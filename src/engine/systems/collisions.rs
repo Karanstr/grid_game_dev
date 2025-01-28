@@ -197,7 +197,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                 let other = &entities.entities[other_idx];
                 if within_range(&entity, &other, camera) {
                     // objects.push(entity_to_collision_object(graph, &entity, &other, &camera));
-                    if let Some(obj) = entity_to_collision_object(graph, &entity, &other, &camera) { objects.push(obj); }
+                    if let Some(obj) = entity_to_collision_object(graph, &other, &entity, &camera) { objects.push(obj); }
                 }
             }
         }
@@ -287,74 +287,120 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
     action
 }
 
-// Clean this up later
-//Allow the bounding shape to be specified as anything which can be represented as a series of line intersections?
-//Replace with fancyintersection code
-//Pas particle in at some points
-//Account for angular velocity once we add that
-fn next_intersection(point:Vec2, velocity:Vec2, rotation:f32, position_data:[Option<CellData>; 4], hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
+/// Checks if a point is at a boundary and determines the cell offset based on velocity
+fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_right: Vec2) -> Option<Vec2> {
+    let mut cell = Vec2::ZERO;
+    
+    // Check x-axis boundaries
+    if point.x <= top_left.x + EPSILON {
+        if velocity.x > 0. { cell.x = -1. } else { return None }
+    } else if point.x >= bottom_right.x - EPSILON {
+        if velocity.x < 0. { cell.x = 1. } else { return None }
+    }
+    
+    // Check y-axis boundaries
+    if point.y <= top_left.y + EPSILON {
+        if velocity.y > 0. { cell.y = -1. } else { return None }
+    } else if point.y >= bottom_right.y - EPSILON {
+        if velocity.y < 0. { cell.y = 1. } else { return None }
+    }
+    
+    Some(cell)
+}
+
+/// Selects the appropriate cell and height based on position data and indices
+fn select_cell_and_height(
+    position_data: &[Option<CellData>; 4],
+    rel_idxs: &[usize],
+    point: Vec2,
+    velocity: Vec2,
+    top_left: Vec2,
+    bottom_right: Vec2,
+    default_height: u32,
+) -> Option<(Vec2, u32)> {
+    // Helper function to get cell data from an index
+    let get_cell_data = |idx: usize| {
+        position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height))
+    };
+
+    // Helper function for boundary collision
+    let check_boundary = || {
+        check_boundary_collision(point, velocity, top_left, bottom_right)
+            .map(|cell| (cell, default_height))
+    };
+
+    match rel_idxs.len() {
+        1 => get_cell_data(rel_idxs[0]).or_else(check_boundary),
+        2 => {
+            let data0 = get_cell_data(rel_idxs[0]);
+            let data1 = get_cell_data(rel_idxs[1]);
+            
+            match (data0, data1) {
+                (None, None) => check_boundary(),
+                (None, Some(data)) | (Some(data), None) => Some(data),
+                (Some((cell0, height0)), Some((cell1, height1))) => {
+                    Some(if height0 < height1 {
+                        (cell0, height0)
+                    } else {
+                        (cell1, height1)
+                    })
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
+fn next_intersection(
+    point: Vec2,
+    velocity: Vec2,
+    rotation: f32,
+    position_data: [Option<CellData>; 4],
+    hitting_location: Location,
+    tick_max: f32,
+    camera: &Camera
+) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(position_data, velocity, rotation).is_some() { return Some(0.) }
+
+    if hitting_wall(position_data, velocity, rotation).is_some() {
+        return Some(0.);
+    }
+
     let (rel_idxs, _) = get_relevant_indices(velocity);
-    //Wow this is gross.
-    let (cell, height) = if rel_idxs.len() == 1 {
-        if position_data[rel_idxs[0]].is_none() {
-            let mut cell = Vec2::ZERO;
-            if point.x <= top_left.x + EPSILON {
-                if velocity.x > 0. { cell.x = -1. } else { return None }
-            } else if point.x >= bottom_right.x - EPSILON {
-                if velocity.x < 0. { cell.x = 1. } else { return None }
-            }
-            if point.y <= top_left.y + EPSILON {
-                if velocity.y > 0. { cell.y = -1. } else { return None }
-            } else if point.y >= bottom_right.y - EPSILON {
-                if velocity.y < 0. { cell.y = 1. } else { return None }
-            }
-            (cell, hitting_location.pointer.height)
-        } else { (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height) }
-    } else {
-        if position_data[rel_idxs[0]].is_none() && position_data[rel_idxs[1]].is_none() {
-            let mut cell = Vec2::ZERO;
-            if point.x <= top_left.x + EPSILON {
-                if velocity.x > 0. { cell.x = -1. } else { return None }
-            } else if point.x >= bottom_right.x - EPSILON {
-                if velocity.x < 0. { cell.x = 1. } else { return None }
-            }
-            if point.y <= top_left.y + EPSILON {
-                if velocity.y > 0. { cell.y = -1. } else { return None }
-            } else if point.y >= bottom_right.y - EPSILON {
-                if velocity.y < 0. { cell.y = 1. } else { return None }
-            }
-            (cell, hitting_location.pointer.height)
-        } else if position_data[rel_idxs[0]].is_none() {
-            (position_data[rel_idxs[1]].unwrap().cell.as_vec2(), position_data[rel_idxs[1]].unwrap().pointer.height)
-        } else if position_data[rel_idxs[1]].is_none() {
-            (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height)
-        } else {
-            if position_data[rel_idxs[0]].unwrap().pointer.height < position_data[rel_idxs[1]].unwrap().pointer.height {
-                (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height)
-            } else {
-                (position_data[rel_idxs[1]].unwrap().cell.as_vec2(), position_data[rel_idxs[1]].unwrap().pointer.height)
-            }
-        }
-    };
+    
+    let (cell, height) = select_cell_and_height(
+        &position_data,
+        &rel_idxs,
+        point,
+        velocity,
+        top_left,
+        bottom_right,
+        hitting_location.pointer.height,
+    )?;
+
     let quadrant = velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
     let boundary_corner = top_left + cell * cell_length + cell_length * quadrant;
-    let ticks = (boundary_corner - point) / velocity; 
+    let ticks = (boundary_corner - point) / velocity;
+
     let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
-        (false, false) => { ticks.max_element() },
-        (true, false) if ticks.x == 0. => { ticks.y },
-        (false, true) if ticks.y == 0. => { ticks.x },
-        _ => { ticks.min_element() },
+        (false, false) => ticks.max_element(),
+        (true, false) if ticks.x == 0. => ticks.y,
+        (false, true) if ticks.y == 0. => ticks.x,
+        _ => ticks.min_element(),
     };
-    if ticks_to_hit.is_nan() || ticks_to_hit.abs() > tick_max + EPSILON { None }
-    else { Some(ticks_to_hit) }
+
+    if ticks_to_hit.is_nan() || ticks_to_hit.abs() > tick_max + EPSILON {
+        None
+    } else {
+        Some(ticks_to_hit)
+    }
 }
 
+//Make this work again
 pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
     let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
     let aabb2 =  bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
@@ -374,7 +420,7 @@ pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, ow
     let offset = bounds::center_to_edge(owner.location.pointer.height);
     //Worldspace to hitting aligned
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
-    // if rel_velocity.length() < EPSILON { return None }
+    if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     for corners in owner.corners.iter() {
@@ -522,7 +568,7 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
     let result = if velocity.x == 0. || velocity.y == 0. {
         // Single-axis movement
         let collisions = corner_wall_collision(rotation);
-        let wall = is_solid(collisions.to_zorder_index(velocity).unwrap()); 
+        // let wall = is_solid(collisions.to_zorder_index(velocity).unwrap()); 
         let wall = indices.iter().any(|&idx| is_solid(idx));
         if is_vertical {
             BVec2::new(false, wall)
