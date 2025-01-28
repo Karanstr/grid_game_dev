@@ -15,7 +15,16 @@ mod imports {
     pub use derive_new::new;
 }
 use imports::*;
-// use std::f32::consts::PI;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref GRAPH: Mutex<SparseDirectedGraph<BasicNode>> = Mutex::new(SparseDirectedGraph::new(4));
+    static ref CAMERA: Mutex<Camera> = Mutex::new(Camera::new(
+        AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
+        0.9
+    ));
+}
 
 //Add a method which updates the location of an entity and handles corner recalculation
 
@@ -98,25 +107,24 @@ impl EntityPool {
 async fn main() {
     macroquad::window::request_new_screen_size(512., 512.);
     let mut entities = EntityPool::new();
-    let mut camera = Camera::new( AABB::new(Vec2::ZERO, Vec2::splat(4.)), 0.9);
-    let mut graph = SparseDirectedGraph::<BasicNode>::new(4);
     let blocks = BlockPalette::new();
     let string = std::fs::read_to_string("src/save.json").unwrap();
-    let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
-    else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
+    let world_pointer = if string.len() == 0 { GRAPH.lock().unwrap().get_root(0, 3)}
+    else { GRAPH.lock().unwrap().load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
     let rotation = 0.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        rotation+3.,
-        &graph
+        rotation,
+        &*GRAPH.lock().unwrap()
     );
+    let new_root = &mut GRAPH.lock().unwrap().get_root(3, 0);
     let player = entities.add_entity(
         Location::new(
-            graph.get_root(3, 0),
+            new_root.clone(),
             Vec2::new(0., 0.)
         ),
-        rotation+0.5,
-        &graph
+        rotation,
+        &*GRAPH.lock().unwrap()
     );
     let mut color = 0;
     let mut height = 0;
@@ -136,44 +144,44 @@ async fn main() {
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
         if is_mouse_button_down(MouseButton::Left) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mouse_pos = camera.screen_to_world(Vec2::from(mouse_position()));
+            let mouse_pos = CAMERA.lock().unwrap().screen_to_world(Vec2::from(mouse_position()));
             let new_pointer = ExternalPointer::new(Index(color), height);
-            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location, &mut graph) {
+            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location, &mut *GRAPH.lock().unwrap()) {
                 terrain_entity.location.pointer = pointer;
-                terrain_entity.corners = tree_corners(&graph, pointer);
+                terrain_entity.corners = tree_corners(&*GRAPH.lock().unwrap(), pointer);
             }
         }
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
-        if is_key_pressed(KeyCode::P) { dbg!(graph.nodes.internal_memory()); }
+        if is_key_pressed(KeyCode::P) { dbg!(GRAPH.lock().unwrap().nodes.internal_memory()); }
         if is_key_pressed(KeyCode::K) {
             std::fs::write(
                 "src/save.json", 
-                graph.save_object_json(entities.get_entity(terrain).unwrap().location.pointer)
+                GRAPH.lock().unwrap().save_object_json(entities.get_entity(terrain).unwrap().location.pointer)
             ).unwrap();
         }
         if is_key_pressed(KeyCode::L) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let new_pointer = graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap());
+            let new_pointer = GRAPH.lock().unwrap().load_object_json(std::fs::read_to_string("src/save.json").unwrap());
             let old_removal = engine::graph::bfs_nodes(
-                &graph.nodes.internal_memory(),
+                &GRAPH.lock().unwrap().nodes.internal_memory(),
                 terrain_entity.location.pointer.pointer,
                 3
             );
             terrain_entity.location.pointer = new_pointer;
-            graph.mass_remove(&old_removal);
-            terrain_entity.corners = tree_corners(&graph, new_pointer);
+            GRAPH.lock().unwrap().mass_remove(&old_removal);
+            terrain_entity.corners = tree_corners(&*GRAPH.lock().unwrap(), new_pointer);
         }
-        render::draw_all(&camera, &entities, &blocks, true);
+        render::draw_all(&*CAMERA.lock().unwrap(), &entities, &blocks, true);
         let player_entity = entities.get_mut_entity(player).unwrap();
-        camera.draw_vec_line(
+        CAMERA.lock().unwrap().draw_vec_line(
             player_entity.location.position,
             player_entity.location.position + player_entity.forward / 2.,
             0.05, WHITE
         );
-        collisions::n_body_collisions(&mut entities, &graph, &camera, terrain);
-        // camera.show_view();
-        camera.update(entities.get_entity(player).unwrap().location.position, 0.1);
+        collisions::n_body_collisions(&mut entities, &*GRAPH.lock().unwrap(), &*CAMERA.lock().unwrap(), terrain);
+        // CAMERA.lock().unwrap().show_view();
+        CAMERA.lock().unwrap().update(entities.get_entity(player).unwrap().location.position, 0.1);
         macroquad::window::next_frame().await
     }
 
