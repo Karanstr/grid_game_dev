@@ -34,32 +34,40 @@ pub struct Entity {
     forward: Vec2,
     rotation: f32,
     velocity: Vec2,
+    angular_velocity: f32,
     corners : Vec<Corners>,
 }
 impl Entity {
-    pub fn new(id:ID, location:Location, orientation:f32, velocity:Vec2, graph:&SparseDirectedGraph<engine::graph::BasicNode>) -> Self {
+    pub fn new(id:ID, location:Location, orientation:f32, graph:&SparseDirectedGraph<engine::graph::BasicNode>) -> Self {
+        let forward = Vec2::from_angle(orientation);
         Self { 
             id, 
             location, 
-            forward: Vec2::from_angle(orientation),
+            forward,
             rotation: orientation,
-            velocity,
-            corners : tree_corners(graph, location.pointer),
+            velocity: Vec2::ZERO,
+            angular_velocity: 0.,
+            corners: tree_corners(&graph, location.pointer),
         }
     }
-    pub fn rel_rotate(&mut self, angle:f32) {
+    pub fn rel_rotate(&mut self, angle: f32, graph: &SparseDirectedGraph<engine::graph::BasicNode>) {
+        self.rotation += angle;
         let cos = angle.cos();
         let sin = angle.sin();
-        let new_forward = Vec2::new(
+        self.forward = Vec2::new(
             self.forward.x * cos - self.forward.y * sin,
             self.forward.x * sin + self.forward.y * cos
         ).normalize();
-        self.forward = new_forward;
-        self.rotation = self.forward.y.atan2(self.forward.x);
+        
+        // Update corner configurations
+        self.corners = tree_corners(&graph, self.location.pointer);
     }
-    pub fn set_rotation(&mut self, angle:f32) { 
+    pub fn set_rotation(&mut self, angle: f32, graph: &SparseDirectedGraph<engine::graph::BasicNode>) { 
         self.forward = Vec2::from_angle(angle);
         self.rotation = angle;
+        
+        // Update corner configurations
+        self.corners = tree_corners(&graph, self.location.pointer);
     }
     pub fn apply_forward_velocity(&mut self, speed:f32) { self.velocity += self.forward * speed }
     pub fn apply_perp_velocity(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
@@ -73,9 +81,9 @@ pub struct EntityPool {
     id_counter: u32,
 }
 impl EntityPool {
-    fn add_entity(&mut self, location:Location, orientation:f32, velocity:Vec2, graph:&SparseDirectedGraph<BasicNode>) -> ID {
+    fn add_entity(&mut self, location:Location, orientation:f32, graph:&SparseDirectedGraph<BasicNode>) -> ID {
         self.id_counter += 1;
-        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, velocity, graph));
+        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, graph));
         ID(self.id_counter)
     }
     fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
@@ -96,11 +104,10 @@ async fn main() {
     let string = std::fs::read_to_string("src/save.json").unwrap();
     let world_pointer = if string.len() == 0 { graph.get_root(0, 3)}
     else { graph.load_object_json(std::fs::read_to_string("src/save.json").unwrap()) };
-    let rotation = 0.5;
+    let rotation = 0.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        rotation,
-        Vec2::ZERO,
+        rotation+3.,
         &graph
     );
     let player = entities.add_entity(
@@ -108,8 +115,7 @@ async fn main() {
             graph.get_root(3, 0),
             Vec2::new(0., 0.)
         ),
-        rotation,
-        Vec2::ZERO,
+        rotation+0.5,
         &graph
     );
     let mut color = 0;

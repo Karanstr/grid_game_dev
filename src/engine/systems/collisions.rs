@@ -16,19 +16,34 @@ fn vec2_remove_err(a: Vec2) -> Vec2 {
     Vec2::new(if a.x.abs() < EPSILON { 0. } else {a.x}, if a.y.abs() < EPSILON { 0. } else {a.y})
 }
 
+#[derive(Debug, Clone, new)]
+pub struct CollisionObject {
+    pub position : Vec2, //Grid Center
+    pub velocity : Vec2,
+    // pub angular_velocity : f32,
+    // pub CoR : Vec2, //Center of Rotation
+    pub owner : ID,
+    pub hitting : ID,
+    pub particles : BinaryHeap<Reverse<Particle>>,
+}
 
 #[derive(Debug, Clone, new)]
 pub struct Particle {
-    pub position : Vec2,
-    pub velocity : Vec2,
+    pub offset : Vec2,
+    pub rotation : f32,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
-    #[new(value = "None")]
-    pub position_data : Option<CellData>,
-    pub configuration : Configurations,
-    pub owner : ID,
-    pub hitting : ID,
+    #[new(value = "[None; 4]")]
+    pub position_data : [Option<CellData>; 4],
 }
+
+#[derive(Debug, Clone, PartialEq)]
+enum CellType {
+    Solid,  // index 1 or 3
+    Air,    // index 0 or 2
+    Void,   // None
+}
+
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.ticks_into_projection.partial_cmp(&other.ticks_into_projection)
@@ -46,95 +61,136 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 impl Particle {
-    fn move_by_ticks(&mut self, ticks:f32) { 
-        self.ticks_into_projection += ticks; 
-        self.position += self.velocity * ticks;
-    }
-    fn update_position_data(&mut self, data:&[Option<CellData>; 4]) {
-        self.position_data = data[configured_direction(self.velocity, self.configuration)];
-    }
-}
-#[derive(Debug, Clone)]
-enum Action {
-    Resist(BVec2),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Configurations {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight
-}
-impl Configurations {
-    pub fn from_index(index:usize) -> Self {
-        match index {
-            0 => Self::TopLeft,
-            1 => Self::TopRight,
-            2 => Self::BottomLeft,
-            3 => Self::BottomRight,
-            _ => panic!("Invalid Configuration Index")
+    // Get the relevant Z-order indices based on velocity direction
+    // Returns (indices, is_vertical)
+    // For single-axis movement: returns 2 indices
+    // For diagonal movement: returns 1 index
+    fn get_relevant_indices(velocity:Vec2) -> (Vec<usize>, bool) {
+        if velocity.x == 0. {
+            // Moving vertically
+            let indices = if velocity.y < 0. {
+                vec![0, 1] // Moving up: check top cells (0,1)
+            } else {
+                vec![2, 3] // Moving down: check bottom cells (2,3)
+            };
+            (indices, true)
+        } else if velocity.y == 0. {
+            // Moving horizontally
+            let indices = if velocity.x < 0. {
+                vec![0, 2] // Moving left: check left cells (0,2)
+            } else {
+                vec![1, 3] // Moving right: check right cells (1,3)
+            };
+            (indices, false)
+        } else {
+            // Moving diagonally - only need to check one corner based on direction
+            let idx = match (velocity.x > 0., velocity.y > 0.) {
+                (false, false) => 0, // Moving top-left: check top-left corner
+                (true, false) => 1,  // Moving top-right: check top-right corner
+                (false, true) => 2,  // Moving bottom-left: check bottom-left corner
+                (true, true) => 3,   // Moving bottom-right: check bottom-right corner
+            };
+            (vec![idx], false)
         }
     }
+
+    fn check_wall(&self, idx: usize) -> CellType {
+        match &self.position_data[idx] {
+            Some(cell_data) => {
+                let index = *cell_data.pointer.pointer;
+                if index == 1 || index == 3 { CellType::Solid 
+                } else { CellType::Air }
+            }
+            None => CellType::Void
+        }
+    }
+
+    fn hitting_wall(&self, velocity:Vec2) -> Option<BVec2> {
+        if velocity == Vec2::ZERO { return None }
+
+        let (indices, is_vertical) = Self::get_relevant_indices(velocity);
+        
+        let is_solid = |idx: usize| -> bool {
+            matches!(self.check_wall(idx), CellType::Solid)
+        };
+
+        let result = if velocity.x == 0. || velocity.y == 0. {
+            // Single-axis movement
+            let wall = indices.iter().any(|&idx| is_solid(idx));
+            if is_vertical {
+                BVec2::new(false, wall)
+            } else {
+                BVec2::new(wall, false)
+            }
+        } else {
+            // Diagonal movement - if the corner is solid, we're hitting in both directions
+            let wall = is_solid(indices[0]);
+            BVec2::new(wall, wall)
+        };
+
+        if result != BVec2::FALSE { Some(result) } else { None }
+    }
+
 }
 
 #[derive(Debug, Clone)]
 struct Hit {
     pub owner : ID,
     pub hitting : ID,
-    pub action : Action
+    pub walls : BVec2,
+    pub ticks : f32,
 }
 
 pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDirectedGraph<T>, camera:&Camera, static_thing:ID) {
     let mut tick_max = 1.;
     loop {
-        let mut corners = BinaryHeap::new();
+        let mut objects = Vec::new();
         for idx in 0 .. entities.entities.len() {
             let entity = &entities.entities[idx];
             for other_idx in idx + 1 .. entities.entities.len() {
                 let other = &entities.entities[other_idx];
                 if within_range(&entity, &other, camera) {
-                    corners.extend(particles(graph, &entity, &other, &camera));
+                    // objects.push(entity_to_collision_object(graph, &entity, &other, &camera));
+                    objects.push(entity_to_collision_object(graph, &other, &entity, &camera));
                 }
             }
         }
         
-        let (hits, ticks_to_action) = find_next_action(&entities, &graph, corners, tick_max);
+        let Some(hit) = find_next_action(&entities, &graph, objects.clone(), tick_max, camera) else {
+            for entity in &mut entities.entities {
+                let delta = entity.velocity * tick_max;
+                // Skip tiny movements that could cause precision issues
+                if !vec2_approx_eq(delta, Vec2::ZERO) { entity.location.position += delta;}
+            }
+            break
+        };
         // Update positions with error checking
         for entity in &mut entities.entities {
-            let delta = entity.velocity * ticks_to_action;
+            let delta = entity.velocity * hit.ticks;
             // Skip tiny movements that could cause precision issues
             if !vec2_approx_eq(delta, Vec2::ZERO) { entity.location.position += delta;}
         }
+        tick_max -= hit.ticks;
         
-        tick_max -= ticks_to_action;
-        if hits.is_empty() { break }
+        let hitting = entities.get_entity(hit.hitting).unwrap();
+        let world_to_hitting = Mat2::from_angle(-hitting.rotation);
         
-        for hit in hits {
-            match hit.action {
-                Action::Resist(walls_hit) => {
-                    let hitting = entities.get_entity(hit.hitting).unwrap();
-                    let world_to_hitting = Mat2::from_angle(-hitting.rotation);
-                    
-                    let walls_as_int = IVec2::from(walls_hit).as_vec2();
-                    let relative_velocity = world_to_hitting.mul_vec2(
-                        entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
-                    );
-                    
-                    let impulse = vec2_remove_err(world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int));
-                    
-                    if hit.owner != static_thing {
-                        let entity = entities.get_mut_entity(hit.owner).unwrap();
-                        entity.velocity += impulse;
-                        entity.velocity = vec2_remove_err(entity.velocity);
-                    }
-                    if hit.hitting != static_thing {
-                        let entity = entities.get_mut_entity(hit.hitting).unwrap();
-                        entity.velocity -= impulse;
-                        entity.velocity = vec2_remove_err(entity.velocity);
-                    }
-                }
-            }
+        let walls_as_int = IVec2::from(hit.walls).as_vec2();
+        let relative_velocity = world_to_hitting.mul_vec2(
+            entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
+        );
+        
+        let impulse = vec2_remove_err(world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int));
+        
+        if hit.owner != static_thing {
+            let entity = entities.get_mut_entity(hit.owner).unwrap();
+            entity.velocity += impulse;
+            entity.velocity = vec2_remove_err(entity.velocity);
+        }
+        if hit.hitting != static_thing {
+            let entity = entities.get_mut_entity(hit.hitting).unwrap();
+            entity.velocity -= impulse;
+            entity.velocity = vec2_remove_err(entity.velocity);
         }
     }
     let drag_multiplier = 0.95;
@@ -145,68 +201,60 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 
 }
 
-//Instead of passing in a list of corners, pass in a Vec of 
-/*
-{
-    owner : ID,
-    hitting : ID,
-    center_of_rotation : Vec2,
-    initial_rotation : f32,
-    relative_velocity : Vec2,
-    relative_angular_velocity : f32,
-    corners : BinaryHeap<Reverse<Particle>>, 
+//Please make a function to get real particle position.
 
-}
-*/
-fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, mut corners:BinaryHeap<Reverse<Particle>>, tick_max:f32) -> (Vec<Hit>, f32) {
+// Eventually make this work with islands, solving each island by itself
+fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, objects:Vec<CollisionObject>, tick_max:f32, camera:&Camera) -> Option<Hit> {
     let mut ticks_to_action = tick_max;
-    if corners.is_empty() { return (Vec::new(), ticks_to_action) }
-    let mut actions = Vec::new();
-    while let Some(Reverse(mut cur_corner)) = corners.pop() {
-        //Add epsilon here as well when we're returning all hits?
-        if cur_corner.ticks_into_projection >= ticks_to_action { break }
-        let hitting_location = entities.get_entity(cur_corner.hitting).unwrap().location;
-        let Some(ticks_to_hit) = next_intersection(
-            cur_corner.position,
-            cur_corner.velocity,
-            cur_corner.position_data,
-            hitting_location,
-            ticks_to_action - cur_corner.ticks_into_projection
-        ) else { continue };
-        cur_corner.move_by_ticks(ticks_to_hit);
-        //It may be reasonable to not find real cells here, since that will result to far less graph traversals than if we do it as needed in slide check and update_pos_data
-        let all_data = gate::point_to_real_cells(graph, hitting_location, cur_corner.position);
-        cur_corner.update_position_data(&all_data);
-        if cur_corner.position_data.is_none() { continue }
-        if is_ignore(cur_corner.position_data.unwrap().pointer.pointer) { }
-        else if let Some(hit_walls) = determine_walls_hit(BVec2::TRUE, cur_corner.velocity, cur_corner.configuration, all_data) {
-            //Eventually don't clear actions and instead return any actions within EPSILON of each other?
-            actions.clear();
-            actions.push( Hit {
-                    owner : cur_corner.owner,
-                    hitting : cur_corner.hitting,
-                    action : Action::Resist(hit_walls)
-            } );
-            ticks_to_action = cur_corner.ticks_into_projection;
-            continue
+    let mut action = None;
+    'objectloop : for mut object in objects {
+        while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
+            if cur_corner.ticks_into_projection >= ticks_to_action { continue 'objectloop }
+            let hitting_location = entities.get_entity(object.hitting).unwrap().location;
+            let Some(ticks_to_hit) = next_intersection(
+                cur_corner.offset + object.position + object.velocity * cur_corner.ticks_into_projection,
+                object.velocity,
+                &cur_corner,
+                hitting_location,
+                ticks_to_action,
+                camera
+            ) else { continue };
+            cur_corner.ticks_into_projection += ticks_to_hit;
+            //It may be reasonable to not find real cells here, since that will result to far less graph traversals than if we do it as needed in slide check and update_pos_data
+            let position_data = gate::point_to_real_cells(
+                graph,
+                hitting_location,
+                object.position + cur_corner.offset + cur_corner.ticks_into_projection * object.velocity
+            );
+            cur_corner.position_data = position_data;
+            
+            if let Some(walls_hit) = cur_corner.hitting_wall(object.velocity) {
+                action = Some( Hit {
+                        owner : object.owner,
+                        hitting : object.hitting,
+                        walls : walls_hit,
+                        ticks : cur_corner.ticks_into_projection
+                    }
+                );
+                ticks_to_action = cur_corner.ticks_into_projection;
+            } else { object.particles.push(Reverse(cur_corner)) }
         }
-        corners.push(Reverse(cur_corner));
     }
-    (actions, ticks_to_action)
+    action
 }
 
-use roots::find_root_brent;
-
-//Allow the bounding shape to be specified as anything which can be represented as a 
-fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, hitting_location:Location, tick_max:f32) -> Option<f32> {
+//Allow the bounding shape to be specified as anything which can be represented as a series of line intersections?
+//Replace with fancyintersection code
+fn next_intersection(point:Vec2, velocity:Vec2, particle:&Particle, hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
-    let (cell, height) = match position_data {
-        Some(data) => { (data.cell.as_vec2(), data.pointer.height) }
-        //Redocument this code please, I'm not 100% clear what it does anymore.
-        None => {
+    if particle.hitting_wall(velocity).is_some() { return Some(0.) }
+    let (rel_idxs, _) = Particle::get_relevant_indices(velocity);
+    //Wow this is gross.
+    let (cell, height) = if rel_idxs.len() == 1 {
+        if particle.position_data[rel_idxs[0]].is_none() {
             let mut cell = Vec2::ZERO;
             if point.x <= top_left.x + EPSILON {
                 if velocity.x > 0. { cell.x = -1. } else { return None }
@@ -219,12 +267,36 @@ fn next_intersection(point:Vec2, velocity:Vec2, position_data:Option<CellData>, 
                 if velocity.y < 0. { cell.y = 1. } else { return None }
             }
             (cell, hitting_location.pointer.height)
+        } else { (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height) }
+    } else {
+        if particle.position_data[rel_idxs[0]].is_none() && particle.position_data[rel_idxs[1]].is_none() {
+            let mut cell = Vec2::ZERO;
+            if point.x <= top_left.x + EPSILON {
+                if velocity.x > 0. { cell.x = -1. } else { return None }
+            } else if point.x >= bottom_right.x - EPSILON {
+                if velocity.x < 0. { cell.x = 1. } else { return None }
+            }
+            if point.y <= top_left.y + EPSILON {
+                if velocity.y > 0. { cell.y = -1. } else { return None }
+            } else if point.y >= bottom_right.y - EPSILON {
+                if velocity.y < 0. { cell.y = 1. } else { return None }
+            }
+            (cell, hitting_location.pointer.height)
+        } else if particle.position_data[rel_idxs[0]].is_none() {
+            (particle.position_data[rel_idxs[1]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[1]].unwrap().pointer.height)
+        } else if particle.position_data[rel_idxs[1]].is_none() {
+            (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height)
+        } else {
+            if particle.position_data[rel_idxs[0]].unwrap().pointer.height < particle.position_data[rel_idxs[1]].unwrap().pointer.height {
+                (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height)
+            } else {
+                (particle.position_data[rel_idxs[1]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[1]].unwrap().pointer.height)
+            }
         }
     };
     let quadrant = velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
     let boundary_corner = top_left + cell * cell_length + cell_length * quadrant;
-    //Insert Brent's root finder here, bounded by [-ticks_max, ticks_max]
     let ticks = (boundary_corner - point) / velocity; 
     let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
         (false, false) => { ticks.max_element() },
@@ -246,13 +318,39 @@ pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
     true // result
 }
 
-pub fn particles<T:GraphNode>(graph:&SparseDirectedGraph<T>, object1:&Entity, object2:&Entity, camera:&Camera ) -> BinaryHeap<Reverse<Particle>> {
-    let mut result = BinaryHeap::from(corner_handling::actionable_corners(graph, object1, object2, camera));
-    result.extend(corner_handling::actionable_corners(graph, object2, object1, camera));
-    result
+//Add culling edgecase for no rotation
+//Relative angles only relevant when culling
+//We aren't culling rn
+pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> CollisionObject {
+    let mut collision_points = BinaryHeap::new();
+    let align_to_hitting = Vec2::from_angle(-hitting.rotation);
+    let offset = bounds::center_to_edge(owner.location.pointer.height);
+    //Worldspace to hitting aligned
+    let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
+    let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
+    camera.draw_point(rotated_owner_pos, 0.1, GREEN);
+    for corners in owner.corners.iter() {
+        for i in 0..4 {
+            //Cull any corner which isn't a corner
+            if corners.mask & (1 << i) == 0 { continue }
+            let point = (corners.points[i] - offset).rotate(align_to_hitting).rotate(owner.forward);
+            camera.draw_point(point + rotated_owner_pos, 0.1, RED);
+            let mut particle = Particle::new(point, -hitting.rotation + owner.rotation);
+            particle.position_data = gate::point_to_real_cells(graph, hitting.location, point + rotated_owner_pos);
+            collision_points.push(Reverse(particle));
+        }
+    }
+    CollisionObject::new(
+        rotated_owner_pos,
+        rel_velocity,
+        owner.id,
+        hitting.id,
+        collision_points
+    )
 }
 
-#[derive(Debug, new)]
+
+#[derive(Debug, Clone, new)]
 pub struct Corners {
     pub points : [Vec2; 4],
     pub index : Index,
@@ -320,122 +418,38 @@ pub mod corner_handling {
         corners 
     }
     
-    //Should be able to cull even more based on hang_check principle
-    //Fix these bound checks
-    pub fn actionable_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Vec<Reverse<Particle>> {
-        let mut culled_corners = Vec::new();
-        
-        let align_hitting = Vec2::from_angle(-hitting.rotation);
-        let offset = bounds::center_to_edge(owner.location.pointer.height);
-        
-        let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_hitting));
-        
-        // let hitting_aabb = bounds::aabb(hitting.location.position, hitting.location.pointer.height);
-        let aligned_owner_pos = (owner.location.position - hitting.location.position).rotate(align_hitting) + hitting.location.position;
-        
-        camera.draw_point(aligned_owner_pos, 0.1, GREEN);
-        
-        for corners in owner.corners.iter() {
-            for i in 0..4 {
-                if corners.mask & (1 << i) == 0 { continue }
-                let point = (corners.points[i] - offset).rotate(align_hitting).rotate(owner.forward) + aligned_owner_pos;
-                camera.draw_point(point, 0.1, RED);
-                let configuration = Configurations::from_index(i);
-                if hittable_walls(rel_velocity, configuration) == BVec2::FALSE { continue }
-                // let point_aabb = AABB::new(point, Vec2::splat(EPSILON)).expand(rel_velocity);
-                // if hitting_aabb.intersects(point_aabb) != BVec2::TRUE { continue }
-                let mut particle = Particle::new(point, rel_velocity, configuration, owner.id, hitting.id);
-                //We do this manually to reduce the number of graph traversals
-                if let Some(smallest_cell) = gate::point_to_cells(hitting.location, 0, point)[configured_direction(-rel_velocity, configuration)] {
-                    particle.position_data = Some(gate::find_real_cell(graph, hitting.location.pointer, smallest_cell));
-                }
-                culled_corners.push(Reverse(particle));
-            }
-        }
-        culled_corners
-    }
-
+    
 }
 
-fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, configuration:Configurations, position_data:[Option<CellData>; 4]) -> Option<BVec2> {
-    let hit_walls = {
-        let potential_hits = possibly_hit_walls & hittable_walls(velocity, configuration);
-        if potential_hits == BVec2::TRUE {
-            slide_check(velocity, position_data)
-        } else { potential_hits }
-    };
-    match hit_walls {
-        BVec2::TRUE => { Some(mag_slide_check(velocity)) }
-        BVec2::FALSE => { None }
-        _ => { Some(hit_walls) }
-    }
-}
+//Rewrite all this
+// fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, position_data:[Option<CellData>; 4]) -> Option<BVec2> {
+//     let hit_walls = {
+//         if possibly_hit_walls == BVec2::TRUE {
+//             slide_check(velocity, position_data)
+//         } else { possibly_hit_walls }
+//     };
+//     match hit_walls {
+//         BVec2::FALSE => { None }
+//         _ => { Some(hit_walls) }
+//     }
+// }
+// fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
+//     let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
+//         (2, 1)
+//     } else if velocity.x < 0. && velocity.y > 0. { //(-,+)
+//         (0, 3)
+//     } else if velocity.x > 0. && velocity.y < 0. { //(+,-)
+//         (3, 0)
+//     } else { //(+,+)
+//         (1, 2)
+//     };
+//     let x_ignore = if let Some(pos_data) = position_data[x_slide_check] {
+//         is_ignore(pos_data.pointer.pointer)
+//     } else { true };
+//     let y_ignore = if let Some(pos_data) = position_data[y_slide_check] {
+//         is_ignore(pos_data.pointer.pointer)
+//     } else { true };
+//     BVec2::new(y_ignore, x_ignore )
+// }
 
-fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
-    let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
-        (2, 1)
-    } else if velocity.x < 0. && velocity.y > 0. { //(-,+)
-        (0, 3)
-    } else if velocity.x > 0. && velocity.y < 0. { //(+,-)
-        (3, 0)
-    } else { //(+,+)
-        (1, 2)
-    };
-    let x_ignore = if let Some(pos_data) = position_data[x_slide_check] {
-        is_ignore(pos_data.pointer.pointer)
-    } else { true };
-    let y_ignore = if let Some(pos_data) = position_data[y_slide_check] {
-        is_ignore(pos_data.pointer.pointer)
-    } else { true };
-    BVec2::new(y_ignore, x_ignore )
-}
-
-fn is_ignore(index:Index) -> bool {
-    *index == 0 || *index == 2
-}
-
-//Compares configuration to velocity to determine which walls you're allowed to hit
-//(A corner on the top of a block can't hit a wall below it, the block is in the way)
-pub fn hittable_walls(velocity:Vec2, configuration:Configurations) -> BVec2 {
-    let (x_check, y_check) = match configuration {
-        Configurations::TopLeft => {
-            (velocity.x < 0., velocity.y < 0.)
-        }
-        Configurations::TopRight => {
-            (velocity.x > 0., velocity.y < 0.)
-        }
-        Configurations::BottomLeft => {
-            (velocity.x < 0., velocity.y > 0.)
-        }
-        Configurations::BottomRight => {
-            (velocity.x > 0., velocity.y > 0.)
-        }
-    };
-    BVec2::new(x_check, y_check)
-}
-
-pub fn mag_slide_check(velocity:Vec2) -> BVec2 {
-    let abs_vel = velocity.abs();
-    if abs_vel.y < abs_vel.x { 
-        BVec2::new(false, true)
-    } else if abs_vel.x < abs_vel.y {
-        BVec2::new(true, false)
-    } else {
-        BVec2::TRUE
-    }
-}
-
-//Uses configuration to decide which cell you're hitting while moving along a single axis.
-//We can assume a corner would've been culled if it is irrelevant
-//This meaning we only care about corners on the y wall and the x wall (This isn't true..?)
-pub fn configured_direction(direction:Vec2, configuration:Configurations) -> usize {
-    if direction == Vec2::ZERO { dbg!("AHHH"); }
-    let clamped: Vec2 = direction.signum().max(Vec2::ZERO);
-    if direction.x == 0. {
-        2 * clamped.y as usize | if configuration == Configurations::TopLeft || configuration == Configurations::BottomLeft { 1 } else { 0 }
-    } else if direction.y == 0. {
-        clamped.x as usize | 2 * if configuration == Configurations::TopLeft || configuration == Configurations::TopRight { 1 } else { 0 }
-    } else {
-        2 * clamped.y as usize | clamped.x as usize
-    }
-}
+fn is_ignore(index:Index) -> bool { *index == 2 || *index == 0 }
