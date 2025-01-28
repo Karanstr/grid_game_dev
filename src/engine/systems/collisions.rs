@@ -44,6 +44,76 @@ enum CellType {
     Void,   // None
 }
 
+// Get the relevant Z-order indices based on velocity direction
+// Returns (indices, is_vertical)
+// For single-axis movement: returns 2 indices
+// For diagonal movement: returns 1 index
+fn get_relevant_indices(velocity:Vec2) -> (Vec<usize>, bool) {
+    if velocity.x == 0. {
+        // Moving vertically
+        let indices = if velocity.y < 0. {
+            vec![0, 1] // Moving up: check top cells (0,1)
+        } else {
+            vec![2, 3] // Moving down: check bottom cells (2,3)
+        };
+        (indices, true)
+    } else if velocity.y == 0. {
+        // Moving horizontally
+        let indices = if velocity.x < 0. {
+            vec![0, 2] // Moving left: check left cells (0,2)
+        } else {
+            vec![1, 3] // Moving right: check right cells (1,3)
+        };
+        (indices, false)
+    } else {
+        // Moving diagonally - only need to check one corner based on direction
+        let idx = match (velocity.x > 0., velocity.y > 0.) {
+            (false, false) => 0, // Moving top-left: check top-left corner
+            (true, false) => 1,  // Moving top-right: check top-right corner
+            (false, true) => 2,  // Moving bottom-left: check bottom-left corner
+            (true, true) => 3,   // Moving bottom-right: check bottom-right corner
+        };
+        (vec![idx], false)
+    }
+}
+
+fn check_wall(position_data:&[Option<CellData>; 4], idx: usize) -> CellType {
+    match &position_data[idx] {
+        Some(cell_data) => {
+            let index = *cell_data.pointer.pointer;
+            if index == 1 || index == 3 { CellType::Solid 
+            } else { CellType::Air }
+        }
+        None => CellType::Void
+    }
+}
+
+fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2) -> Option<BVec2> {
+    if velocity == Vec2::ZERO { return None }
+
+    let (indices, is_vertical) = get_relevant_indices(velocity);
+    
+    let is_solid = |idx: usize| -> bool {
+        matches!(check_wall(&position_data, idx), CellType::Solid)
+    };
+
+    let result = if velocity.x == 0. || velocity.y == 0. {
+        // Single-axis movement
+        let wall = indices.iter().any(|&idx| is_solid(idx));
+        if is_vertical {
+            BVec2::new(false, wall)
+        } else {
+            BVec2::new(wall, false)
+        }
+    } else {
+        // Diagonal movement - if the corner is solid, we're hitting in both directions
+        let wall = is_solid(indices[0]);
+        BVec2::new(wall, wall)
+    };
+
+    if result != BVec2::FALSE { Some(result) } else { None }
+}
+
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.ticks_into_projection.partial_cmp(&other.ticks_into_projection)
@@ -61,74 +131,10 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 impl Particle {
-    // Get the relevant Z-order indices based on velocity direction
-    // Returns (indices, is_vertical)
-    // For single-axis movement: returns 2 indices
-    // For diagonal movement: returns 1 index
-    fn get_relevant_indices(velocity:Vec2) -> (Vec<usize>, bool) {
-        if velocity.x == 0. {
-            // Moving vertically
-            let indices = if velocity.y < 0. {
-                vec![0, 1] // Moving up: check top cells (0,1)
-            } else {
-                vec![2, 3] // Moving down: check bottom cells (2,3)
-            };
-            (indices, true)
-        } else if velocity.y == 0. {
-            // Moving horizontally
-            let indices = if velocity.x < 0. {
-                vec![0, 2] // Moving left: check left cells (0,2)
-            } else {
-                vec![1, 3] // Moving right: check right cells (1,3)
-            };
-            (indices, false)
-        } else {
-            // Moving diagonally - only need to check one corner based on direction
-            let idx = match (velocity.x > 0., velocity.y > 0.) {
-                (false, false) => 0, // Moving top-left: check top-left corner
-                (true, false) => 1,  // Moving top-right: check top-right corner
-                (false, true) => 2,  // Moving bottom-left: check bottom-left corner
-                (true, true) => 3,   // Moving bottom-right: check bottom-right corner
-            };
-            (vec![idx], false)
-        }
-    }
+    
 
-    fn check_wall(&self, idx: usize) -> CellType {
-        match &self.position_data[idx] {
-            Some(cell_data) => {
-                let index = *cell_data.pointer.pointer;
-                if index == 1 || index == 3 { CellType::Solid 
-                } else { CellType::Air }
-            }
-            None => CellType::Void
-        }
-    }
-
-    fn hitting_wall(&self, velocity:Vec2) -> Option<BVec2> {
-        if velocity == Vec2::ZERO { return None }
-
-        let (indices, is_vertical) = Self::get_relevant_indices(velocity);
-        
-        let is_solid = |idx: usize| -> bool {
-            matches!(self.check_wall(idx), CellType::Solid)
-        };
-
-        let result = if velocity.x == 0. || velocity.y == 0. {
-            // Single-axis movement
-            let wall = indices.iter().any(|&idx| is_solid(idx));
-            if is_vertical {
-                BVec2::new(false, wall)
-            } else {
-                BVec2::new(wall, false)
-            }
-        } else {
-            // Diagonal movement - if the corner is solid, we're hitting in both directions
-            let wall = is_solid(indices[0]);
-            BVec2::new(wall, wall)
-        };
-
-        if result != BVec2::FALSE { Some(result) } else { None }
+    fn position(&self, owner:&CollisionObject) -> Vec2 {
+        self.offset + owner.position + owner.velocity * self.ticks_into_projection
     }
 
 }
@@ -212,23 +218,22 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
             if cur_corner.ticks_into_projection >= ticks_to_action { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
-                cur_corner.offset + object.position + object.velocity * cur_corner.ticks_into_projection,
+                cur_corner.position(&object),
                 object.velocity,
-                &cur_corner,
+                cur_corner.position_data,
                 hitting_location,
                 ticks_to_action,
                 camera
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
-            //It may be reasonable to not find real cells here, since that will result to far less graph traversals than if we do it as needed in slide check and update_pos_data
             let position_data = gate::point_to_real_cells(
                 graph,
                 hitting_location,
-                object.position + cur_corner.offset + cur_corner.ticks_into_projection * object.velocity
+                cur_corner.position(&object)
             );
             cur_corner.position_data = position_data;
             
-            if let Some(walls_hit) = cur_corner.hitting_wall(object.velocity) {
+            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity) {
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -245,16 +250,16 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
 
 //Allow the bounding shape to be specified as anything which can be represented as a series of line intersections?
 //Replace with fancyintersection code
-fn next_intersection(point:Vec2, velocity:Vec2, particle:&Particle, hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
+fn next_intersection(point:Vec2, velocity:Vec2, position_data:[Option<CellData>; 4], hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
-    if particle.hitting_wall(velocity).is_some() { return Some(0.) }
-    let (rel_idxs, _) = Particle::get_relevant_indices(velocity);
+    if hitting_wall(position_data, velocity).is_some() { return Some(0.) }
+    let (rel_idxs, _) = get_relevant_indices(velocity);
     //Wow this is gross.
     let (cell, height) = if rel_idxs.len() == 1 {
-        if particle.position_data[rel_idxs[0]].is_none() {
+        if position_data[rel_idxs[0]].is_none() {
             let mut cell = Vec2::ZERO;
             if point.x <= top_left.x + EPSILON {
                 if velocity.x > 0. { cell.x = -1. } else { return None }
@@ -267,9 +272,9 @@ fn next_intersection(point:Vec2, velocity:Vec2, particle:&Particle, hitting_loca
                 if velocity.y < 0. { cell.y = 1. } else { return None }
             }
             (cell, hitting_location.pointer.height)
-        } else { (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height) }
+        } else { (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height) }
     } else {
-        if particle.position_data[rel_idxs[0]].is_none() && particle.position_data[rel_idxs[1]].is_none() {
+        if position_data[rel_idxs[0]].is_none() && position_data[rel_idxs[1]].is_none() {
             let mut cell = Vec2::ZERO;
             if point.x <= top_left.x + EPSILON {
                 if velocity.x > 0. { cell.x = -1. } else { return None }
@@ -282,15 +287,15 @@ fn next_intersection(point:Vec2, velocity:Vec2, particle:&Particle, hitting_loca
                 if velocity.y < 0. { cell.y = 1. } else { return None }
             }
             (cell, hitting_location.pointer.height)
-        } else if particle.position_data[rel_idxs[0]].is_none() {
-            (particle.position_data[rel_idxs[1]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[1]].unwrap().pointer.height)
-        } else if particle.position_data[rel_idxs[1]].is_none() {
-            (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height)
+        } else if position_data[rel_idxs[0]].is_none() {
+            (position_data[rel_idxs[1]].unwrap().cell.as_vec2(), position_data[rel_idxs[1]].unwrap().pointer.height)
+        } else if position_data[rel_idxs[1]].is_none() {
+            (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height)
         } else {
-            if particle.position_data[rel_idxs[0]].unwrap().pointer.height < particle.position_data[rel_idxs[1]].unwrap().pointer.height {
-                (particle.position_data[rel_idxs[0]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[0]].unwrap().pointer.height)
+            if position_data[rel_idxs[0]].unwrap().pointer.height < position_data[rel_idxs[1]].unwrap().pointer.height {
+                (position_data[rel_idxs[0]].unwrap().cell.as_vec2(), position_data[rel_idxs[0]].unwrap().pointer.height)
             } else {
-                (particle.position_data[rel_idxs[1]].unwrap().cell.as_vec2(), particle.position_data[rel_idxs[1]].unwrap().pointer.height)
+                (position_data[rel_idxs[1]].unwrap().cell.as_vec2(), position_data[rel_idxs[1]].unwrap().pointer.height)
             }
         }
     };

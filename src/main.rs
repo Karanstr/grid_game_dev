@@ -25,7 +25,7 @@ pub struct Location {
     pub position: Vec2,
 }
 
-//Chunking in 256 to allow for storage in u8s
+//Chunk and store corner locations in u8s?
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ID(pub u32);
 pub struct Entity {
