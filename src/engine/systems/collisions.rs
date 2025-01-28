@@ -96,14 +96,9 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 impl Particle {
-    
 
     fn position(&self, owner:&CollisionObject) -> Vec2 {
         self.offset + owner.position + owner.velocity * self.ticks_into_projection
-    }
-
-    fn real_position(&self, owner:&CollisionObject) -> Vec2 {
-        self.position(owner)
     }
 
 }
@@ -202,7 +197,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
                 let other = &entities.entities[other_idx];
                 if within_range(&entity, &other, camera) {
                     // objects.push(entity_to_collision_object(graph, &entity, &other, &camera));
-                    objects.push(entity_to_collision_object(graph, &other, &entity, &camera));
+                    if let Some(obj) = entity_to_collision_object(graph, &entity, &other, &camera) { objects.push(obj); }
                 }
             }
         }
@@ -252,7 +247,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 
 }
 
-//Eventually make this work with islands, solving each island by itself
+// Eventually make this work with islands, solving each island by itself
 fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, objects:Vec<CollisionObject>, tick_max:f32, camera:&Camera) -> Option<Hit> {
     let mut ticks_to_action = tick_max;
     let mut action = None;
@@ -263,6 +258,7 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
             let Some(ticks_to_hit) = next_intersection(
                 cur_corner.position(&object),
                 object.velocity,
+                cur_corner.rotation, //Remember to recompute for ticks into projection
                 cur_corner.position_data,
                 hitting_location,
                 ticks_to_action,
@@ -276,7 +272,7 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
             );
             cur_corner.position_data = position_data;
             
-            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity) {
+            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.rotation) {
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -294,12 +290,14 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
 // Clean this up later
 //Allow the bounding shape to be specified as anything which can be represented as a series of line intersections?
 //Replace with fancyintersection code
-fn next_intersection(point:Vec2, velocity:Vec2, position_data:[Option<CellData>; 4], hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
+//Pas particle in at some points
+//Account for angular velocity once we add that
+fn next_intersection(point:Vec2, velocity:Vec2, rotation:f32, position_data:[Option<CellData>; 4], hitting_location:Location, tick_max:f32, camera:&Camera) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(position_data, velocity).is_some() { return Some(0.) }
+    if hitting_wall(position_data, velocity, rotation).is_some() { return Some(0.) }
     let (rel_idxs, _) = get_relevant_indices(velocity);
     //Wow this is gross.
     let (cell, height) = if rel_idxs.len() == 1 {
@@ -370,12 +368,13 @@ pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
 // Add culling edgecase for no rotation
 //Relative angles only relevant when culling
 //We aren't culling rn
-pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> CollisionObject {
+pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
     //Worldspace to hitting aligned
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
+    // if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     for corners in owner.corners.iter() {
@@ -389,13 +388,13 @@ pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, ow
             collision_points.push(Reverse(particle));
         }
     }
-    CollisionObject::new(
+    Some(CollisionObject::new(
         rotated_owner_pos,
         rel_velocity,
         owner.id,
         hitting.id,
         collision_points
-    )
+    ))
 }
 
 
@@ -512,7 +511,7 @@ fn check_wall(position_data:&[Option<CellData>; 4], idx: usize) -> CellType {
     }
 }
 
-fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2) -> Option<BVec2> {
+fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32) -> Option<BVec2> {
     if velocity == Vec2::ZERO { return None }
 
     let (indices, is_vertical) = get_relevant_indices(velocity);
@@ -522,6 +521,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2) -> Option<BV
     };
     let result = if velocity.x == 0. || velocity.y == 0. {
         // Single-axis movement
+        let collisions = corner_wall_collision(rotation);
+        let wall = is_solid(collisions.to_zorder_index(velocity).unwrap()); 
         let wall = indices.iter().any(|&idx| is_solid(idx));
         if is_vertical {
             BVec2::new(false, wall)
@@ -535,7 +536,10 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2) -> Option<BV
     };
     if result == BVec2::TRUE {
         Some(slide_check(velocity, position_data))
-    } else if result != BVec2::FALSE { Some(result) } else { None }
+    } else if result == BVec2::FALSE { None } else { 
+        Some(result)
+     }
 }
 
+//Change this name
 fn is_ignore(index:Index) -> bool { *index == 2 || *index == 0 }
