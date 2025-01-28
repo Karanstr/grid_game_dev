@@ -136,21 +136,21 @@ pub mod grid {
             surrounding
         }
         
-        pub fn point_to_real_cells<T : GraphNode>(graph:&SparseDirectedGraph<T>, grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
+        pub fn point_to_real_cells(grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
             let mut surrounding = [None; 4];
-            let deepest_cells = point_to_cells(grid_location, 0, point);
-            for i in 0 .. 4 {
-                if let Some(cell) = deepest_cells[i] {
-                    surrounding[i] = Some(find_real_cell(graph, grid_location.pointer, cell));
+            let cells = point_to_cells(grid_location, 0, point);
+            for i in 0..4 {
+                if let Some(cell) = cells[i] {
+                    surrounding[i] = Some(find_real_cell(grid_location.pointer, cell));
                 }
             }
             surrounding
         }
         
         //Only works if cell is at height 0
-        pub fn find_real_cell<T : GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, cell:UVec2) -> CellData {
+        pub fn find_real_cell(start:ExternalPointer, cell:UVec2) -> CellData {
             let path = ZorderPath::from_cell(cell, start.height);
-            let pointer = graph.read(start, &path.steps()).unwrap();
+            let pointer = GRAPH.lock().unwrap().read(start, &path.steps()).unwrap();
             let zorder = path.with_depth(start.height - pointer.height);
             CellData::new(pointer, zorder.to_cell())
         }

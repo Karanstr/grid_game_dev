@@ -187,7 +187,7 @@ pub fn corner_wall_collision(rotation: f32) -> WallTouch {
     WallTouch { horizontal, vertical }
 }
 
-pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDirectedGraph<T>, camera:&Camera, static_thing:ID) {
+pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
     let mut tick_max = 1.;
     loop {
         let mut objects = Vec::new();
@@ -195,14 +195,13 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
             let entity = &entities.entities[idx];
             for other_idx in idx + 1 .. entities.entities.len() {
                 let other = &entities.entities[other_idx];
-                if within_range(&entity, &other, camera) {
-                    // objects.push(entity_to_collision_object(graph, &entity, &other, &camera));
-                    if let Some(obj) = entity_to_collision_object(graph, &other, &entity, &camera) { objects.push(obj); }
+                if within_range(&entity, &other) {
+                    if let Some(obj) = entity_to_collision_object(&other, &entity) { objects.push(obj); }
                 }
             }
         }
         
-        let Some(hit) = find_next_action(&entities, &graph, objects.clone(), tick_max, camera) else {
+        let Some(hit) = find_next_action(&entities, objects.clone(), tick_max) else {
             for entity in &mut entities.entities {
                 let delta = entity.velocity * tick_max;
                 // Skip tiny movements that could cause precision issues
@@ -248,7 +247,7 @@ pub fn n_body_collisions<T:GraphNode>(entities:&mut EntityPool, graph:&SparseDir
 }
 
 // Eventually make this work with islands, solving each island by itself
-fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGraph<T>, objects:Vec<CollisionObject>, tick_max:f32, camera:&Camera) -> Option<Hit> {
+fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
@@ -261,12 +260,10 @@ fn find_next_action<T:GraphNode>(entities:&EntityPool, graph:&SparseDirectedGrap
                 cur_corner.rotation, //Remember to recompute for ticks into projection
                 cur_corner.position_data,
                 hitting_location,
-                ticks_to_action,
-                camera
+                tick_max,
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             let position_data = gate::point_to_real_cells(
-                graph,
                 hitting_location,
                 cur_corner.position(&object)
             );
@@ -358,7 +355,6 @@ fn next_intersection(
     position_data: [Option<CellData>; 4],
     hitting_location: Location,
     tick_max: f32,
-    camera: &Camera
 ) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
@@ -401,20 +397,21 @@ fn next_intersection(
 }
 
 //Make this work again
-pub fn within_range(entity1:&Entity, entity2:&Entity, camera:&Camera) -> bool {
+pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
     let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
-    let aabb2 =  bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
+    let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
     let result = aabb.intersects(aabb2) == BVec2::TRUE;
-    let color = if result { RED } else { RED };
+    let color = if result { GREEN } else { RED };
+    let camera = CAMERA.lock().unwrap();
     camera.outline_bounds(aabb, 0.05, color);
     camera.outline_bounds(aabb2, 0.05, color);
-    true // result
+    result
 }
 
 // Add culling edgecase for no rotation
 //Relative angles only relevant when culling
 //We aren't culling rn
-pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, owner:&Entity, hitting:&Entity, camera:&Camera) -> Option<CollisionObject> {
+pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
@@ -422,6 +419,7 @@ pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, ow
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
     if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
+    let camera = CAMERA.lock().unwrap();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     for corners in owner.corners.iter() {
         for i in 0..4 {
@@ -430,7 +428,7 @@ pub fn entity_to_collision_object<T:GraphNode>(graph:&SparseDirectedGraph<T>, ow
             let point = (corners.points[i] - offset).rotate(align_to_hitting).rotate(owner.forward);
             camera.draw_point(point + rotated_owner_pos, 0.1, RED);
             let mut particle = Particle::new(point, -hitting.rotation + owner.rotation);
-            particle.position_data = gate::point_to_real_cells(graph, hitting.location, point + rotated_owner_pos);
+            particle.position_data = gate::point_to_real_cells(hitting.location, point + rotated_owner_pos);
             collision_points.push(Reverse(particle));
         }
     }
@@ -455,7 +453,7 @@ pub mod corner_handling {
     use super::*;
 
     //Figure out if this can be improved?
-    fn cell_corner_mask<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer, zorder:ZorderPath) -> u8 {
+    fn cell_corner_mask(start:ExternalPointer, zorder:ZorderPath) -> u8 {
             let mut exposed_mask = 0b1111;
             let checks = [
                 (IVec2::new(-1, 0), 0b01), //Top Left 0
@@ -478,7 +476,7 @@ pub mod corner_handling {
                     for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
-                    let pointer = graph.read(start, &check_zorder.steps()).unwrap();
+                    let pointer = GRAPH.lock().unwrap().read(start, &check_zorder.steps()).unwrap();
                     //Add proper block lookup
                     if !is_ignore(pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
@@ -498,15 +496,15 @@ pub mod corner_handling {
         ]
     }
 
-    pub fn tree_corners<T:GraphNode>(graph:&SparseDirectedGraph<T>, start:ExternalPointer) -> Vec<Corners> {
-        let leaves = graph.dfs_leaf_cells(start);
+    pub fn tree_corners(start:ExternalPointer) -> Vec<Corners> {
+        let leaves = GRAPH.lock().unwrap().dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
             let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
             corners.push( Corners::new(
                 cell_corners(cell),
                 cell.pointer.pointer,
-                if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(graph, start, zorder) }
+                if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 

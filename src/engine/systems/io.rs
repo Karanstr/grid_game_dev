@@ -27,17 +27,18 @@ pub mod output {
 
     pub mod render {
         use super::*;
+        use crate::CAMERA;
         
-        pub fn draw_all(camera:&Camera, entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
+        pub fn draw_all(entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
             for entity in entities.entities.iter() {
-                let location = entity.location;
-                if camera.aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(camera, entity, blocks, outline);
+                let location = &entity.location;
+                if CAMERA.lock().unwrap().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
+                    draw(entity, blocks, outline);
                 }
             }
         }
     
-        pub fn draw(camera:&Camera, entity:&Entity, blocks:&BlockPalette, outline:bool) {
+        pub fn draw(entity:&Entity, blocks:&BlockPalette, outline:bool) {
             let rotation = entity.forward;
             let point_offset = bounds::center_to_edge(entity.location.pointer.height);
             let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
@@ -50,7 +51,7 @@ pub mod output {
                 ))}
             }).collect();
             for (points, index) in points_list {
-                camera.draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
+                CAMERA.lock().unwrap().draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
             }
         }
     }

@@ -13,14 +13,16 @@ mod imports {
     pub use macroquad::color::Color;
     pub use macroquad::input::*;
     pub use derive_new::new;
+    pub use crate::GRAPH;
+    pub use crate::CAMERA;
 }
 use imports::*;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
 
 lazy_static! {
-    static ref GRAPH: Mutex<SparseDirectedGraph<BasicNode>> = Mutex::new(SparseDirectedGraph::new(4));
-    static ref CAMERA: Mutex<Camera> = Mutex::new(Camera::new(
+    pub static ref GRAPH: Mutex<SparseDirectedGraph<BasicNode>> = Mutex::new(SparseDirectedGraph::new(4));
+    pub static ref CAMERA: Mutex<Camera> = Mutex::new(Camera::new(
         AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
         0.9
     ));
@@ -43,40 +45,29 @@ pub struct Entity {
     forward: Vec2,
     rotation: f32,
     velocity: Vec2,
-    angular_velocity: f32,
+    // angular_velocity: f32,
     corners : Vec<Corners>,
 }
 impl Entity {
-    pub fn new(id:ID, location:Location, orientation:f32, graph:&SparseDirectedGraph<engine::graph::BasicNode>) -> Self {
-        let forward = Vec2::from_angle(orientation);
-        Self { 
-            id, 
-            location, 
-            forward,
+    pub fn new(id:ID, location:Location, orientation:f32) -> Self {
+        Self {
+            id,
+            location,
+            forward: Vec2::from_angle(orientation),
             rotation: orientation,
             velocity: Vec2::ZERO,
-            angular_velocity: 0.,
-            corners: tree_corners(&graph, location.pointer),
+            corners: tree_corners(location.pointer),
         }
     }
-    pub fn rel_rotate(&mut self, angle: f32, graph: &SparseDirectedGraph<engine::graph::BasicNode>) {
+    pub fn rel_rotate(&mut self, angle: f32) {
         self.rotation += angle;
-        let cos = angle.cos();
-        let sin = angle.sin();
-        self.forward = Vec2::new(
-            self.forward.x * cos - self.forward.y * sin,
-            self.forward.x * sin + self.forward.y * cos
-        ).normalize();
-        
-        // Update corner configurations
-        self.corners = tree_corners(&graph, self.location.pointer);
+        self.forward = Vec2::from_angle(self.rotation);
+        self.corners = tree_corners(self.location.pointer);
     }
-    pub fn set_rotation(&mut self, angle: f32, graph: &SparseDirectedGraph<engine::graph::BasicNode>) { 
-        self.forward = Vec2::from_angle(angle);
+    pub fn set_rotation(&mut self, angle: f32) { 
         self.rotation = angle;
-        
-        // Update corner configurations
-        self.corners = tree_corners(&graph, self.location.pointer);
+        self.forward = Vec2::from_angle(self.rotation);
+        self.corners = tree_corners(self.location.pointer);
     }
     pub fn apply_forward_velocity(&mut self, speed:f32) { self.velocity += self.forward * speed }
     pub fn apply_perp_velocity(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
@@ -90,9 +81,9 @@ pub struct EntityPool {
     id_counter: u32,
 }
 impl EntityPool {
-    fn add_entity(&mut self, location:Location, orientation:f32, graph:&SparseDirectedGraph<BasicNode>) -> ID {
+    fn add_entity(&mut self, location:Location, orientation:f32) -> ID {
         self.id_counter += 1;
-        self.entities.push(Entity::new(ID(self.id_counter), location, orientation, graph));
+        self.entities.push(Entity::new(ID(self.id_counter), location, orientation));
         ID(self.id_counter)
     }
     fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
@@ -115,7 +106,6 @@ async fn main() {
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
-        &*GRAPH.lock().unwrap()
     );
     let new_root = &mut GRAPH.lock().unwrap().get_root(3, 0);
     let player = entities.add_entity(
@@ -124,7 +114,6 @@ async fn main() {
             Vec2::new(0., 0.)
         ),
         rotation + 0.5,
-        &*GRAPH.lock().unwrap()
     );
     let mut color = 0;
     let mut height = 0;
@@ -143,13 +132,13 @@ async fn main() {
         if is_key_down(KeyCode::D) { player_entity.apply_forward_velocity(speed); }
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
         if is_mouse_button_down(MouseButton::Left) {
+            let mouse_pos = CAMERA.lock().unwrap().screen_to_world(Vec2::from(mouse_position()));
             let mut graph = GRAPH.lock().unwrap();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mouse_pos = CAMERA.lock().unwrap().screen_to_world(Vec2::from(mouse_position()));
-            let new_pointer = ExternalPointer::new(Index(color), height);
-            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location, &mut *graph) {
+            let new_pointer = graph.get_root(0, 3);
+            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
                 terrain_entity.location.pointer = pointer;
-                terrain_entity.corners = tree_corners(&*graph, pointer);
+                terrain_entity.corners = tree_corners(pointer);
             }
         }
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4;}
@@ -173,20 +162,16 @@ async fn main() {
             );
             terrain_entity.location.pointer = new_pointer;
             graph.mass_remove(&old_removal);
-            terrain_entity.corners = tree_corners(&*graph, new_pointer);
+            terrain_entity.corners = tree_corners(new_pointer);
         }
-        render::draw_all(&*CAMERA.lock().unwrap(), &entities, &blocks, true);
+        render::draw_all(&entities, &blocks, true);
         let player_entity = entities.get_mut_entity(player).unwrap();
-        {
-            let camera = CAMERA.lock().unwrap();
-            camera.draw_vec_line(
-                player_entity.location.position,
-                player_entity.location.position + player_entity.forward / 2.,
-                0.05, WHITE
-            );
-            let graph = GRAPH.lock().unwrap();
-            collisions::n_body_collisions(&mut entities, &*graph, &camera, terrain);
-        }
+        CAMERA.lock().unwrap().draw_vec_line(
+            player_entity.location.position,
+            player_entity.location.position + player_entity.forward / 2.,
+            0.05, WHITE
+        );
+        collisions::n_body_collisions(&mut entities, terrain);
         CAMERA.lock().unwrap().update(entities.get_entity(player).unwrap().location.position, 0.1);
         macroquad::window::next_frame().await
     }
@@ -194,15 +179,15 @@ async fn main() {
 }
 
 //Put this somewhere proper.
-pub fn set_grid_cell<T : GraphNode>(to:ExternalPointer, world_point:Vec2, location:Location, graph:&mut SparseDirectedGraph<T>) -> Option<ExternalPointer> {
+pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {
         let cell = gate::point_to_cells(location, height, world_point)[0];
         if let Some(cell) = cell {
             let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-            if let Ok(pointer) = graph.set_node(location.pointer, &path.steps(), to.pointer) {
-                return Some(pointer)
-            } else {dbg!("Write failure. That's really bad.");}
+            if let Ok(pointer) = GRAPH.lock().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
+                return Some(pointer);
+            }
         }
     }
     None
