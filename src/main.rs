@@ -18,11 +18,11 @@ mod imports {
 }
 use imports::*;
 use lazy_static::lazy_static;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 lazy_static! {
-    pub static ref GRAPH: Mutex<SparseDirectedGraph<BasicNode>> = Mutex::new(SparseDirectedGraph::new(4));
-    pub static ref CAMERA: Mutex<Camera> = Mutex::new(Camera::new(
+    pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
+    pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
         AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
         0.9
     ));
@@ -103,7 +103,7 @@ async fn main() {
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
-        let mut graph = GRAPH.lock().unwrap();
+        let mut graph = GRAPH.write().unwrap();
         if string.is_empty() { 
             graph.get_root(0, 3)
         } else { 
@@ -111,7 +111,7 @@ async fn main() {
         }
     };
     
-    let rotation = 0.5;
+    let rotation = 0.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
@@ -119,13 +119,13 @@ async fn main() {
     
     // Initialize player
     let player = {
-        let new_root = {GRAPH.lock().unwrap().get_root(3, 0)};
+        let new_root = GRAPH.write().unwrap().get_root(3, 0);
         entities.add_entity(
             Location::new(
                 new_root,
                 Vec2::new(0., 0.)
             ),
-            rotation + 0.5,
+            rotation,
         )
     };
     
@@ -150,15 +150,12 @@ async fn main() {
         // Handle mouse input with minimized lock scope
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = {
-                let camera = CAMERA.lock().unwrap();
+                let camera = CAMERA.read().unwrap();
                 camera.screen_to_world(Vec2::from(mouse_position()))
             };
             
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let new_pointer = {
-                let mut graph = GRAPH.lock().unwrap();
-                graph.get_root(color, height)
-            };
+            let new_pointer = { GRAPH.write().unwrap().get_root(color, height) };
             
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
                 terrain_entity.location.pointer = pointer;
@@ -171,14 +168,14 @@ async fn main() {
         
         // Debug output with minimized lock scope
         if is_key_pressed(KeyCode::P) { 
-            let graph = GRAPH.lock().unwrap();
+            let graph = GRAPH.read().unwrap();
             dbg!(graph.nodes.internal_memory()); 
         }
         
         // Save game state with minimized lock scope
         if is_key_pressed(KeyCode::K) {
             let save_data = {
-                let graph = GRAPH.lock().unwrap();
+                let graph = GRAPH.read().unwrap();
                 let terrain_entity = entities.get_entity(terrain).unwrap();
                 graph.save_object_json(terrain_entity.location.pointer)
             };
@@ -188,7 +185,7 @@ async fn main() {
         // Load game state with minimized lock scope
         if is_key_pressed(KeyCode::L) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mut graph = GRAPH.lock().unwrap();
+            let mut graph = GRAPH.write().unwrap();
             
             let save_data = std::fs::read_to_string("src/save.json").unwrap();
             let new_pointer = graph.load_object_json(save_data);
@@ -212,7 +209,7 @@ async fn main() {
         };
         
         {
-            let mut camera = CAMERA.lock().unwrap();
+            let mut camera = CAMERA.write().unwrap();
             camera.draw_vec_line(
                 player_pos,
                 player_pos + player_forward / 2.,
@@ -232,7 +229,7 @@ pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) ->
         let cell = gate::point_to_cells(location, height, world_point)[0];
         if let Some(cell) = cell {
             let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-            if let Ok(pointer) = GRAPH.lock().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
+            if let Ok(pointer) = GRAPH.write().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
                 return Some(pointer);
             }
         }

@@ -35,6 +35,7 @@ pub struct Particle {
     pub ticks_into_projection : f32,
     #[new(value = "[None; 4]")]
     pub position_data : [Option<CellData>; 4],
+    pub type_of : usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,8 +78,6 @@ fn get_relevant_indices(velocity:Vec2) -> (Vec<usize>, bool) {
     }
 }
 
-
-
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.ticks_into_projection.partial_cmp(&other.ticks_into_projection)
@@ -96,52 +95,36 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 impl Particle {
-
     fn position(&self, owner:&CollisionObject) -> Vec2 {
         self.offset + owner.position + owner.velocity * self.ticks_into_projection
     }
 
 }
 
-//Unify these later, negative, none, positive
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum WallSide {
+pub enum WallSign {
     None,
-    Left,
-    Right
+    Negative,
+    Positive
 }
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum WallHeight {
-    None,
-    Top,
-    Bottom
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, new)]
 pub struct WallTouch {
-    pub horizontal: WallHeight,
-    pub vertical: WallSide,
+    pub horizontal: WallSign,
+    pub vertical: WallSign,
 }
 
 impl WallTouch {
-    /// Converts the wall touch into a z-order index for position_data array
-    /// Given a single-axis velocity, returns the index opposite to the touched wall
-    /// e.g., if touching left wall, returns right wall index
+    // Given a single-axis velocity, returns the index in the direction of the wall
     pub fn to_zorder_index(&self, velocity: Vec2) -> Option<usize> {
-        if velocity.x != 0.0 && velocity.y != 0.0 {
-            return None; // Only works for single-axis velocity
-        }
-
-        match (velocity.x != 0.0, &self.vertical, &self.horizontal) {
-            // Horizontal movement
-            (true, WallSide::Left, _) => Some(1),   // Right side index
-            (true, WallSide::Right, _) => Some(3),  // Left side index
-            // Vertical movement
-            (false, _, WallHeight::Top) => Some(2),    // Bottom side index
-            (false, _, WallHeight::Bottom) => Some(0), // Top side index
-            _ => None,
-        }
+        if velocity.x != 0.0 && velocity.y != 0.0 { dbg!("AHHH"); return None }
+        if velocity.x == 0.0 && velocity.y == 0.0 { dbg!("AHHH2"); return None }
+        let clamped = velocity.signum().max(Vec2::ZERO);
+        Some( if velocity.x == 0. {
+            2 * clamped.y as usize | if self.horizontal == WallSign::Positive { 0 } else { 1 } 
+        } else {
+            clamped.x as usize | 2 * if self.vertical == WallSign::Positive { 0 } else { 1 } 
+        } )
+        
     }
 }
 
@@ -153,38 +136,15 @@ struct Hit {
 }
 
 // Determines which specific walls of the bounding box a corner touches given its rotation in radians
-pub fn corner_wall_collision(rotation: f32) -> WallTouch {
-    use std::f32::consts::PI;
-    
-    // Normalize rotation to 0-2π radians
-    let rotation = rotation % (2.0 * PI);
-    let rotation = if rotation < 0.0 { rotation + 2.0 * PI } else { rotation };
-
-    // At exact 90-degree intervals (π/2, 3π/2, etc), the corner touches two walls
-    if (rotation % (PI/2.0)).abs() < f32::EPSILON {
-        let quadrant = (rotation / (PI/2.0)).round() as i32 % 4;
-        return match quadrant {
-            0 => WallTouch { vertical: WallSide::Right, horizontal: WallHeight::None },
-            1 => WallTouch { vertical: WallSide::None, horizontal: WallHeight::Bottom },
-            2 => WallTouch { vertical: WallSide::Left, horizontal: WallHeight::None },
-            _ => WallTouch { vertical: WallSide::None, horizontal: WallHeight::Top },
-        };
+// Needs to know which corner we're in
+pub fn corner_wall_collision(corner: usize) -> WallTouch {
+    match corner {
+        0 => WallTouch::new(WallSign::Negative, WallSign::Negative),
+        1 => WallTouch::new(WallSign::Positive, WallSign::Negative),
+        2 => WallTouch::new(WallSign::Negative, WallSign::Positive),
+        3 => WallTouch::new(WallSign::Positive, WallSign::Positive),
+        _ => unreachable!(),
     }
-
-    // Check which quadrant we're in and determine wall touches
-    let vertical = match rotation {
-        r if r <= PI/4.0 || r > 7.0*PI/4.0 => WallSide::Right,
-        r if r > 3.0*PI/4.0 && r <= 5.0*PI/4.0 => WallSide::Left,
-        _ => WallSide::None,
-    };
-
-    let horizontal = match rotation {
-        r if r > PI/4.0 && r <= 3.0*PI/4.0 => WallHeight::Bottom,
-        r if r > 5.0*PI/4.0 && r <= 7.0*PI/4.0 => WallHeight::Top,
-        _ => WallHeight::None,
-    };
-
-    WallTouch { horizontal, vertical }
 }
 
 pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
@@ -196,6 +156,7 @@ pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
             for other_idx in idx + 1 .. entities.entities.len() {
                 let other = &entities.entities[other_idx];
                 if within_range(&entity, &other) {
+                    if let Some(obj) = entity_to_collision_object(&entity, &other) { objects.push(obj); }
                     if let Some(obj) = entity_to_collision_object(&other, &entity) { objects.push(obj); }
                 }
             }
@@ -226,7 +187,6 @@ pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
         );
         
         let impulse = vec2_remove_err(world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int));
-        
         if hit.owner != static_thing {
             let entity = entities.get_mut_entity(hit.owner).unwrap();
             entity.velocity += impulse;
@@ -261,6 +221,7 @@ fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max
                 cur_corner.position_data,
                 hitting_location,
                 tick_max,
+                cur_corner.type_of
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             let position_data = gate::point_to_real_cells(
@@ -269,7 +230,7 @@ fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max
             );
             cur_corner.position_data = position_data;
             
-            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.rotation) {
+            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.rotation, cur_corner.type_of) {
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -284,7 +245,8 @@ fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max
     action
 }
 
-/// Checks if a point is at a boundary and determines the cell offset based on velocity
+// Rename this
+// Checks if a point is at a boundary and determines the cell offset based on velocity
 fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_right: Vec2) -> Option<Vec2> {
     let mut cell = Vec2::ZERO;
     
@@ -305,7 +267,7 @@ fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_
     Some(cell)
 }
 
-/// Selects the appropriate cell and height based on position data and indices
+// Selects the appropriate cell and height based on position data and indices
 fn select_cell_and_height(
     position_data: &[Option<CellData>; 4],
     rel_idxs: &[usize],
@@ -336,11 +298,7 @@ fn select_cell_and_height(
                 (None, None) => check_boundary(),
                 (None, Some(data)) | (Some(data), None) => Some(data),
                 (Some((cell0, height0)), Some((cell1, height1))) => {
-                    Some(if height0 < height1 {
-                        (cell0, height0)
-                    } else {
-                        (cell1, height1)
-                    })
+                    Some( if height0 < height1 { (cell0, height0) } else { (cell1, height1) } )
                 }
             }
         }
@@ -355,15 +313,15 @@ fn next_intersection(
     position_data: [Option<CellData>; 4],
     hitting_location: Location,
     tick_max: f32,
+    corner_type: usize,
 ) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
 
-    if hitting_wall(position_data, velocity, rotation).is_some() {
-        return Some(0.);
-    }
+    // Consider flipping velocity and returning ticks back to wall.
+    if hitting_wall(position_data, velocity, rotation, corner_type).is_some() { return Some(0.); }
 
     let (rel_idxs, _) = get_relevant_indices(velocity);
     
@@ -402,10 +360,10 @@ pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
     let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
     let result = aabb.intersects(aabb2) == BVec2::TRUE;
     let color = if result { GREEN } else { RED };
-    let camera = CAMERA.lock().unwrap();
+    let camera = CAMERA.read().unwrap();
     camera.outline_bounds(aabb, 0.05, color);
     camera.outline_bounds(aabb2, 0.05, color);
-    result
+    true //result
 }
 
 // Add culling edgecase for no rotation
@@ -419,7 +377,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
     if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
-    let camera = CAMERA.lock().unwrap();
+    let camera = CAMERA.read().unwrap();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     for corners in owner.corners.iter() {
         for i in 0..4 {
@@ -427,7 +385,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             if corners.mask & (1 << i) == 0 { continue }
             let point = (corners.points[i] - offset).rotate(align_to_hitting).rotate(owner.forward);
             camera.draw_point(point + rotated_owner_pos, 0.1, RED);
-            let mut particle = Particle::new(point, -hitting.rotation + owner.rotation);
+            let mut particle = Particle::new(point, -hitting.rotation + owner.rotation, i);
             particle.position_data = gate::point_to_real_cells(hitting.location, point + rotated_owner_pos);
             collision_points.push(Reverse(particle));
         }
@@ -476,7 +434,7 @@ pub mod corner_handling {
                     for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
-                    let pointer = GRAPH.lock().unwrap().read(start, &check_zorder.steps()).unwrap();
+                    let pointer = GRAPH.read().unwrap().read(start, &check_zorder.steps()).unwrap();
                     //Add proper block lookup
                     if !is_ignore(pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
@@ -497,7 +455,7 @@ pub mod corner_handling {
     }
 
     pub fn tree_corners(start:ExternalPointer) -> Vec<Corners> {
-        let leaves = GRAPH.lock().unwrap().dfs_leaf_cells(start);
+        let leaves = GRAPH.read().unwrap().dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
             let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
@@ -513,18 +471,6 @@ pub mod corner_handling {
     
 }
 
-//Rewrite all this
-// fn determine_walls_hit(possibly_hit_walls:BVec2, velocity:Vec2, position_data:[Option<CellData>; 4]) -> Option<BVec2> {
-//     let hit_walls = {
-//         if possibly_hit_walls == BVec2::TRUE {
-//             slide_check(velocity, position_data)
-//         } else { possibly_hit_walls }
-//     };
-//     match hit_walls {
-//         BVec2::FALSE => { None }
-//         _ => { Some(hit_walls) }
-//     }
-// }
 fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
     let (x_slide_check, y_slide_check) = if velocity.x < 0. && velocity.y < 0. { //(-,-)
         (2, 1)
@@ -535,55 +481,47 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
     } else { //(+,+)
         (1, 2)
     };
-    let x_ignore = if let Some(pos_data) = position_data[x_slide_check] {
-        is_ignore(pos_data.pointer.pointer)
-    } else { true };
-    let y_ignore = if let Some(pos_data) = position_data[y_slide_check] {
-        is_ignore(pos_data.pointer.pointer)
-    } else { true };
-    BVec2::new(y_ignore, x_ignore )
+    BVec2::new(
+        is_solid(&position_data, y_slide_check),
+        is_solid(&position_data, x_slide_check)
+    )
 }
 
 fn check_wall(position_data:&[Option<CellData>; 4], idx: usize) -> CellType {
     match &position_data[idx] {
         Some(cell_data) => {
             let index = *cell_data.pointer.pointer;
-            if index == 1 || index == 3 { CellType::Solid 
-            } else { CellType::Air }
+            if index == 1 || index == 3 { CellType::Solid } else { CellType::Air }
         }
         None => CellType::Void
     }
 }
 
-fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32) -> Option<BVec2> {
+fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
     if velocity == Vec2::ZERO { return None }
 
     let (indices, is_vertical) = get_relevant_indices(velocity);
-    
-    let is_solid = |idx: usize| -> bool {
-        matches!(check_wall(&position_data, idx), CellType::Solid)
-    };
     let result = if velocity.x == 0. || velocity.y == 0. {
         // Single-axis movement
-        let collisions = corner_wall_collision(rotation);
-        // let wall = is_solid(collisions.to_zorder_index(velocity).unwrap()); 
-        let wall = indices.iter().any(|&idx| is_solid(idx));
-        if is_vertical {
-            BVec2::new(false, wall)
-        } else {
-            BVec2::new(wall, false)
-        }
+        let collisions = corner_wall_collision(corner_type);
+        let wall = is_solid(&position_data, collisions.to_zorder_index(velocity).unwrap_or(0)); 
+        // let wall = indices.iter().any(|&idx| is_solid(&position_data, idx));
+        BVec2::new(wall & !is_vertical, wall & is_vertical)
     } else {
         // Diagonal movement - if the corner is solid, we're hitting in both directions
-        let wall = is_solid(indices[0]);
-        BVec2::new(wall, wall)
+        BVec2::splat(is_solid(&position_data, indices[0]))
     };
     if result == BVec2::TRUE {
         Some(slide_check(velocity, position_data))
     } else if result == BVec2::FALSE { None } else { 
         Some(result)
-     }
+    }
 }
 
+
+//Figure out unifying these
+fn is_solid(position_data:&[Option<CellData>; 4], idx: usize) -> bool {
+    matches!(check_wall(&position_data, idx), CellType::Solid)
+}
 //Change this name
 fn is_ignore(index:Index) -> bool { *index == 2 || *index == 0 }

@@ -32,7 +32,7 @@ pub mod output {
         pub fn draw_all(entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
             for entity in entities.entities.iter() {
                 let location = &entity.location;
-                if CAMERA.lock().unwrap().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
+                if CAMERA.read().unwrap().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
                     draw(entity, blocks, outline);
                 }
             }
@@ -51,7 +51,7 @@ pub mod output {
                 ))}
             }).collect();
             for (points, index) in points_list {
-                CAMERA.lock().unwrap().draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
+                CAMERA.read().unwrap().draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
             }
         }
     }
