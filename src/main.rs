@@ -200,14 +200,17 @@ async fn main() {
             terrain_entity.corners = tree_corners(new_pointer);
         }
         
+        //Move before rendering
+        
         // Rendering with minimized lock scope
         render::draw_all(&entities, &blocks, true);
-        
         let (player_pos, player_forward) = {
             let player_entity = entities.get_entity(player).unwrap();
             (player_entity.location.position, player_entity.forward)
         };
-        
+
+        collisions::n_body_collisions(&mut entities, terrain);
+
         {
             let mut camera = CAMERA.write().unwrap();
             camera.draw_vec_line(
@@ -215,10 +218,10 @@ async fn main() {
                 player_pos + player_forward / 2.,
                 0.05, WHITE
             );
+            //Move camera after rendering everything
             camera.update(player_pos, 0.1);
         }
-        
-        collisions::n_body_collisions(&mut entities, terrain);
+
         macroquad::window::next_frame().await
     }
 }

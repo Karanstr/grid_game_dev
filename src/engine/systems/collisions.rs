@@ -147,35 +147,55 @@ pub fn corner_wall_collision(corner: usize) -> WallTouch {
     }
 }
 
-pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
-    let mut tick_max = 1.;
-    loop {
-        let mut objects = Vec::new();
-        for idx in 0 .. entities.entities.len() {
-            let entity = &entities.entities[idx];
-            for other_idx in idx + 1 .. entities.entities.len() {
-                let other = &entities.entities[other_idx];
-                if within_range(&entity, &other) {
-                    if let Some(obj) = entity_to_collision_object(&entity, &other) { objects.push(obj); }
-                    if let Some(obj) = entity_to_collision_object(&other, &entity) { objects.push(obj); }
+// Eventually turn this into an identifier/generator
+fn collect_collision_objects(entities: &EntityPool) -> Vec<CollisionObject> {
+    let mut objects = Vec::new();
+    for idx in 0..entities.entities.len() {
+        let entity = &entities.entities[idx];
+        for other_idx in idx + 1..entities.entities.len() {
+            let other = &entities.entities[other_idx];
+            if within_range(&entity, &other) {
+                if let Some(obj) = entity_to_collision_object(&entity, &other) { 
+                    objects.push(obj); 
+                }
+                if let Some(obj) = entity_to_collision_object(&other, &entity) { 
+                    objects.push(obj); 
                 }
             }
         }
+    }
+    objects
+}
+
+fn apply_drag(entities: &mut EntityPool) {
+    const DRAG_MULTIPLIER: f32 = 0.95;
+    for entity in &mut entities.entities { 
+        entity.velocity *= DRAG_MULTIPLIER;
+        entity.velocity = vec2_remove_err(entity.velocity);
+    }
+}
+
+fn tick_entities(entities: &mut EntityPool, delta_tick: f32) {
+    for entity in &mut entities.entities {
+        let delta = entity.velocity * delta_tick;
+        // Skip tiny movements that could cause precision issues
+        if !vec2_approx_eq(delta, Vec2::ZERO) { 
+            entity.location.position += delta;
+        }
+    }
+}
+
+pub fn n_body_collisions(entities: &mut EntityPool, static_thing: ID) {
+    let mut tick_max = 1.;
+    loop {
+        let objects = collect_collision_objects(entities);
         
-        let Some(hit) = find_next_action(&entities, objects.clone(), tick_max) else {
-            for entity in &mut entities.entities {
-                let delta = entity.velocity * tick_max;
-                // Skip tiny movements that could cause precision issues
-                if !vec2_approx_eq(delta, Vec2::ZERO) { entity.location.position += delta;}
-            }
+        let Some(hit) = find_next_action(&entities, objects, tick_max) else {
+            tick_entities(entities, tick_max);
             break
         };
-        // Update positions with error checking
-        for entity in &mut entities.entities {
-            let delta = entity.velocity * hit.ticks;
-            // Skip tiny movements that could cause precision issues
-            if !vec2_approx_eq(delta, Vec2::ZERO) { entity.location.position += delta;}
-        }
+        
+        tick_entities(entities, hit.ticks);
         tick_max -= hit.ticks;
         
         let hitting = entities.get_entity(hit.hitting).unwrap();
@@ -198,12 +218,8 @@ pub fn n_body_collisions(entities:&mut EntityPool, static_thing:ID) {
             entity.velocity = vec2_remove_err(entity.velocity);
         }
     }
-    let drag_multiplier = 0.95;
-    for entity in &mut entities.entities { 
-        entity.velocity *= drag_multiplier;
-        entity.velocity = vec2_remove_err(entity.velocity);
-    }
-
+    
+    apply_drag(entities);
 }
 
 // Eventually make this work with islands, solving each island by itself
@@ -279,32 +295,17 @@ fn select_cell_and_height(
     bottom_right: Vec2,
     default_height: u32,
 ) -> Option<(Vec2, u32)> {
-    // Helper function to get cell data from an index
-    let get_cell_data = |idx: usize| {
-        position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height))
-    };
-
-    // Helper function for boundary collision
-    let check_boundary = || {
-        check_boundary_collision(point, velocity, top_left, bottom_right)
-            .map(|cell| (cell, default_height))
-    };
-
-    match rel_idxs.len() {
-        1 => get_cell_data(rel_idxs[0]).or_else(check_boundary),
-        2 => {
-            let data0 = get_cell_data(rel_idxs[0]);
-            let data1 = get_cell_data(rel_idxs[1]);
-            
-            match (data0, data1) {
-                (None, None) => check_boundary(),
-                (None, Some(data)) | (Some(data), None) => Some(data),
-                (Some((cell0, height0)), Some((cell1, height1))) => {
-                    Some( if height0 < height1 { (cell0, height0) } else { (cell1, height1) } )
-                }
-            }
-        }
-        _ => None,
+    // Try to get cell data for each index
+    let cells: Vec<_> = rel_idxs.iter()
+        .filter_map(|&idx| position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)))
+        .collect();
+    
+    match cells.as_slice() {
+        [] => check_boundary_collision(point, velocity, top_left, bottom_right)
+            .map(|cell| (cell, default_height)),
+        [cell] => Some(*cell),
+        [cell1, cell2] => Some(if cell1.1 < cell2.1 { *cell1 } else { *cell2 }),
+        _ => None
     }
 }
 
@@ -369,13 +370,13 @@ pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
 }
 
 // Add culling edgecase for no rotation
-//Relative angles only relevant when culling
-//We aren't culling rn
+// Relative angles only relevant when culling
+// We aren't culling rn
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
-    //Worldspace to hitting aligned
+    // Worldspace to hitting aligned
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
     if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
@@ -437,8 +438,7 @@ pub mod corner_handling {
                         check_zorder = check_zorder.step_down(direction)
                     }
                     let pointer = GRAPH.read().unwrap().read(start, &check_zorder.steps()).unwrap();
-                    //Add proper block lookup
-                    if !is_ignore(pointer.pointer) { exposed_mask -= 1 << i; break }
+                    if matches!(check_index(pointer.pointer), CellType::Solid) { exposed_mask -= 1 << i; break }
                 }
             }
             exposed_mask
@@ -464,7 +464,7 @@ pub mod corner_handling {
             corners.push( Corners::new(
                 cell_corners(cell),
                 cell.pointer.pointer,
-                if is_ignore(cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
+                if check_cell(Some(cell)) == CellType::Air { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 
@@ -483,49 +483,48 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
     } else { //(+,+)
         (1, 2)
     };
-    let result = BVec2::new(
-        is_solid(&position_data, x_slide_check),
-        is_solid(&position_data, y_slide_check),
-    );
-    result
-}
-
-fn check_wall(position_data:&[Option<CellData>; 4], idx: usize) -> CellType {
-    match &position_data[idx] {
-        Some(cell_data) => {
-            let index = *cell_data.pointer.pointer;
-            if index == 1 || index == 3 { CellType::Solid } else { CellType::Air }
-        }
-        None => CellType::Void
-    }
+    BVec2::new(
+        is_solid(position_data[x_slide_check]),
+        is_solid(position_data[y_slide_check]),
+    )
 }
 
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
     if velocity == Vec2::ZERO { return None }
 
     let (indices, is_vertical) = get_relevant_indices(velocity);
+    // Single-axis movement
     let result = if velocity.x == 0. || velocity.y == 0. {
-        // Single-axis movement
         let collisions = corner_wall_collision(corner_type);
-        let wall = is_solid(&position_data, collisions.to_zorder_index(velocity).unwrap_or(0)); 
+        let wall = is_solid(position_data[collisions.to_zorder_index(velocity).unwrap_or(0)]); 
         // let wall = indices.iter().any(|&idx| is_solid(&position_data, idx));
         BVec2::new(wall & !is_vertical, wall & is_vertical)
-    } else {
-        // Diagonal movement - if the corner is solid, we're hitting in both directions
-        BVec2::splat(is_solid(&position_data, indices[0]))
+    } else { // Diagonal movement - if the corner is solid, we're hitting in both directions
+        BVec2::splat(is_solid(position_data[indices[0]]))
     };
+
     if result == BVec2::TRUE {
         let slide_checked = slide_check(velocity, position_data);
         if slide_checked == BVec2::FALSE { Some(BVec2::TRUE) } else { Some(slide_checked) }
-    } else if result == BVec2::FALSE { None } else { 
-        Some(result)
+    } else if result == BVec2::FALSE { None } else { Some(result) }
+}
+
+// Figure out unifying these
+fn is_solid(cell:Option<CellData>) -> bool { matches!(check_cell(cell), CellType::Solid) }
+
+fn check_cell(cell:Option<CellData>) -> CellType {
+    match cell {
+        None => CellType::Void,
+        Some(cell) => match *cell.pointer.pointer {
+            0 | 2 => CellType::Air,
+            1 | 3 => CellType::Solid,
+            _ => unreachable!()
+        }
     }
 }
 
-
-//Figure out unifying these
-fn is_solid(position_data:&[Option<CellData>; 4], idx: usize) -> bool {
-    matches!(check_wall(&position_data, idx), CellType::Solid)
-}
-//Change this name
-fn is_ignore(index:Index) -> bool { *index == 2 || *index == 0 }
+fn check_index(idx:Index) -> CellType { match *idx { 
+    2 | 0 => CellType::Air, 
+    1 | 3 => CellType::Solid, 
+    _ => unreachable!()
+} }
