@@ -145,18 +145,20 @@ impl Camera {
 
     pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, outline:bool) {
         let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
-        draw_triangle(
-            corners[0],
-            corners[1],
-            corners[2],
-            color
-        );
-        draw_triangle(
-            corners[1],
-            corners[2],
-            corners[3],
-            color
-        );
+        if color != BLACK {
+            draw_triangle(
+                corners[0],
+                corners[1],
+                corners[2],
+                color
+            );
+            draw_triangle(
+                corners[1],
+                corners[2],
+                corners[3],
+                color
+            );
+        }
         if outline {
             draw_triangle_lines(
                 corners[0],
