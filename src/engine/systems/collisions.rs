@@ -231,6 +231,8 @@ fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max
             cur_corner.position_data = position_data;
             
             if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.rotation, cur_corner.type_of) {
+                // dbg!(walls_hit);
+                // if walls_hit.y { dbg!(&cur_corner); }
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -481,10 +483,11 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
     } else { //(+,+)
         (1, 2)
     };
-    BVec2::new(
+    let result = BVec2::new(
+        is_solid(&position_data, x_slide_check),
         is_solid(&position_data, y_slide_check),
-        is_solid(&position_data, x_slide_check)
-    )
+    );
+    result
 }
 
 fn check_wall(position_data:&[Option<CellData>; 4], idx: usize) -> CellType {
@@ -512,7 +515,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
         BVec2::splat(is_solid(&position_data, indices[0]))
     };
     if result == BVec2::TRUE {
-        Some(slide_check(velocity, position_data))
+        let slide_checked = slide_check(velocity, position_data);
+        if slide_checked == BVec2::FALSE { Some(BVec2::TRUE) } else { Some(slide_checked) }
     } else if result == BVec2::FALSE { None } else { 
         Some(result)
     }
