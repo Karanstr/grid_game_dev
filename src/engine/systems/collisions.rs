@@ -1,7 +1,6 @@
 use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
 use super::*;
-use std::f32::consts::PI;
 
 const EPSILON: f32 = 1e-6;
 
@@ -175,7 +174,7 @@ pub fn corner_wall_collision(corner: usize, rotation: f32) -> WallTouch {
         1 => 0, // TL -> (-,-)
         other => other
     };
-    if corner == 0 { dbg!(z_corner); }
+    // if corner == 0 { dbg!(z_corner); }
 
     // Map to wall touches based on z-order
     match z_corner {

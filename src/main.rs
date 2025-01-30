@@ -15,11 +15,11 @@ mod imports {
     pub use derive_new::new;
     pub use crate::GRAPH;
     pub use crate::CAMERA;
+    pub use std::f32::consts::PI;
 }
 use imports::*;
 use lazy_static::lazy_static;
 use std::sync::RwLock;
-
 lazy_static! {
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
@@ -99,7 +99,6 @@ async fn main() {
     macroquad::window::request_new_screen_size(512., 512.);
     let mut entities = EntityPool::new();
     let blocks = BlockPalette::new();
-    
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
@@ -111,7 +110,7 @@ async fn main() {
         }
     };
     
-    let rotation = 0.;
+    let rotation = 0.8;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
@@ -125,7 +124,7 @@ async fn main() {
                 new_root,
                 Vec2::new(0., 0.)
             ),
-            rotation,
+            rotation + 0.3 + PI,
         )
     };
     
@@ -141,11 +140,11 @@ async fn main() {
         // if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
         // if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
         // player_entity.apply_abs_velocity(Vec2::new(0., speed/2.));
-        if is_key_down(KeyCode::W) { player_entity.apply_perp_velocity(-speed); }
-        if is_key_down(KeyCode::S) { player_entity.apply_perp_velocity(speed); }
-        if is_key_down(KeyCode::A) { player_entity.apply_forward_velocity(-speed); }
-        if is_key_down(KeyCode::D) { player_entity.apply_forward_velocity(speed); }
-        if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO; }
+        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_perp_velocity(-speed); }
+        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_perp_velocity(speed); }
+        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_forward_velocity(-speed); }
+        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_forward_velocity(speed); }
+        if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
         
         // Handle mouse input with minimized lock scope
         if is_mouse_button_down(MouseButton::Left) {
