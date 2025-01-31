@@ -142,14 +142,14 @@ async fn main() {
     println!("Release mode");
     macroquad::window::request_new_screen_size(WINDOW_SIZE, WINDOW_SIZE);
     let blocks = BlockPalette::new();
+    
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
-        let mut graph = GRAPH.write();
         if string.is_empty() { 
-            graph.get_root(0, 3)
+            GRAPH.write().get_root(0, 3)
         } else { 
-            graph.load_object_json(string)
+            GRAPH.write().load_object_json(string)
         }
     };
     
@@ -199,16 +199,10 @@ async fn main() {
         if is_key_pressed(KeyCode::V) { color = (color + 1) % MAX_COLOR; }
         if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
         
-        if is_key_pressed(KeyCode::P) { 
-            dbg!(GRAPH.read().nodes.internal_memory()); 
-        }
+        if is_key_pressed(KeyCode::P) { dbg!(GRAPH.read().nodes.internal_memory()); }
         
         if is_key_pressed(KeyCode::K) {
-            let entities = ENTITIES.write();
-            let save_data = {
-                let terrain_entity = entities.get_entity(terrain).unwrap();
-                GRAPH.read().save_object_json(terrain_entity.location.pointer)
-            };
+            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(terrain).unwrap().location.pointer);
             std::fs::write("src/save.json", save_data).unwrap();
         }
         
