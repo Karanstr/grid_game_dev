@@ -140,10 +140,10 @@ async fn main() {
         // if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
         // if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
         // player_entity.apply_abs_velocity(Vec2::new(0., speed/2.));
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_perp_velocity(-speed); }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_perp_velocity(speed); }
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_forward_velocity(-speed); }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_forward_velocity(speed); }
+        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -speed)); }
+        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., speed)); }
+        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-speed, 0.)); }
+        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(speed, 0.)); }
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
         
         // Handle mouse input with minimized lock scope
@@ -154,6 +154,7 @@ async fn main() {
             };
             
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+            let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
             let new_pointer = { GRAPH.write().unwrap().get_root(color, height) };
             
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
@@ -212,11 +213,11 @@ async fn main() {
 
         {
             let mut camera = CAMERA.write().unwrap();
-            camera.draw_vec_line(
-                player_pos,
-                player_pos + player_forward / 2.,
-                0.05, WHITE
-            );
+            // camera.draw_vec_line(
+            //     player_pos,
+            //     player_pos + player_forward / 2.,
+            //     0.05, WHITE
+            // );
             //Move camera after rendering everything
             camera.update(player_pos, 0.1);
         }

@@ -125,6 +125,7 @@ pub struct WallTouch {
     pub vertical: WallSign,
 }
 
+//This needs to support None, which returns both 0 and 1 options
 impl WallTouch {
     // Given a single-axis velocity, returns the index in the direction of the wall
     pub fn to_zorder_index(&self, velocity: Vec2) -> Option<usize> {
@@ -541,7 +542,6 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
     // Single-axis movement
     let result = if velocity.x == 0. || velocity.y == 0. {
         let collisions = corner_wall_collision(corner_type, rotation);
-        if corner_type == 0 { dbg!(collisions); }
         let wall = is_solid(position_data[collisions.to_zorder_index(velocity).unwrap_or(0)]); 
         // let wall = indices.iter().any(|&idx| is_solid(&position_data, idx));
         BVec2::new(wall & !is_vertical, wall & is_vertical)
