@@ -151,7 +151,6 @@ struct Hit {
 // Determines which specific walls of the bounding box a corner touches given its rotation in radians
 // Needs to know which corner we're in
 pub fn rotate_corner_type(corner: usize, rotation: f32) -> usize {
-pub fn rotate_corner_type(corner: usize, rotation: f32) -> usize {
     // Normalize rotation to be between 0 and 2π
     let rotation = mod_with_err(rotation + 2.0 * PI, 2.0 * PI);
 
@@ -172,12 +171,9 @@ pub fn rotate_corner_type(corner: usize, rotation: f32) -> usize {
 
     // Convert back to z-order
     match rotated {
-    match rotated {
         0 => 1, // TR -> (+,-)
         1 => 0, // TL -> (-,-)
         other => other
-    }
-
     }
 
 }
@@ -574,27 +570,6 @@ pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> BVec2 {
     BVec2::new(x_check, y_check)
 }
 
-fn wall_checks(corner_type:usize) -> WallTouch {
-    match corner_type {
-        0 => WallTouch::new(WallSign::Negative, WallSign::Negative), // (-,-)
-        1 => WallTouch::new(WallSign::Positive, WallSign::Negative), // (+,-)
-        2 => WallTouch::new(WallSign::Negative, WallSign::Positive), // (-,+)
-        3 => WallTouch::new(WallSign::Positive, WallSign::Positive), // (+,+)
-        _ => unreachable!(),
-    }
-}
-
-pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> BVec2 {
-    let (x_check, y_check) = match corner_type {
-        0 => (velocity.x < 0., velocity.y < 0.),
-        1 => (velocity.x > 0., velocity.y < 0.),
-        2 => (velocity.x < 0., velocity.y > 0.),
-        3 => (velocity.x > 0., velocity.y > 0.),
-        _ => unreachable!()
-    };
-    BVec2::new(x_check, y_check)
-}
-
 //Remove these and add a global block list which can be queried
 fn is_solid(cell:Option<CellData>) -> bool { matches!(check_cell(cell), CellType::Solid) }
 //These are kinda duplicates (check_cell and check_index), idk if I care tho
@@ -613,3 +588,4 @@ fn check_index(idx:Index) -> CellType { match *idx {
     1 | 3 => CellType::Solid, 
     _ => unreachable!()
 } }
+
