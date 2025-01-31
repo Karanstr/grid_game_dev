@@ -27,9 +27,9 @@ pub mod output {
 
     pub mod render {
         use super::*;
-        use crate::CAMERA;
         
-        pub fn draw_all(entities:&EntityPool, blocks:&BlockPalette, outline:bool) {
+        pub fn draw_all(blocks:&BlockPalette, outline:bool) {
+            let entities = &*ENTITIES.read().unwrap();
             for entity in entities.entities.iter() {
                 let location = &entity.location;
                 if CAMERA.read().unwrap().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {

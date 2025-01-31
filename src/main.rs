@@ -1,4 +1,13 @@
 mod engine;
+
+// Game constants
+const PLAYER_SPEED: f32 = 0.01;
+const PLAYER_ROTATION_SPAWN: f32 = 0.;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.;
+const MAX_COLOR: usize = 4;
+const MAX_HEIGHT: u32 = 4;
+const WINDOW_SIZE: f32 = 512.0;
+
 mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
@@ -7,7 +16,7 @@ mod imports {
     pub use engine::systems::collisions::{Corners, corner_handling::*};
     pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2, Mat2};
     pub use engine::utility::partition::{AABB, grid::*};
-    pub use super::{EntityPool, ID, Entity, Location};
+    pub use super::{ID, Entity, Location};
     pub use macroquad::color::colors::*;
     pub use engine::utility::blocks::*;
     pub use macroquad::color::Color;
@@ -15,6 +24,7 @@ mod imports {
     pub use derive_new::new;
     pub use crate::GRAPH;
     pub use crate::CAMERA;
+    pub use crate::ENTITIES;
     pub use std::f32::consts::PI;
 }
 use imports::*;
@@ -26,6 +36,7 @@ lazy_static! {
         AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
         0.9
     ));
+    pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
 }
 
 //Add a method which updates the location of an entity and handles corner recalculation
@@ -92,18 +103,17 @@ impl EntityPool {
         self.entities.push(Entity::new(ID(self.id_counter), location, orientation));
         ID(self.id_counter)
     }
-    fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
+    pub fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
         self.entities.iter_mut().find(|entity| entity.id == id)
     }
-    fn get_entity(&self, id:ID) -> Option<&Entity> {
+    pub fn get_entity(&self, id:ID) -> Option<&Entity> {
         self.entities.iter().find(|entity| entity.id == id)
     }
 }
 
 #[macroquad::main("Window")]
 async fn main() {
-    macroquad::window::request_new_screen_size(512., 512.);
-    let mut entities = EntityPool::new();
+    macroquad::window::request_new_screen_size(WINDOW_SIZE, WINDOW_SIZE);
     let blocks = BlockPalette::new();
     // Load world state once at startup
     let world_pointer = {
@@ -116,21 +126,20 @@ async fn main() {
         }
     };
     
-    let rotation = 0.;
-    let terrain = entities.add_entity(
+    let terrain = ENTITIES.write().unwrap().add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
-        rotation,
+        TERRAIN_ROTATION_SPAWN,
     );
-    
-    // Initialize player
+
     let player = {
-        let new_root = GRAPH.write().unwrap().get_root(3, 0);
-        entities.add_entity(
+        //Graph has to be unlocked before add_entity is called so entity corners can be read from the graph
+        let root = GRAPH.write().unwrap().get_root(3, 0);
+        ENTITIES.write().unwrap().add_entity(
             Location::new(
-                new_root,
+                root,
                 Vec2::new(0., 0.)
             ),
-            rotation,
+            PLAYER_ROTATION_SPAWN,
         )
     };
     
@@ -138,44 +147,47 @@ async fn main() {
     let mut height = 0;
 
     loop {
-        let player_entity = entities.get_mut_entity(player).unwrap();
-        let speed = 0.01;
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -speed)); }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., speed)); }
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-speed, 0.)); }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(speed, 0.)); }
-        if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
-        
-        if is_mouse_button_down(MouseButton::Left) {
-            let mouse_pos = CAMERA.read().unwrap().screen_to_world(Vec2::from(mouse_position()));
+        { // Scoped to visuallize the lock of entities
+            let mut entities = ENTITIES.write().unwrap();
+            let player_entity = entities.get_mut_entity(player).unwrap();
+            if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED)); }
+            if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
+            if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.)); }
+            if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.)); }
+            if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
             
-            let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
-            let new_pointer = GRAPH.write().unwrap().get_root(color, height);
-            
-            if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
-                terrain_entity.set_root(pointer);
+            if is_mouse_button_down(MouseButton::Left) {
+                let mouse_pos = CAMERA.read().unwrap().screen_to_world(Vec2::from(mouse_position()));
+                
+                let mut entities = ENTITIES.write().unwrap();
+                let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+                let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
+                let new_pointer = GRAPH.write().unwrap().get_root(color, height);
+                
+                if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
+                    terrain_entity.set_root(pointer);
+                }
             }
         }
 
-        if is_key_pressed(KeyCode::V) { color += 1; color %= 4; }
-        if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
+        if is_key_pressed(KeyCode::V) { color = (color + 1) % MAX_COLOR; }
+        if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
         
         if is_key_pressed(KeyCode::P) { 
-            let graph = GRAPH.read().unwrap();
-            dbg!(graph.nodes.internal_memory()); 
+            dbg!(GRAPH.read().unwrap().nodes.internal_memory()); 
         }
         
         if is_key_pressed(KeyCode::K) {
+            let entities = ENTITIES.write().unwrap();
             let save_data = {
-                let graph = GRAPH.read().unwrap();
                 let terrain_entity = entities.get_entity(terrain).unwrap();
-                graph.save_object_json(terrain_entity.location.pointer)
+                GRAPH.read().unwrap().save_object_json(terrain_entity.location.pointer)
             };
             std::fs::write("src/save.json", save_data).unwrap();
         }
         
         if is_key_pressed(KeyCode::L) {
+            let mut entities = ENTITIES.write().unwrap();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let mut graph = GRAPH.write().unwrap();
             
@@ -191,12 +203,11 @@ async fn main() {
             terrain_entity.set_root(new_pointer);
         }
         
+        render::draw_all(&blocks, true);
         
-        render::draw_all(&entities, &blocks, true);
+        let player_pos = ENTITIES.read().unwrap().get_entity(player).unwrap().location.position;
         
-        let player_pos = entities.get_entity(player).unwrap().location.position;
-
-        collisions::n_body_collisions(&mut entities, terrain);
+        collisions::n_body_collisions(terrain);
 
         CAMERA.write().unwrap().update(player_pos, 0.1);
 

@@ -188,8 +188,9 @@ pub fn corner_wall_collision(corner: usize, rotation: f32) -> WallTouch {
 }
 
 // Eventually turn this into an island identifier/generator
-fn collect_collision_objects(entities: &EntityPool) -> Vec<CollisionObject> {
+fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
+    let entities = ENTITIES.read().unwrap();
     for idx in 0..entities.entities.len() {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
@@ -207,16 +208,16 @@ fn collect_collision_objects(entities: &EntityPool) -> Vec<CollisionObject> {
     objects
 }
 
-fn apply_drag(entities: &mut EntityPool) {
+fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
-    for entity in &mut entities.entities { 
+    for entity in &mut ENTITIES.write().unwrap().entities { 
         entity.velocity *= DRAG_MULTIPLIER;
         entity.velocity = vec2_remove_err(entity.velocity);
     }
 }
 
-fn tick_entities(entities: &mut EntityPool, delta_tick: f32) {
-    for entity in &mut entities.entities {
+fn tick_entities(delta_tick: f32) {
+    for entity in &mut ENTITIES.write().unwrap().entities {
         let delta = entity.velocity * delta_tick;
         // Skip tiny movements that could cause precision issues
         if !vec2_approx_eq(delta, Vec2::ZERO) { 
@@ -225,19 +226,20 @@ fn tick_entities(entities: &mut EntityPool, delta_tick: f32) {
     }
 }
 
-pub fn n_body_collisions(entities: &mut EntityPool, static_thing: ID) {
+pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     loop {
-        let objects = collect_collision_objects(entities);
+        let objects = collect_collision_objects();
         
-        let Some(hit) = find_next_action(&entities, objects, tick_max) else {
-            tick_entities(entities, tick_max);
+        let Some(hit) = find_next_action(objects, tick_max) else {
+            tick_entities(tick_max);
             break
         };
         
-        tick_entities(entities, hit.ticks);
+        tick_entities(hit.ticks);
         tick_max -= hit.ticks;
         
+        let mut entities = ENTITIES.write().unwrap();
         let hitting = entities.get_entity(hit.hitting).unwrap();
         let world_to_hitting = Mat2::from_angle(-hitting.rotation);
         
@@ -259,11 +261,12 @@ pub fn n_body_collisions(entities: &mut EntityPool, static_thing: ID) {
         }
     }
     
-    apply_drag(entities);
+    apply_drag();
 }
 
 // Eventually make this work with islands, solving each island by itself
-fn find_next_action(entities:&EntityPool, objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
+fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
+    let entities = ENTITIES.read().unwrap();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
@@ -555,6 +558,7 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
     } else if result == BVec2::FALSE { None } else { Some(result) }
 }
 
+//Remove these and add a global block list which can be queried
 fn is_solid(cell:Option<CellData>) -> bool { matches!(check_cell(cell), CellType::Solid) }
 //These are kinda duplicates (check_cell and check_index), idk if I care tho
 fn check_cell(cell:Option<CellData>) -> CellType {
