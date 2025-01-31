@@ -62,16 +62,22 @@ impl Entity {
     pub fn rel_rotate(&mut self, angle: f32) {
         self.rotation += angle;
         self.forward = Vec2::from_angle(self.rotation);
-        self.corners = tree_corners(self.location.pointer);
+        self.recaclulate_corners();
     }
     pub fn set_rotation(&mut self, angle: f32) { 
         self.rotation = angle;
         self.forward = Vec2::from_angle(self.rotation);
-        self.corners = tree_corners(self.location.pointer);
+        self.recaclulate_corners();
     }
     pub fn apply_forward_velocity(&mut self, speed:f32) { self.velocity += self.forward * speed }
     pub fn apply_perp_velocity(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
     pub fn apply_abs_velocity(&mut self, delta:Vec2) { self.velocity += delta; }
+    pub fn set_root(&mut self, new_root:ExternalPointer) { 
+        self.location.pointer = new_root;
+        self.recaclulate_corners();
+    }
+    pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer) }
+
 }
 #[derive(new)]
 pub struct EntityPool {
@@ -110,7 +116,7 @@ async fn main() {
         }
     };
     
-    let rotation = 0.8;
+    let rotation = 0.;
     let terrain = entities.add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         rotation,
@@ -124,7 +130,7 @@ async fn main() {
                 new_root,
                 Vec2::new(0., 0.)
             ),
-            rotation + 0.3 + PI,
+            rotation,
         )
     };
     
@@ -134,45 +140,32 @@ async fn main() {
     loop {
         let player_entity = entities.get_mut_entity(player).unwrap();
         let speed = 0.01;
-        // let rot_speed = 0.1;
-        // if is_key_down(KeyCode::A) { player_entity.rel_rotate(-rot_speed); }
-        // if is_key_down(KeyCode::D) { player_entity.rel_rotate(rot_speed); }
-        // if is_key_down(KeyCode::W) { player_entity.move_forward(speed); }
-        // if is_key_down(KeyCode::S) { player_entity.move_forward(-speed); }
-        // player_entity.apply_abs_velocity(Vec2::new(0., speed/2.));
         if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -speed)); }
         if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., speed)); }
         if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-speed, 0.)); }
         if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(speed, 0.)); }
         if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
         
-        // Handle mouse input with minimized lock scope
         if is_mouse_button_down(MouseButton::Left) {
-            let mouse_pos = {
-                let camera = CAMERA.read().unwrap();
-                camera.screen_to_world(Vec2::from(mouse_position()))
-            };
+            let mouse_pos = CAMERA.read().unwrap().screen_to_world(Vec2::from(mouse_position()));
             
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
-            let new_pointer = { GRAPH.write().unwrap().get_root(color, height) };
+            let new_pointer = GRAPH.write().unwrap().get_root(color, height);
             
             if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
-                terrain_entity.location.pointer = pointer;
-                terrain_entity.corners = tree_corners(pointer);
+                terrain_entity.set_root(pointer);
             }
         }
 
         if is_key_pressed(KeyCode::V) { color += 1; color %= 4; }
         if is_key_pressed(KeyCode::B) { height += 1; height %= 4; }
         
-        // Debug output with minimized lock scope
         if is_key_pressed(KeyCode::P) { 
             let graph = GRAPH.read().unwrap();
             dbg!(graph.nodes.internal_memory()); 
         }
         
-        // Save game state with minimized lock scope
         if is_key_pressed(KeyCode::K) {
             let save_data = {
                 let graph = GRAPH.read().unwrap();
@@ -182,7 +175,6 @@ async fn main() {
             std::fs::write("src/save.json", save_data).unwrap();
         }
         
-        // Load game state with minimized lock scope
         if is_key_pressed(KeyCode::L) {
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let mut graph = GRAPH.write().unwrap();
@@ -195,32 +187,18 @@ async fn main() {
                 terrain_entity.location.pointer.pointer,
                 3
             );
-            terrain_entity.location.pointer = new_pointer;
             graph.mass_remove(&old_removal);
-            terrain_entity.corners = tree_corners(new_pointer);
+            terrain_entity.set_root(new_pointer);
         }
         
-        //Move before rendering
         
-        // Rendering with minimized lock scope
         render::draw_all(&entities, &blocks, true);
-        let (player_pos, player_forward) = {
-            let player_entity = entities.get_entity(player).unwrap();
-            (player_entity.location.position, player_entity.forward)
-        };
+        
+        let player_pos = entities.get_entity(player).unwrap().location.position;
 
         collisions::n_body_collisions(&mut entities, terrain);
 
-        {
-            let mut camera = CAMERA.write().unwrap();
-            // camera.draw_vec_line(
-            //     player_pos,
-            //     player_pos + player_forward / 2.,
-            //     0.05, WHITE
-            // );
-            //Move camera after rendering everything
-            camera.update(player_pos, 0.1);
-        }
+        CAMERA.write().unwrap().update(player_pos, 0.1);
 
         macroquad::window::next_frame().await
     }
@@ -229,12 +207,10 @@ async fn main() {
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {
-        let cell = gate::point_to_cells(location, height, world_point)[0];
-        if let Some(cell) = cell {
-            let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-            if let Ok(pointer) = GRAPH.write().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
-                return Some(pointer);
-            }
+        let Some(cell) = gate::point_to_cells(location, height, world_point)[0] else { return None };
+        let path = ZorderPath::from_cell(cell, location.pointer.height - height);
+        if let Ok(pointer) = GRAPH.write().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
+            return Some(pointer);
         }
     }
     None
