@@ -113,6 +113,10 @@ impl EntityPool {
 
 #[macroquad::main("Window")]
 async fn main() {
+    #[cfg(debug_assertions)]
+    println!("Debug mode");
+    #[cfg(not(debug_assertions))]
+    println!("Release mode");
     macroquad::window::request_new_screen_size(WINDOW_SIZE, WINDOW_SIZE);
     let blocks = BlockPalette::new();
     // Load world state once at startup
@@ -159,7 +163,6 @@ async fn main() {
             if is_mouse_button_down(MouseButton::Left) {
                 let mouse_pos = CAMERA.read().unwrap().screen_to_world(Vec2::from(mouse_position()));
                 
-                let mut entities = ENTITIES.write().unwrap();
                 let terrain_entity = entities.get_mut_entity(terrain).unwrap();
                 let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
                 let new_pointer = GRAPH.write().unwrap().get_root(color, height);
@@ -213,6 +216,7 @@ async fn main() {
 
         macroquad::window::next_frame().await
     }
+
 }
 
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
