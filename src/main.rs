@@ -1,13 +1,5 @@
 mod engine;
 
-// Game constants
-const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = 0.;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.;
-const MAX_COLOR: usize = 4;
-const MAX_HEIGHT: u32 = 4;
-const WINDOW_SIZE: f32 = 512.0;
-
 mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
@@ -41,7 +33,12 @@ lazy_static! {
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
 }
 
-//Add a method which updates the location of an entity and handles corner recalculation
+// Game constants
+const PLAYER_SPEED: f32 = 0.01;
+const PLAYER_ROTATION_SPAWN: f32 = 0.;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.;
+const MAX_COLOR: usize = 4;
+const MAX_HEIGHT: u32 = 4;
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Location {
@@ -141,7 +138,7 @@ async fn main() {
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
     println!("Release mode");
-    macroquad::window::request_new_screen_size(WINDOW_SIZE, WINDOW_SIZE);
+    macroquad::window::request_new_screen_size(512., 512.);
     let blocks = BlockPalette::new();
     
     // Load world state once at startup
@@ -226,6 +223,7 @@ async fn main() {
         
         render::draw_all(&blocks, true);
         
+        //We want to move the camera to where the player is drawn, not where the player is moved to.
         let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
         
         collisions::n_body_collisions(terrain);
