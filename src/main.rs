@@ -128,6 +128,7 @@ fn init_deadlock_detection() {
                         println!("Backtrace:\n{:#?}", thread.backtrace());
                     }
                 }
+                std::process::exit(1);
             }
         }
     });
