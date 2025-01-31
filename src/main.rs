@@ -29,7 +29,9 @@ mod imports {
 }
 use imports::*;
 use lazy_static::lazy_static;
-use std::sync::RwLock;
+use parking_lot::{RwLock, deadlock};
+use std::time::Duration;
+use std::thread;
 lazy_static! {
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
@@ -111,8 +113,29 @@ impl EntityPool {
     }
 }
 
+// Initialize deadlock detection on program start
+fn init_deadlock_detection() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let deadlocks = deadlock::check_deadlock();
+            if !deadlocks.is_empty() {
+                println!("{} deadlocks detected", deadlocks.len());
+                for deadlock in deadlocks {
+                    println!("Deadlock threads:");
+                    for thread in deadlock {
+                        println!("Thread Id {:#?}", thread.thread_id());
+                        println!("Backtrace:\n{:#?}", thread.backtrace());
+                    }
+                }
+            }
+        }
+    });
+}
+
 #[macroquad::main("Window")]
 async fn main() {
+    init_deadlock_detection();
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
@@ -122,7 +145,7 @@ async fn main() {
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
-        let mut graph = GRAPH.write().unwrap();
+        let mut graph = GRAPH.write();
         if string.is_empty() { 
             graph.get_root(0, 3)
         } else { 
@@ -130,15 +153,15 @@ async fn main() {
         }
     };
     
-    let terrain = ENTITIES.write().unwrap().add_entity(
+    let terrain = ENTITIES.write().add_entity(
         Location::new(world_pointer, Vec2::new(0., 0.)),
         TERRAIN_ROTATION_SPAWN,
     );
 
     let player = {
         //Graph has to be unlocked before add_entity is called so entity corners can be read from the graph
-        let root = GRAPH.write().unwrap().get_root(3, 0);
-        ENTITIES.write().unwrap().add_entity(
+        let root = GRAPH.write().get_root(3, 0);
+        ENTITIES.write().add_entity(
             Location::new(
                 root,
                 Vec2::new(0., 0.)
@@ -151,8 +174,8 @@ async fn main() {
     let mut height = 0;
 
     loop {
-        { // Scoped to visuallize the lock of entities
-            let mut entities = ENTITIES.write().unwrap();
+        { // Scoped to visualize the lock of entities
+            let mut entities = ENTITIES.write();
             let player_entity = entities.get_mut_entity(player).unwrap();
             if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED)); }
             if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
@@ -161,11 +184,11 @@ async fn main() {
             if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
             
             if is_mouse_button_down(MouseButton::Left) {
-                let mouse_pos = CAMERA.read().unwrap().screen_to_world(Vec2::from(mouse_position()));
+                let mouse_pos = CAMERA.read().screen_to_world(Vec2::from(mouse_position()));
                 
                 let terrain_entity = entities.get_mut_entity(terrain).unwrap();
                 let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
-                let new_pointer = GRAPH.write().unwrap().get_root(color, height);
+                let new_pointer = GRAPH.write().get_root(color, height);
                 
                 if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
                     terrain_entity.set_root(pointer);
@@ -177,22 +200,22 @@ async fn main() {
         if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
         
         if is_key_pressed(KeyCode::P) { 
-            dbg!(GRAPH.read().unwrap().nodes.internal_memory()); 
+            dbg!(GRAPH.read().nodes.internal_memory()); 
         }
         
         if is_key_pressed(KeyCode::K) {
-            let entities = ENTITIES.write().unwrap();
+            let entities = ENTITIES.write();
             let save_data = {
                 let terrain_entity = entities.get_entity(terrain).unwrap();
-                GRAPH.read().unwrap().save_object_json(terrain_entity.location.pointer)
+                GRAPH.read().save_object_json(terrain_entity.location.pointer)
             };
             std::fs::write("src/save.json", save_data).unwrap();
         }
         
         if is_key_pressed(KeyCode::L) {
-            let mut entities = ENTITIES.write().unwrap();
+            let mut entities = ENTITIES.write();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mut graph = GRAPH.write().unwrap();
+            let mut graph = GRAPH.write();
             
             let save_data = std::fs::read_to_string("src/save.json").unwrap();
             let new_pointer = graph.load_object_json(save_data);
@@ -208,11 +231,11 @@ async fn main() {
         
         render::draw_all(&blocks, true);
         
-        let player_pos = ENTITIES.read().unwrap().get_entity(player).unwrap().location.position;
+        let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
         
         collisions::n_body_collisions(terrain);
 
-        CAMERA.write().unwrap().update(player_pos, 0.1);
+        CAMERA.write().update(player_pos, 0.1);
 
         macroquad::window::next_frame().await
     }
@@ -224,7 +247,7 @@ pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) ->
     if height <= location.pointer.height {
         let Some(cell) = gate::point_to_cells(location, height, world_point)[0] else { return None };
         let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-        if let Ok(pointer) = GRAPH.write().unwrap().set_node(location.pointer, &path.steps(), to.pointer) {
+        if let Ok(pointer) = GRAPH.write().set_node(location.pointer, &path.steps(), to.pointer) {
             return Some(pointer);
         }
     }

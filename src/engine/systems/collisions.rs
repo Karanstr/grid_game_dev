@@ -190,7 +190,7 @@ pub fn corner_wall_collision(corner: usize, rotation: f32) -> WallTouch {
 // Eventually turn this into an island identifier/generator
 fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
-    let entities = ENTITIES.read().unwrap();
+    let entities = ENTITIES.read();
     for idx in 0..entities.entities.len() {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
@@ -210,14 +210,14 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
 
 fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
-    for entity in &mut ENTITIES.write().unwrap().entities { 
+    for entity in &mut ENTITIES.write().entities { 
         entity.velocity *= DRAG_MULTIPLIER;
         entity.velocity = vec2_remove_err(entity.velocity);
     }
 }
 
 fn tick_entities(delta_tick: f32) {
-    for entity in &mut ENTITIES.write().unwrap().entities {
+    for entity in &mut ENTITIES.write().entities {
         let delta = entity.velocity * delta_tick;
         // Skip tiny movements that could cause precision issues
         if !vec2_approx_eq(delta, Vec2::ZERO) { 
@@ -239,7 +239,7 @@ pub fn n_body_collisions(static_thing: ID) {
         tick_entities(hit.ticks);
         tick_max -= hit.ticks;
         
-        let mut entities = ENTITIES.write().unwrap();
+        let mut entities = ENTITIES.write();
         let hitting = entities.get_entity(hit.hitting).unwrap();
         let world_to_hitting = Mat2::from_angle(-hitting.rotation);
         
@@ -266,7 +266,7 @@ pub fn n_body_collisions(static_thing: ID) {
 
 // Eventually make this work with islands, solving each island by itself
 fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
-    let entities = ENTITIES.read().unwrap();
+    let entities = ENTITIES.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
@@ -405,7 +405,7 @@ pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
     let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
     let result = aabb.intersects(aabb2) == BVec2::TRUE;
     let color = if result { GREEN } else { RED };
-    let camera = CAMERA.read().unwrap();
+    let camera = CAMERA.read();
     camera.outline_bounds(aabb, 0.05, color);
     camera.outline_bounds(aabb2, 0.05, color);
     result
@@ -422,7 +422,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let rel_velocity = vec2_remove_err((owner.velocity - hitting.velocity).rotate(align_to_hitting));
     if rel_velocity.length() < EPSILON { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
-    let camera = CAMERA.read().unwrap();
+    let camera = CAMERA.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     let point_rotation = align_to_hitting.rotate(owner.forward);
     for corners in owner.corners.iter() {
@@ -486,7 +486,7 @@ pub mod corner_handling {
                     for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
-                    let pointer = GRAPH.read().unwrap().read(start, &check_zorder.steps()).unwrap();
+                    let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
                     if matches!(check_index(pointer.pointer), CellType::Solid) { exposed_mask -= 1 << i; break }
                 }
             }
@@ -506,7 +506,7 @@ pub mod corner_handling {
     }
 
     pub fn tree_corners(start:ExternalPointer) -> Vec<Corners> {
-        let leaves = GRAPH.read().unwrap().dfs_leaf_cells(start);
+        let leaves = GRAPH.read().dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
             let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
