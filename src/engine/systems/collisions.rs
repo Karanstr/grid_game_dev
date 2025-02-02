@@ -8,6 +8,18 @@ fn approx_eq(a: f32, b: f32) -> bool {
     (a - b).abs() < EPSILON
 }
 
+pub trait ZeroSignum { fn zero_signum(self) -> Self; } 
+impl ZeroSignum for f32 {   
+    fn zero_signum(self) -> Self { 
+        if approx_eq(self, 0.0) { 0.0 } else { self.signum() } 
+    } 
+}
+impl ZeroSignum for Vec2 {  
+    fn zero_signum(self) -> Self {   
+        Vec2::new(self.x.zero_signum(), self.y.zero_signum())     
+    } 
+}
+
 fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
     approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
 }
@@ -57,36 +69,34 @@ enum CellType {
     Void,   // None
 }
 
+// Convert a velocity vector to a Z-order corner index
+// Z-order indexing:
+// 0=(-,-) top-left,    1=(+,-) top-right
+// 2=(-,+) bottom-left,  3=(+,+) bottom-right
+fn velocity_to_corner_index(velocity: Vec2) -> usize {
+    if approx_eq(velocity.x, 0.) || approx_eq(velocity.y, 0.) { dbg!("AHHH", velocity); }
+    ((velocity.y > 0.) as usize) * 2 + ((velocity.x > 0.) as usize)
+}
+
+#[derive(Debug)]
+pub enum CollisionIndices {
+    Vertical([usize; 2]),
+    Horizontal([usize; 2]),
+    Diagonal(usize),
+}
+
 // Get the relevant Z-order indices based on velocity direction
-// Returns (indices, is_vertical)
-// For single-axis movement: returns 2 indices
-// For diagonal movement: returns 1 index
-fn get_relevant_indices(velocity:Vec2) -> (Vec<usize>, bool) {
-    if velocity.x == 0. {
+fn get_relevant_indices(velocity: Vec2) -> CollisionIndices {
+    match velocity.zero_signum() {
         // Moving vertically
-        let indices = if velocity.y < 0. {
-            vec![0, 1] // Moving up: check top cells (0,1)
-        } else {
-            vec![2, 3] // Moving down: check bottom cells (2,3)
-        };
-        (indices, true)
-    } else if velocity.y == 0. {
+        Vec2 { x: 0., y: -1. } => CollisionIndices::Vertical([0, 1]),  // Up: check top cells
+        Vec2 { x: 0., y: 1. } => CollisionIndices::Vertical([2, 3]),   // Down: check bottom cells
+        
         // Moving horizontally
-        let indices = if velocity.x < 0. {
-            vec![0, 2] // Moving left: check left cells (0,2)
-        } else {
-            vec![1, 3] // Moving right: check right cells (1,3)
-        };
-        (indices, false)
-    } else {
-        // Moving diagonally - only need to check one corner based on direction
-        let idx = match (velocity.x > 0., velocity.y > 0.) {
-            (false, false) => 0, // Moving top-left: check top-left corner
-            (true, false) => 1,  // Moving top-right: check top-right corner
-            (false, true) => 2,  // Moving bottom-left: check bottom-left corner
-            (true, true) => 3,   // Moving bottom-right: check bottom-right corner
-        };
-        (vec![idx], false)
+        Vec2 { x: -1., y: 0. } => CollisionIndices::Horizontal([0, 2]), // Left: check left cells
+        Vec2 { x: 1., y: 0. } => CollisionIndices::Horizontal([1, 3]),  // Right: check right cells
+        
+        diagonal => CollisionIndices::Diagonal(velocity_to_corner_index(diagonal)),
     }
 }
 
@@ -126,18 +136,18 @@ pub struct WallTouch {
 }
 
 //This needs to support None, which returns both 0 and 1 options
+// Use get_relevant_indices for this.
+// Using velocity.signum may not be safe as it will miss positive values less than epsilon
 impl WallTouch {
     // Given a single-axis velocity, returns the index in the direction of the wall
     pub fn to_zorder_index(&self, velocity: Vec2) -> Option<usize> {
-        if velocity.x != 0.0 && velocity.y != 0.0 { dbg!("AHHH"); return None }
-        if velocity.x == 0.0 && velocity.y == 0.0 { dbg!("AHHH2"); return None }
+        if approx_eq(velocity.x, 0.) == approx_eq(velocity.y, 0.) { dbg!("AHHH"); return None }
         let clamped = velocity.signum().max(Vec2::ZERO);
         Some( if velocity.x == 0. {
             2 * clamped.y as usize | if self.horizontal == WallSign::Positive { 0 } else { 1 } 
         } else {
             clamped.x as usize | 2 * if self.vertical == WallSign::Positive { 0 } else { 1 } 
         } )
-        
     }
 }
 
@@ -297,6 +307,7 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     action
 }
 
+// Fix this to work with comparison tests instead of inserting custom EPSILON solution
 // Rename this
 // Checks if a point is at a boundary and determines the cell offset based on velocity
 fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_right: Vec2) -> Option<Vec2> {
@@ -308,7 +319,7 @@ fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_
     } else if point.x >= bottom_right.x - EPSILON {
         if velocity.x < 0. { cell.x = 1. } else { return None }
     }
-    
+
     // Check y-axis boundaries
     if point.y <= top_left.y + EPSILON {
         if velocity.y > 0. { cell.y = -1. } else { return None }
@@ -319,28 +330,38 @@ fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_
     Some(cell)
 }
 
+//Make this not Option with better safety checks later?
 // Selects the appropriate cell and height based on position data and indices
 fn select_cell_and_height(
     position_data: &[Option<CellData>; 4],
-    rel_idxs: &[usize],
+    rel_idxs: CollisionIndices,
     point: Vec2,
     velocity: Vec2,
     top_left: Vec2,
     bottom_right: Vec2,
     default_height: u32,
 ) -> Option<(Vec2, u32)> {
-    // Try to get cell data for each index
-    let cells: Vec<_> = rel_idxs.iter()
-        .filter_map(|&idx| position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)))
-        .collect();
+    Some( match rel_idxs {
+        CollisionIndices::Vertical([idx1, idx2]) | CollisionIndices::Horizontal([idx1, idx2]) => {
+            let cells = [
+                position_data[idx1].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)),
+                position_data[idx2].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)),
+            ];
+            match cells.iter().filter_map(|cell| *cell).collect::<Vec<_>>().as_slice() {
+                [cell] => *cell,
+                [cell1, cell2] => if cell1.1 < cell2.1 { *cell1 } else { *cell2 },
+                _ => (check_boundary_collision(point, velocity, top_left, bottom_right)?, default_height)
+            }
+        },
+        CollisionIndices::Diagonal(idx) => {
+            if let Some(cell) = position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)) {
+                cell
+            } else {
+                (check_boundary_collision(point, velocity, top_left, bottom_right)?, default_height)
+            }
+        }
+    })
     
-    match cells.as_slice() {
-        [] => check_boundary_collision(point, velocity, top_left, bottom_right)
-            .map(|cell| (cell, default_height)),
-        [cell] => Some(*cell),
-        [cell1, cell2] => Some(if cell1.1 < cell2.1 { *cell1 } else { *cell2 }),
-        _ => None
-    }
 }
 
 fn next_intersection(
@@ -359,11 +380,10 @@ fn next_intersection(
 
     if hitting_wall(position_data, velocity, rotation, corner_type).is_some() { return Some(0.) }
 
-    let (rel_idxs, _) = get_relevant_indices(velocity);
     
     let (cell, height) = select_cell_and_height(
         &position_data,
-        &rel_idxs,
+        get_relevant_indices(velocity),
         point,
         velocity,
         top_left,
@@ -532,15 +552,22 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
     if velocity == Vec2::ZERO { return None }
 
-    let (indices, is_vertical) = get_relevant_indices(velocity);
+    let indices = get_relevant_indices(velocity);
     // Single-axis movement
     let rotated_corner = rotate_corner_type(corner_type, rotation);
-    let result = hittable_walls(velocity, rotated_corner) & if velocity.x == 0. || velocity.y == 0. {
-        let wall = is_solid(position_data[wall_checks(rotated_corner).to_zorder_index(velocity).unwrap_or(0)]); 
-        // let wall = indices.iter().any(|&idx| is_solid(&position_data, idx));
-        BVec2::new(wall & !is_vertical, wall & is_vertical)
-    } else { // Diagonal movement - if the corner is solid, we're hitting in both directions
-        BVec2::splat(is_solid(position_data[indices[0]]))
+    let allowed_walls = hittable_walls(velocity, rotated_corner);
+    let result = allowed_walls & match indices {
+        CollisionIndices::Vertical(_) => {
+            let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
+            BVec2::new(false, is_solid(position_data[idx]))
+        },
+        CollisionIndices::Horizontal(_) => {
+            let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
+            BVec2::new(is_solid(position_data[idx]), false)
+        },
+        CollisionIndices::Diagonal(idx) => {
+            BVec2::splat(is_solid(position_data[idx]))
+        },
     };
 
     if result == BVec2::TRUE {
@@ -588,4 +615,3 @@ fn check_index(idx:Index) -> CellType { match *idx {
     1 | 3 => CellType::Solid, 
     _ => unreachable!()
 } }
-
