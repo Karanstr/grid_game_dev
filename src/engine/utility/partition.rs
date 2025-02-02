@@ -96,6 +96,9 @@ pub mod grid {
         pub pointer : ExternalPointer,
         pub cell : UVec2,
     }
+    impl CellData {
+        pub fn bound_data(&self) -> (Vec2, u32) { (self.cell.as_vec2(), self.pointer.height) }
+    }
 
     pub mod bounds {
         use super::*;

@@ -330,7 +330,7 @@ fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_
     Some(cell)
 }
 
-//Make this not Option with better safety checks later?
+// Make this not Option with better safety checks later?
 // Selects the appropriate cell and height based on position data and indices
 fn select_cell_and_height(
     position_data: &[Option<CellData>; 4],
@@ -344,8 +344,8 @@ fn select_cell_and_height(
     Some( match rel_idxs {
         CollisionIndices::Vertical([idx1, idx2]) | CollisionIndices::Horizontal([idx1, idx2]) => {
             let cells = [
-                position_data[idx1].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)),
-                position_data[idx2].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)),
+                if let Some(data) = position_data[idx1] {Some(data.bound_data())} else {None},
+                if let Some(data) = position_data[idx2] {Some(data.bound_data())} else {None},
             ];
             match cells.iter().filter_map(|cell| *cell).collect::<Vec<_>>().as_slice() {
                 [cell] => *cell,
@@ -354,14 +354,11 @@ fn select_cell_and_height(
             }
         },
         CollisionIndices::Diagonal(idx) => {
-            if let Some(cell) = position_data[idx].as_ref().map(|data| (data.cell.as_vec2(), data.pointer.height)) {
-                cell
-            } else {
+            if let Some(cell) = position_data[idx] { cell.bound_data() } else {
                 (check_boundary_collision(point, velocity, top_left, bottom_right)?, default_height)
             }
         }
     })
-    
 }
 
 fn next_intersection(
@@ -461,7 +458,6 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
         collision_points
     ))
 }
-
 
 #[derive(Debug, Clone, new)]
 pub struct Corners {
