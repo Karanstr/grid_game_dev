@@ -75,7 +75,7 @@ impl Motion {
             }
             
             let f_start = f(t_start);
-            let f_end = f(t_end);                                   
+            let f_end = f(t_end);
             let mut result = None;
             if f_start * f_end <= 0.0 {
                 if let Ok(t) = find_root_brent(t_start, t_end, |t| f(t), &mut CONVERGENCY) {
