@@ -191,7 +191,6 @@ pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     loop {
         let objects = collect_collision_objects();
-        
         let Some(hit) = find_next_action(objects, tick_max) else {
             tick_entities(tick_max);
             break

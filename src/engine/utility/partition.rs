@@ -193,22 +193,11 @@ impl AABB {
     pub fn center(&self) -> Vec2 { self.center }
     pub fn radius(&self) -> Vec2 { self.radius }
 
-    // Replacing these with epsilon aware checks leads to crashes. Related to #88?
     pub fn intersects(&self, other:Self) -> BVec2 {
-        let offset = (other.center - self.center).abs();
-        BVec2::new(
-            offset.x < self.radius.x + other.radius.x,
-            offset.y < self.radius.y + other.radius.y,
-        )
-        // (other.center - self.center).less(self.radius + other.radius)
+        (other.center - self.center).abs().less(self.radius + other.radius)
     }
     pub fn contains(&self, point:Vec2) -> BVec2 {
-        let offset = (point - self.center).abs();
-        BVec2::new(
-            offset.x < self.radius.x,
-            offset.y < self.radius.y,
-        )
-        // (point - self.center).less(self.radius)
+        (point - self.center).abs().less(self.radius)
     }
     
     pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }

@@ -36,8 +36,8 @@ lazy_static! {
 
 // Game constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = 0.;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.;
+const PLAYER_ROTATION_SPAWN: f32 = 0.5;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.3;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -208,17 +208,18 @@ async fn main() {
         if is_key_pressed(KeyCode::L) {
             let mut entities = ENTITIES.write();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-            let mut graph = GRAPH.write();
-            
-            let save_data = std::fs::read_to_string("src/save.json").unwrap();
-            let new_pointer = graph.load_object_json(save_data);
-            
-            let old_removal = engine::graph::bfs_nodes(
-                &graph.nodes.internal_memory(),
-                terrain_entity.location.pointer.pointer,
-                3
-            );
-            graph.mass_remove(&old_removal);
+            let new_pointer = {
+                let mut graph = GRAPH.write();
+                let save_data = std::fs::read_to_string("src/save.json").unwrap();
+                let new_pointer = graph.load_object_json(save_data);
+                let old_removal = engine::graph::bfs_nodes(
+                    &graph.nodes.internal_memory(),
+                    terrain_entity.location.pointer.pointer,
+                    3
+                );
+                graph.mass_remove(&old_removal);
+                new_pointer
+            };
             terrain_entity.set_root(new_pointer);
         }
         
@@ -239,7 +240,7 @@ async fn main() {
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
     let height = to.height;
     if height <= location.pointer.height {
-        let Some(cell) = gate::point_to_cells(location, height, world_point)[0] else { return None };
+        let cell = gate::point_to_cells(location, height, world_point)[0]?;
         let path = ZorderPath::from_cell(cell, location.pointer.height - height);
         if let Ok(pointer) = GRAPH.write().set_node(location.pointer, &path.steps(), to.pointer) {
             return Some(pointer);
