@@ -32,17 +32,17 @@ pub mod grid {
                 let step = (((cell.y >> layer) & 0b1) << 1 ) | ((cell.x >> layer) & 0b1);
                 zorder = (zorder << 2) | step;
             }
-            Self { zorder, depth: depth }
+            Self { zorder, depth }
         }
 
-        pub fn with_depth(&self, new_depth:u32) -> Self {
+        pub fn with_depth(&self, depth:u32) -> Self {
             let mut zorder = self.zorder;   
-            if self.depth < new_depth {
-                zorder <<= 2 * (new_depth - self.depth);
+            if self.depth < depth {
+                zorder <<= 2 * (depth - self.depth);
             } else {
-                zorder >>= 2 * (self.depth - new_depth);
+                zorder >>= 2 * (self.depth - depth);
             };
-            Self { zorder, depth: new_depth}
+            Self { zorder, depth }
         }
 
         pub fn move_cartesianly(&self, offset:IVec2) -> Option<Self> {
@@ -132,7 +132,7 @@ pub mod grid {
             ];
             for i in 0 .. 4 {
                 let cur_point = origin_position + LIM_OFFSET * directions[i];
-                if cur_point.clamp(Vec2::ZERO, grid_length) == cur_point {
+                if cur_point.clamp(Vec2::ZERO, grid_length).approx_eq(cur_point) {
                     surrounding[i] = Some( (cur_point / cell_length).floor().as_uvec2() )
                 }
             }
@@ -193,12 +193,14 @@ impl AABB {
     pub fn center(&self) -> Vec2 { self.center }
     pub fn radius(&self) -> Vec2 { self.radius }
 
+    // Replacing these with epsilon aware checks leads to crashes. Related to #88?
     pub fn intersects(&self, other:Self) -> BVec2 {
         let offset = (other.center - self.center).abs();
         BVec2::new(
             offset.x < self.radius.x + other.radius.x,
             offset.y < self.radius.y + other.radius.y,
         )
+        // (other.center - self.center).less(self.radius + other.radius)
     }
     pub fn contains(&self, point:Vec2) -> BVec2 {
         let offset = (point - self.center).abs();
@@ -206,6 +208,7 @@ impl AABB {
             offset.x < self.radius.x,
             offset.y < self.radius.y,
         )
+        // (point - self.center).less(self.radius)
     }
     
     pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }

@@ -18,6 +18,7 @@ mod imports {
     pub use crate::CAMERA;
     pub use crate::ENTITIES;
     pub use std::f32::consts::PI;
+    pub use engine::utility::math::*;
 }
 use imports::*;
 use lazy_static::lazy_static;
