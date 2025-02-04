@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Debug, Clone, Copy)]
-enum CollisionType {
+pub enum CollisionType {
     Solid,  // index 1 or 3
     Air,    // index 0 or 2
     Void,   // None

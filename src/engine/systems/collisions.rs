@@ -464,7 +464,7 @@ pub mod corner_handling {
             corners.push( Corners::new(
                 cell_corners(cell),
                 cell.pointer.pointer,
-                if BLOCKS.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
+                if !BLOCKS.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 
