@@ -90,17 +90,13 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
         index
     }
 
-    //Public functions used for writing
-    //This function is so big, any chance we can make it smaller?
-    pub fn set_node(&mut self, start:ExternalPointer, path:&[u32], new_pointer:Index) -> Result<ExternalPointer, AccessError> {
-        if let Some(pointer) = self.read(start, path) { 
-            if pointer.pointer == new_pointer { return Ok(start) }
-        } else { return Err(AccessError::OperationFailed) }
-        let trail = self.get_trail(start.pointer, path);
-        let mut cur_pointer = ExternalPointer::new(new_pointer, start.height - path.len() as u32);
-        let mut old_parent = start.pointer;
-        let mut early_exit = false;
-        let mut early_node = None;
+    fn propagate_change(
+        &mut self,
+        path: &[u32],
+        trail: &[Index],
+        mut cur_pointer: ExternalPointer,
+        mut old_parent: Index,
+    ) -> Result<(Index, ExternalPointer, Option<T>), AccessError> {
         for cur_depth in (0 .. path.len()).rev() {
             //Trailing off early means we're at a leaf, we can just repeat that leaf and get sparsity by default
             old_parent = if cur_depth < trail.len() { trail[cur_depth] } else { *trail.last().unwrap() };
@@ -114,23 +110,39 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
                 Some(pointer) => pointer,
                 None => {
                     if self.nodes.status(old_parent).unwrap().get() == 2 && !self.is_leaf(old_parent) {
-                        early_node = Some(new_parent_node);
                         cur_pointer.pointer = old_parent;
-                        early_exit = true;
-                        break
+                        return Ok((old_parent, cur_pointer, Some(new_parent_node)))
                     } else { self.add_node(new_parent_node) }
                 }
             };
-        }
+        };
+        Ok((old_parent, cur_pointer, None))
+    }
+
+    //Public functions used for writing
+    pub fn set_node(&mut self, start:ExternalPointer, path:&[u32], new_pointer:Index) -> Result<ExternalPointer, AccessError> {
+        if let Some(pointer) = self.read(start, path) { 
+            if pointer.pointer == new_pointer { return Ok(start) }
+        } else { return Err(AccessError::OperationFailed) }
+        let trail = self.get_trail(start.pointer, path);
+        let (old_parent, cur_pointer, early_node) = self.propagate_change(
+            path,
+            &trail[..],
+            ExternalPointer::new(new_pointer, start.height - path.len() as u32),
+            start.pointer,
+        )?;
         let last_leaf = self.leaf_count as usize - 1;
         let old_nodes = bfs_nodes(self.nodes.internal_memory(), old_parent, last_leaf); 
-        if let Some(node) = early_node {
-            let old_node = self.nodes.replace(old_parent, node.clone()).unwrap();
-            self.index_lookup.remove(&old_node);
+        let early_exit = if let Some(node) = early_node {
+            self.index_lookup.remove(&self.nodes.replace(old_parent, node.clone()).unwrap());
             self.index_lookup.insert(node, old_parent);
-        } 
-        for index in bfs_nodes(self.nodes.internal_memory(), cur_pointer.pointer, last_leaf) {  self.nodes.add_ref(index).unwrap() }
+            true
+        } else { false };
+        for index in bfs_nodes(self.nodes.internal_memory(), cur_pointer.pointer, last_leaf) {
+            self.nodes.add_ref(index).unwrap()
+        }
         self.mass_remove(&old_nodes);
+        // Returning start because the root node never changes
         if early_exit { Ok(start) } else { Ok(cur_pointer) }
     }
 

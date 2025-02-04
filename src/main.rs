@@ -114,7 +114,6 @@ impl EntityPool {
     }
 }
 
-// Initialize deadlock detection on program start
 fn init_deadlock_detection() {
     thread::spawn(move || {
         loop {
