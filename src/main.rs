@@ -27,12 +27,14 @@ use parking_lot::{RwLock, deadlock};
 use std::time::Duration;
 use std::thread;
 lazy_static! {
+    // Not sure how permanent these'll be, but they're here for now
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
         AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
         0.9
     ));
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
+    // Temporary until I create a proper solution
     pub static ref BLOCKS: BlockPalette = BlockPalette::new();
 }
 
@@ -49,9 +51,8 @@ pub struct Location {
     pub position: Vec2,
 }
 
+pub type ID = u32;
 //Chunk and store corner locations in u8s?
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ID(pub u32);
 pub struct Entity {
     id : ID,
     location: Location,
@@ -102,8 +103,8 @@ pub struct EntityPool {
 impl EntityPool {
     fn add_entity(&mut self, location:Location, orientation:f32) -> ID {
         self.id_counter += 1;
-        self.entities.push(Entity::new(ID(self.id_counter), location, orientation));
-        ID(self.id_counter)
+        self.entities.push(Entity::new(self.id_counter, location, orientation));
+        self.id_counter
     }
     pub fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
         self.entities.iter_mut().find(|entity| entity.id == id)
