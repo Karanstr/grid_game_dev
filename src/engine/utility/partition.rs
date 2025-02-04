@@ -194,10 +194,10 @@ impl AABB {
     pub fn radius(&self) -> Vec2 { self.radius }
 
     pub fn intersects(&self, other:Self) -> BVec2 {
-        (other.center - self.center).abs().less(self.radius + other.radius)
+        (other.center - self.center).abs().less_eq(self.radius + other.radius)
     }
     pub fn contains(&self, point:Vec2) -> BVec2 {
-        (point - self.center).abs().less(self.radius)
+        (point - self.center).abs().less_eq(self.radius)
     }
     
     pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }
@@ -214,5 +214,26 @@ impl AABB {
             center: self.center - distance / 2.,
             radius: (self.radius - distance.abs() / 2.).abs(),
         }
+    }
+
+    pub fn exterior_will_intersect(&self, point:Vec2, velocity:Vec2) -> Option<Vec2> {
+        let mut walls_will_hit = Vec2::ZERO;
+        let top_left = self.min();
+        let bottom_right = self.max();
+
+        if point.x.less_eq(top_left.x) {
+            if velocity.x.greater(0.) { walls_will_hit.x = -1. } else { return None }
+        } else if point.x.greater_eq(bottom_right.x) {
+            if velocity.x.less(0.) { walls_will_hit.x = 1. } else { return None }
+        }
+
+        // Check y-axis boundaries
+        if point.y.less_eq(top_left.y) {
+            if velocity.y.greater(0.) { walls_will_hit.y = -1. } else { return None }
+        } else if point.y.greater_eq(bottom_right.y) {
+            if velocity.y.less(0.) { walls_will_hit.y = 1. } else { return None }
+        }
+        
+        Some(walls_will_hit)
     }
 }

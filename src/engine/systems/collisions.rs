@@ -24,38 +24,6 @@ pub struct Particle {
     pub type_of : usize,
 }
 
-// Consider changing this
-// Convert a velocity vector to a Z-order corner index
-// Z-order indexing:
-// 0=(-,-) top-left,    1=(+,-) top-right
-// 2=(-,+) bottom-left,  3=(+,+) bottom-right
-fn velocity_to_corner_index(velocity: Vec2) -> usize {
-    if velocity.x.is_zero() || velocity.y.is_zero() { dbg!("AHHH", velocity); }
-    (velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)
-}
-
-#[derive(Debug)]
-pub enum CollisionIndices {
-    Vertical([usize; 2]),
-    Horizontal([usize; 2]),
-    Diagonal(usize),
-}
-
-// Get the relevant Z-order indices based on velocity direction
-fn get_relevant_indices(velocity: Vec2) -> CollisionIndices {
-    match velocity.zero_signum() {
-        // Moving vertically
-        IVec2 { x: 0, y: -1 } => CollisionIndices::Vertical([0, 1]),  // Up: check top cells
-        IVec2 { x: 0, y: 1 } => CollisionIndices::Vertical([2, 3]),   // Down: check bottom cells
-        
-        // Moving horizontally
-        IVec2 { x: -1, y: 0 } => CollisionIndices::Horizontal([0, 2]), // Left: check left cells
-        IVec2 { x: 1, y: 0 } => CollisionIndices::Horizontal([1, 3]),  // Right: check right cells
-        
-        diagonal => CollisionIndices::Diagonal(velocity_to_corner_index(diagonal.as_vec2())),
-    }
-}
-
 // Replace these with err friendly versions
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -91,19 +59,42 @@ pub struct WallTouch {
     pub vertical: WallSign,
 }
 
+#[derive(Debug)]
+pub enum CollisionZorder {
+    Vertical([usize; 2]),
+    Horizontal([usize; 2]),
+    Diagonal(usize),
+}
+impl CollisionZorder {
+    pub fn from_velocity(velocity: Vec2) -> Self {
+        match velocity.zero_signum() {
+            IVec2 { x: 0, y: -1 } => CollisionZorder::Vertical([0, 1]),  // Up: check top cells
+            IVec2 { x: 0, y: 1 } => CollisionZorder::Vertical([2, 3]),   // Down: check bottom cells
+            
+            IVec2 { x: -1, y: 0 } => CollisionZorder::Horizontal([0, 2]), // Left: check left cells
+            IVec2 { x: 1, y: 0 } => CollisionZorder::Horizontal([1, 3]),  // Right: check right cells
+            
+            _ => CollisionZorder::Diagonal((velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)),
+        }
+    }
+}
+
+
+pub enum CheckZorders {
+    One(usize),
+    Two(usize, usize),
+}
 //This needs to support None, which returns both 0 and 1 options
-// Use get_relevant_indices for this.
-// Using velocity.signum may not be safe as it will miss positive values less than epsilon
+// Given a single axis velocity, returns the zorder a configured point will collide with
 impl WallTouch {
-    // Given a single-axis velocity, returns the index in the direction of the wall
-    pub fn to_zorder_index(&self, velocity: Vec2) -> Option<usize> {
-        if velocity.x.is_zero() == velocity.y.is_zero() { dbg!("AHHH"); return None }
-        let clamped = velocity.signum().max(Vec2::ZERO);
-        Some( if velocity.x.is_zero() {
+    pub fn to_zorder_index(&self, velocity: Vec2) -> usize {
+        if velocity.x.is_zero() == velocity.y.is_zero() { panic!("AHHH (Velocity is zero)"); }
+        let clamped = velocity.zero_signum().max(IVec2::ZERO);
+        if velocity.x.is_zero() {
             2 * clamped.y as usize | if matches!(self.horizontal, WallSign::Positive) { 0 } else { 1 } 
         } else {
             clamped.x as usize | 2 * if matches!(self.vertical, WallSign::Positive) { 0 } else { 1 } 
-        } )
+        }
     }
 }
 
@@ -255,57 +246,17 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     action
 }
 
-// Fix this to work with comparison tests instead of inserting custom EPSILON solution
-// Rename this
-// Checks if a point is at a boundary and determines the cell offset based on velocity
-fn check_boundary_collision(point: Vec2, velocity: Vec2, top_left: Vec2, bottom_right: Vec2) -> Option<Vec2> {
-    let mut cell = Vec2::ZERO;
-    
-    // Check x-axis boundaries
-    if point.x.less_eq(top_left.x) {
-        if velocity.x.greater(0.) { cell.x = -1. } else { return None }
-    } else if point.x.greater_eq(bottom_right.x) {
-        if velocity.x.less(0.) { cell.x = 1. } else { return None }
-    }
-
-    // Check y-axis boundaries
-    if point.y.less_eq(top_left.y) {
-        if velocity.y.greater(0.) { cell.y = -1. } else { return None }
-    } else if point.y.greater_eq(bottom_right.y) {
-        if velocity.y.less(0.) { cell.y = 1. } else { return None }
-    }
-    
-    Some(cell)
-}
-
-// Make this not Option with better safety checks later?
 // Selects the appropriate cell and height based on position data and indices
-fn select_cell_and_height(
-    position_data: &[Option<CellData>; 4],
-    rel_idxs: CollisionIndices,
-    point: Vec2,
-    velocity: Vec2,
-    top_left: Vec2,
-    bottom_right: Vec2,
-    default_height: u32,
-) -> Option<(Vec2, u32)> {
-    Some( match rel_idxs {
-        CollisionIndices::Vertical([idx1, idx2]) | CollisionIndices::Horizontal([idx1, idx2]) => {
-            let cells = [
-                if let Some(data) = position_data[idx1] {Some(data.bound_data())} else {None},
-                if let Some(data) = position_data[idx2] {Some(data.bound_data())} else {None},
-            ];
-            match cells.iter().filter_map(|cell| *cell).collect::<Vec<_>>().as_slice() {
+fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: CollisionZorder) -> Option<(Vec2, u32)> {
+    Some(match col_zorders {
+        CollisionZorder::Vertical(indices) | CollisionZorder::Horizontal(indices) => {
+            match indices.into_iter().filter_map(|index| position_data[index]).map(|data| data.bound_data()).collect::<Vec<_>>().as_slice() {
                 [cell] => *cell,
                 [cell1, cell2] => if cell1.1 < cell2.1 { *cell1 } else { *cell2 },
-                _ => (check_boundary_collision(point, velocity, top_left, bottom_right)?, default_height)
+                _ => None?
             }
         },
-        CollisionIndices::Diagonal(idx) => {
-            if let Some(cell) = position_data[idx] { cell.bound_data() } else {
-                (check_boundary_collision(point, velocity, top_left, bottom_right)?, default_height)
-            }
-        }
+        CollisionZorder::Diagonal(idx) => position_data[idx]?.bound_data()
     })
 }
 
@@ -320,21 +271,11 @@ fn next_intersection(
 ) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
-    let bottom_right = hitting_aabb.max();
     let within_bounds = hitting_aabb.contains(point);
-
     if hitting_wall(position_data, velocity, rotation, corner_type).is_some() { return Some(0.) }
-
-    
-    let (cell, height) = select_cell_and_height(
-        &position_data,
-        get_relevant_indices(velocity),
-        point,
-        velocity,
-        top_left,
-        bottom_right,
-        hitting_location.pointer.height,
-    )?;
+    let (cell, height) = if within_bounds != BVec2::TRUE {
+        (hitting_aabb.exterior_will_intersect(point, velocity)?, hitting_location.pointer.height)
+    } else { select_cell_and_height(&position_data, CollisionZorder::from_velocity(velocity))? };
 
     let quadrant = velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
@@ -491,20 +432,19 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
     if velocity.is_zero() { return None }
 
-    let indices = get_relevant_indices(velocity);
-    // Single-axis movement
+    let col_zorders = CollisionZorder::from_velocity(velocity);
     let rotated_corner = rotate_corner_type(corner_type, rotation);
     let allowed_walls = hittable_walls(velocity, rotated_corner);
-    let result = allowed_walls & match indices {
-        CollisionIndices::Vertical(_) => {
-            let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
+    let result = allowed_walls & match col_zorders {
+        CollisionZorder::Vertical(_) => {
+            let idx = wall_checks(rotated_corner).to_zorder_index(velocity);
             BVec2::new(false, BLOCKS.is_solid_cell(position_data[idx]))
         },
-        CollisionIndices::Horizontal(_) => {
-            let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
+        CollisionZorder::Horizontal(_) => {
+            let idx = wall_checks(rotated_corner).to_zorder_index(velocity);
             BVec2::new(BLOCKS.is_solid_cell(position_data[idx]), false)
         },
-        CollisionIndices::Diagonal(idx) => {
+        CollisionZorder::Diagonal(idx) => {
             BVec2::splat(BLOCKS.is_solid_cell(position_data[idx]))
         },
     };
