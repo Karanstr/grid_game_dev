@@ -414,28 +414,13 @@ pub mod corner_handling {
     
 }
 
-// Unify the logic here and in hittable_walls
-fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
-    let (x_slide_check, y_slide_check) = match velocity.zero_signum() {
-        IVec2{x: -1, y: -1} => (2, 1),
-        IVec2{x: -1, y: 1} => (0, 3),
-        IVec2{x: 1, y: -1} => (3, 0),
-        IVec2{x: 1, y: 1} => (1, 2),
-        _ => { dbg!("AHHHH"); (0, 0) }
-    };
-    BVec2::new(
-        BLOCKS.is_solid_cell(position_data[x_slide_check]),
-        BLOCKS.is_solid_cell(position_data[y_slide_check]),
-    )
-}
 
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
-    if velocity.is_zero() { return None }
+    if velocity.is_zero() { None? }
 
-    let col_zorders = CollisionZorder::from_velocity(velocity);
     let rotated_corner = rotate_corner_type(corner_type, rotation);
     let allowed_walls = hittable_walls(velocity, rotated_corner);
-    let result = allowed_walls & match col_zorders {
+    let vel_check = match CollisionZorder::from_velocity(velocity) {
         CollisionZorder::Vertical(_) => {
             let idx = wall_checks(rotated_corner).to_zorder_index(velocity);
             BVec2::new(false, BLOCKS.is_solid_cell(position_data[idx]))
@@ -448,11 +433,22 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
             BVec2::splat(BLOCKS.is_solid_cell(position_data[idx]))
         },
     };
-
-    if result == BVec2::TRUE {
-        let slide_checked = slide_check(velocity, position_data);
-        if slide_checked == BVec2::FALSE { Some(BVec2::TRUE) } else { Some(slide_checked) }
-    } else if result == BVec2::FALSE { None } else { Some(result) }
+    let slide_check = 'slide_check: {
+        let (x_slide_check, y_slide_check) = match velocity.zero_signum() {
+        IVec2{x: -1, y: -1} => (2, 1),
+        IVec2{x: -1, y: 1} => (0, 3),
+        IVec2{x: 1, y: -1} => (3, 0),
+        IVec2{x: 1, y: 1} => (1, 2),
+        _ => break 'slide_check BVec2::TRUE
+        };
+        let slide = BVec2::new(
+            BLOCKS.is_solid_cell(position_data[x_slide_check]),
+            BLOCKS.is_solid_cell(position_data[y_slide_check]),
+        );
+        if slide == BVec2::FALSE { BVec2::TRUE } else { slide }
+    };
+    let result = allowed_walls & vel_check & slide_check;
+    (result != BVec2::FALSE).then_some(result)
 }
 
 fn wall_checks(corner_type:usize) -> WallTouch {
