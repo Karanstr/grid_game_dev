@@ -28,17 +28,17 @@ pub mod output {
     pub mod render {
         use super::*;
         
-        pub fn draw_all(blocks:&BlockPalette, outline:bool) {
+        pub fn draw_all(outline:bool) {
             let entities = &*ENTITIES.read();
             for entity in entities.entities.iter() {
                 let location = &entity.location;
                 if CAMERA.read().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(entity, blocks, outline);
+                    draw(entity, outline);
                 }
             }
         }
     
-        pub fn draw(entity:&Entity, blocks:&BlockPalette, outline:bool) {
+        pub fn draw(entity:&Entity, outline:bool) {
             let rotation = entity.forward;
             let point_offset = bounds::center_to_edge(entity.location.pointer.height);
             let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
@@ -51,7 +51,7 @@ pub mod output {
                 ))}
             }).collect();
             for (points, index) in points_list {
-                CAMERA.read().draw_rectangle_from_corners(&points, blocks.blocks[index].color, outline);
+                CAMERA.read().draw_rectangle_from_corners(&points, BLOCKS.blocks[index].color, outline);
             }
         }
     }

@@ -24,13 +24,6 @@ pub struct Particle {
     pub type_of : usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum CellType {
-    Solid,  // index 1 or 3
-    Air,    // index 0 or 2
-    Void,   // None
-}
-
 // Consider changing this
 // Convert a velocity vector to a Z-order corner index
 // Z-order indexing:
@@ -445,7 +438,7 @@ pub mod corner_handling {
                         check_zorder = check_zorder.step_down(direction)
                     }
                     let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
-                    if matches!(check_index(pointer.pointer), CellType::Solid) { exposed_mask -= 1 << i; break }
+                    if BLOCKS.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
             }
             exposed_mask
@@ -471,7 +464,7 @@ pub mod corner_handling {
             corners.push( Corners::new(
                 cell_corners(cell),
                 cell.pointer.pointer,
-                if check_cell(Some(cell)) == CellType::Air { 0 } else { cell_corner_mask(start, zorder) }
+                if BLOCKS.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 
@@ -490,8 +483,8 @@ fn slide_check(velocity:Vec2, position_data:[Option<CellData>; 4]) -> BVec2 {
         _ => { dbg!("AHHHH"); (0, 0) }
     };
     BVec2::new(
-        is_solid(position_data[x_slide_check]),
-        is_solid(position_data[y_slide_check]),
+        BLOCKS.is_solid_cell(position_data[x_slide_check]),
+        BLOCKS.is_solid_cell(position_data[y_slide_check]),
     )
 }
 
@@ -505,14 +498,14 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
     let result = allowed_walls & match indices {
         CollisionIndices::Vertical(_) => {
             let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
-            BVec2::new(false, is_solid(position_data[idx]))
+            BVec2::new(false, BLOCKS.is_solid_cell(position_data[idx]))
         },
         CollisionIndices::Horizontal(_) => {
             let idx = wall_checks(rotated_corner).to_zorder_index(velocity).unwrap();
-            BVec2::new(is_solid(position_data[idx]), false)
+            BVec2::new(BLOCKS.is_solid_cell(position_data[idx]), false)
         },
         CollisionIndices::Diagonal(idx) => {
-            BVec2::splat(is_solid(position_data[idx]))
+            BVec2::splat(BLOCKS.is_solid_cell(position_data[idx]))
         },
     };
 
@@ -542,22 +535,3 @@ pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> BVec2 {
     };
     BVec2::new(x_hit, y_hit)
 }
-
-//Remove these and add a global block list which can be queried
-fn is_solid(cell:Option<CellData>) -> bool { matches!(check_cell(cell), CellType::Solid) }
-//These are kinda duplicates (check_cell and check_index), idk if I care tho
-fn check_cell(cell:Option<CellData>) -> CellType {
-    match cell {
-        None => CellType::Void,
-        Some(cell) => match *cell.pointer.pointer {
-            0 | 2 => CellType::Air,
-            1 | 3 => CellType::Solid,
-            _ => unreachable!()
-        }
-    }
-}
-fn check_index(idx:Index) -> CellType { match *idx { 
-    2 | 0 => CellType::Air, 
-    1 | 3 => CellType::Solid, 
-    _ => unreachable!()
-} }

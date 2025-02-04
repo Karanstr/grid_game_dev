@@ -17,6 +17,7 @@ mod imports {
     pub use crate::GRAPH;
     pub use crate::CAMERA;
     pub use crate::ENTITIES;
+    pub use crate::BLOCKS;
     pub use std::f32::consts::PI;
     pub use engine::utility::math::*;
 }
@@ -32,12 +33,13 @@ lazy_static! {
         0.9
     ));
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
+    pub static ref BLOCKS: BlockPalette = BlockPalette::new();
 }
 
 // Game constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = 0.5;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.3;
+const PLAYER_ROTATION_SPAWN: f32 = 0.;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -140,7 +142,6 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(512., 512.);
-    let blocks = BlockPalette::new();
     
     // Load world state once at startup
     let world_pointer = {
@@ -223,7 +224,7 @@ async fn main() {
             terrain_entity.set_root(new_pointer);
         }
         
-        render::draw_all(&blocks, true);
+        render::draw_all(true);
         
         //We want to move the camera to where the player is drawn, not where the player is moved to.
         let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
