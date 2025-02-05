@@ -15,19 +15,6 @@ pub struct CollisionObject {
     pub particles : BinaryHeap<Reverse<Particle>>,
 }
 
-pub enum CornerType {
-    TopLeft,
-    Top,
-    TopRight,
-    Right,
-    BottomRight,
-    Bottom,
-    BottomLeft,
-    Left,
-}
-impl CornerType {
-    fn rotate(self, rotation: f32) -> CornerType { todo!() }
-}
 #[derive(Debug, Clone, new)]
 pub struct Particle {
     pub offset : Vec2,
@@ -59,18 +46,32 @@ impl Particle {
     }
 }
 
+pub enum CornerType {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+impl CornerType {}
+
+// Dump the WallSign/Touch system, replace with CornerType
 #[derive(Debug, Clone, Copy)]
 pub enum WallSign {
     None,
     Negative,
     Positive
 }
+
+// Hardcode into CornerType
 #[derive(Debug, Clone, Copy, new)]
 pub struct WallTouch {
     pub horizontal: WallSign,
     pub vertical: WallSign,
 }
-// Given a non_zero velocity, returns the zorder a configured point will collide with
 impl WallTouch {
     pub fn to_zorder_index(&self, velocity: Vec2) -> CheckZorders {
         if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
@@ -91,6 +92,7 @@ impl WallTouch {
     }
 }
 
+// Hardcode into CornerType
 pub enum CheckZorders {
     One(usize),
     Two([usize; 2]),
@@ -100,7 +102,6 @@ impl CheckZorders {
         match velocity.zero_signum() {
             IVec2 { x: 0, y: -1 } => CheckZorders::Two([0, 1]),  // Up: check top cells
             IVec2 { x: 0, y: 1 } => CheckZorders::Two([2, 3]),   // Down: check bottom cells
-            
             IVec2 { x: -1, y: 0 } => CheckZorders::Two([0, 2]), // Left: check left cells
             IVec2 { x: 1, y: 0 } => CheckZorders::Two([1, 3]),  // Right: check right cells
             IVec2 { x: 0, y: 0 } => panic!("Ahhh! (Velocity is zero)"),
@@ -108,6 +109,7 @@ impl CheckZorders {
         }
     }
 }
+
 struct Hit {
     pub owner : ID,
     pub hitting : ID,
@@ -302,7 +304,7 @@ fn next_intersection(
     (!ticks_to_hit.is_nan() && ticks_to_hit.abs().less_eq(tick_max)).then_some(ticks_to_hit) 
 }
 
-//Make this work again
+// Make this work again
 // pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
 //     let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
 //     let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
@@ -315,7 +317,6 @@ fn next_intersection(
 // }
 
 // Add culling edgecase for no rotation
-// We aren't culling rn
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
@@ -423,11 +424,11 @@ pub mod corner_handling {
     
 }
 
+// Update to work with CornerType
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
     let rotated_corner = rotate_corner_type(corner_type, rotation);
-    let allowed_walls = hittable_walls(velocity, rotated_corner);
-    let vel_check = {
-        let mut temp = [false; 2];
+    let mut hit_walls = hittable_walls(velocity, rotated_corner);
+    { // Velocity check
         let collision = match wall_checks(rotated_corner).to_zorder_index(velocity) {
             CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
             CheckZorders::Two(indices) => {
@@ -436,29 +437,29 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
         };
         for i in 0 .. 2 {
             if velocity[i].is_zero() { continue }
-            temp[i] = collision;
+            hit_walls[i] &= collision;
         }
-        BVec2::from_array(temp)
     };
-    let slide_check = 'slide_check: {
-        let mut temp = [false; 2];
+    'slide_check: {
+        if hit_walls != [true; 2] { break 'slide_check } 
         let inds = match velocity.zero_signum() {
             IVec2{x: -1, y: -1} => [2, 1],
             IVec2{x: -1, y: 1} => [0, 3],
             IVec2{x: 1, y: -1} => [3, 0],
             IVec2{x: 1, y: 1} => [1, 2],
-            _ => break 'slide_check BVec2::TRUE,
+            _ => unreachable!(),
         };
+        let mut slide = [false; 2];
         for i in 0 .. 2 {
-            temp[i] = BLOCKS.is_solid_cell(position_data[inds[i]]);
+            slide[i] = BLOCKS.is_solid_cell(position_data[inds[i]]);
         }
-        let slide = BVec2::from_array(temp);
-        if slide == BVec2::FALSE { BVec2::TRUE } else { slide }
+        if slide != [false; 2] { hit_walls[0] &= slide[0]; hit_walls[1] &= slide[1] }
     };
-    let result = allowed_walls & vel_check & slide_check;
+    let result = BVec2::from_array(hit_walls);
     (result != BVec2::FALSE).then_some(result)
 }
 
+// Remove and plug it into CornerType
 // Allow this to take in a rotation and output more than exact corner types
 fn wall_checks(corner_type:usize) -> WallTouch {
     match corner_type {
@@ -470,13 +471,13 @@ fn wall_checks(corner_type:usize) -> WallTouch {
     }
 }
 
-pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> BVec2 {
-    let (x_hit, y_hit) = match corner_type {
-        0 => (velocity.x.less(0.), velocity.y.less(0.)),
-        1 => (velocity.x.greater(0.), velocity.y.less(0.)),
-        2 => (velocity.x.less(0.), velocity.y.greater(0.)),
-        3 => (velocity.x.greater(0.), velocity.y.greater(0.)),
+// Hardcode into CornerType
+pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> [bool; 2] {
+    match corner_type {
+        0 => [velocity.x.less(0.), velocity.y.less(0.)],
+        1 => [velocity.x.greater(0.), velocity.y.less(0.)],
+        2 => [velocity.x.less(0.), velocity.y.greater(0.)],
+        3 => [velocity.x.greater(0.), velocity.y.greater(0.)],
         _ => unreachable!()
-    };
-    BVec2::new(x_hit, y_hit)
+    }
 }
