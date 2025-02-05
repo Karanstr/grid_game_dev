@@ -1,5 +1,7 @@
 use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
+use macroquad::math::BVec3;
+
 use super::*;
 
 #[derive(Debug, Clone, new)]
@@ -13,6 +15,19 @@ pub struct CollisionObject {
     pub particles : BinaryHeap<Reverse<Particle>>,
 }
 
+pub enum CornerType {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+impl CornerType {
+    fn rotate(self, rotation: f32) -> CornerType { todo!() }
+}
 #[derive(Debug, Clone, new)]
 pub struct Particle {
     pub offset : Vec2,
@@ -23,8 +38,6 @@ pub struct Particle {
     pub position_data : [Option<CellData>; 4],
     pub type_of : usize,
 }
-
-// Replace these with err friendly versions
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self == other { Some(Ordering::Equal) }
@@ -44,7 +57,6 @@ impl Particle {
     fn position(&self, owner:&CollisionObject) -> Vec2 {
         self.offset + owner.position + owner.velocity * self.ticks_into_projection
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -58,46 +70,44 @@ pub struct WallTouch {
     pub horizontal: WallSign,
     pub vertical: WallSign,
 }
-
-#[derive(Debug)]
-pub enum CollisionZorder {
-    Vertical([usize; 2]),
-    Horizontal([usize; 2]),
-    Diagonal(usize),
-}
-impl CollisionZorder {
-    pub fn from_velocity(velocity: Vec2) -> Self {
-        match velocity.zero_signum() {
-            IVec2 { x: 0, y: -1 } => CollisionZorder::Vertical([0, 1]),  // Up: check top cells
-            IVec2 { x: 0, y: 1 } => CollisionZorder::Vertical([2, 3]),   // Down: check bottom cells
-            
-            IVec2 { x: -1, y: 0 } => CollisionZorder::Horizontal([0, 2]), // Left: check left cells
-            IVec2 { x: 1, y: 0 } => CollisionZorder::Horizontal([1, 3]),  // Right: check right cells
-            
-            _ => CollisionZorder::Diagonal((velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)),
-        }
+// Given a non_zero velocity, returns the zorder a configured point will collide with
+impl WallTouch {
+    pub fn to_zorder_index(&self, velocity: Vec2) -> CheckZorders {
+        if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
+        let clamped = velocity.zero_signum().max(IVec2::ZERO);
+        if velocity.x.is_zero() {
+            match self.horizontal {
+                WallSign::None => CheckZorders::Two([2 * clamped.y as usize, 2 * clamped.y as usize | 1]),
+                WallSign::Negative => CheckZorders::One(2 * clamped.y as usize | 1),
+                WallSign::Positive => CheckZorders::One(2 * clamped.y as usize),
+            }
+        } else if velocity.y.is_zero() {
+            match self.vertical {
+                WallSign::None => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
+                WallSign::Negative => CheckZorders::One(2 | clamped.x as usize),
+                WallSign::Positive => CheckZorders::One(clamped.x as usize),
+            }
+        } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
     }
 }
-
 
 pub enum CheckZorders {
     One(usize),
-    Two(usize, usize),
+    Two([usize; 2]),
 }
-//This needs to support None, which returns both 0 and 1 options
-// Given a single axis velocity, returns the zorder a configured point will collide with
-impl WallTouch {
-    pub fn to_zorder_index(&self, velocity: Vec2) -> usize {
-        if velocity.x.is_zero() == velocity.y.is_zero() { panic!("AHHH (Velocity is zero)"); }
-        let clamped = velocity.zero_signum().max(IVec2::ZERO);
-        if velocity.x.is_zero() {
-            2 * clamped.y as usize | if matches!(self.horizontal, WallSign::Positive) { 0 } else { 1 } 
-        } else {
-            clamped.x as usize | 2 * if matches!(self.vertical, WallSign::Positive) { 0 } else { 1 } 
+impl CheckZorders {
+    pub fn from_velocity(velocity: Vec2) -> Self {
+        match velocity.zero_signum() {
+            IVec2 { x: 0, y: -1 } => CheckZorders::Two([0, 1]),  // Up: check top cells
+            IVec2 { x: 0, y: 1 } => CheckZorders::Two([2, 3]),   // Down: check bottom cells
+            
+            IVec2 { x: -1, y: 0 } => CheckZorders::Two([0, 2]), // Left: check left cells
+            IVec2 { x: 1, y: 0 } => CheckZorders::Two([1, 3]),  // Right: check right cells
+            IVec2 { x: 0, y: 0 } => panic!("Ahhh! (Velocity is zero)"),
+            _ => CheckZorders::One((velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)),
         }
     }
 }
-
 struct Hit {
     pub owner : ID,
     pub hitting : ID,
@@ -247,16 +257,16 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
 }
 
 // Selects the appropriate cell and height based on position data and indices
-fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: CollisionZorder) -> Option<(Vec2, u32)> {
+fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: CheckZorders) -> Option<(Vec2, u32)> {
     Some(match col_zorders {
-        CollisionZorder::Vertical(indices) | CollisionZorder::Horizontal(indices) => {
+        CheckZorders::Two(indices) => {
             match indices.into_iter().filter_map(|index| position_data[index]).map(|data| data.bound_data()).collect::<Vec<_>>().as_slice() {
                 [cell] => *cell,
                 [cell1, cell2] => if cell1.1 < cell2.1 { *cell1 } else { *cell2 },
                 _ => None?
             }
         },
-        CollisionZorder::Diagonal(idx) => position_data[idx]?.bound_data()
+        CheckZorders::One(idx) => position_data[idx]?.bound_data()
     })
 }
 
@@ -275,7 +285,7 @@ fn next_intersection(
     if hitting_wall(position_data, velocity, rotation, corner_type).is_some() { return Some(0.) }
     let (cell, height) = if within_bounds != BVec2::TRUE {
         (hitting_aabb.exterior_will_intersect(point, velocity)?, hitting_location.pointer.height)
-    } else { select_cell_and_height(&position_data, CollisionZorder::from_velocity(velocity))? };
+    } else { select_cell_and_height(&position_data, CheckZorders::from_velocity(velocity))? };
 
     let quadrant = velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
@@ -293,19 +303,18 @@ fn next_intersection(
 }
 
 //Make this work again
-pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
-    let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
-    let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
-    let result = aabb.intersects(aabb2) == BVec2::TRUE;
-    let color = if result { GREEN } else { RED };
-    let camera = CAMERA.read();
-    camera.outline_bounds(aabb, 0.05, color);
-    camera.outline_bounds(aabb2, 0.05, color);
-    result
-}
+// pub fn within_range(entity1:&Entity, entity2:&Entity) -> bool {
+//     let aabb = bounds::aabb(entity1.location.position, entity1.location.pointer.height).expand(entity1.velocity);
+//     let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
+//     let result = aabb.intersects(aabb2) == BVec2::TRUE;
+//     let color = if result { GREEN } else { RED };
+//     let camera = CAMERA.read();
+//     camera.outline_bounds(aabb, 0.05, color);
+//     camera.outline_bounds(aabb2, 0.05, color);
+//     result
+// }
 
 // Add culling edgecase for no rotation
-// Relative angles only relevant when culling
 // We aren't culling rn
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
@@ -414,43 +423,43 @@ pub mod corner_handling {
     
 }
 
-
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
-    if velocity.is_zero() { None? }
-
     let rotated_corner = rotate_corner_type(corner_type, rotation);
     let allowed_walls = hittable_walls(velocity, rotated_corner);
-    let vel_check = match CollisionZorder::from_velocity(velocity) {
-        CollisionZorder::Vertical(_) => {
-            let idx = wall_checks(rotated_corner).to_zorder_index(velocity);
-            BVec2::new(false, BLOCKS.is_solid_cell(position_data[idx]))
-        },
-        CollisionZorder::Horizontal(_) => {
-            let idx = wall_checks(rotated_corner).to_zorder_index(velocity);
-            BVec2::new(BLOCKS.is_solid_cell(position_data[idx]), false)
-        },
-        CollisionZorder::Diagonal(idx) => {
-            BVec2::splat(BLOCKS.is_solid_cell(position_data[idx]))
-        },
+    let vel_check = {
+        let mut temp = [false; 2];
+        let collision = match wall_checks(rotated_corner).to_zorder_index(velocity) {
+            CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
+            CheckZorders::Two(indices) => {
+                BLOCKS.is_solid_cell(position_data[indices[0]]) | BLOCKS.is_solid_cell(position_data[indices[1]])
+            }
+        };
+        for i in 0 .. 2 {
+            if velocity[i].is_zero() { continue }
+            temp[i] = collision;
+        }
+        BVec2::from_array(temp)
     };
     let slide_check = 'slide_check: {
-        let (x_slide_check, y_slide_check) = match velocity.zero_signum() {
-        IVec2{x: -1, y: -1} => (2, 1),
-        IVec2{x: -1, y: 1} => (0, 3),
-        IVec2{x: 1, y: -1} => (3, 0),
-        IVec2{x: 1, y: 1} => (1, 2),
-        _ => break 'slide_check BVec2::TRUE
+        let mut temp = [false; 2];
+        let inds = match velocity.zero_signum() {
+            IVec2{x: -1, y: -1} => [2, 1],
+            IVec2{x: -1, y: 1} => [0, 3],
+            IVec2{x: 1, y: -1} => [3, 0],
+            IVec2{x: 1, y: 1} => [1, 2],
+            _ => break 'slide_check BVec2::TRUE,
         };
-        let slide = BVec2::new(
-            BLOCKS.is_solid_cell(position_data[x_slide_check]),
-            BLOCKS.is_solid_cell(position_data[y_slide_check]),
-        );
+        for i in 0 .. 2 {
+            temp[i] = BLOCKS.is_solid_cell(position_data[inds[i]]);
+        }
+        let slide = BVec2::from_array(temp);
         if slide == BVec2::FALSE { BVec2::TRUE } else { slide }
     };
     let result = allowed_walls & vel_check & slide_check;
     (result != BVec2::FALSE).then_some(result)
 }
 
+// Allow this to take in a rotation and output more than exact corner types
 fn wall_checks(corner_type:usize) -> WallTouch {
     match corner_type {
         0 => WallTouch::new(WallSign::Negative, WallSign::Negative), // (-,-)
