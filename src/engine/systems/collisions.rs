@@ -70,7 +70,6 @@ impl CornerType {
                 Self::Left(_) | Self::Right(_) => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
                 Self::TopLeft | Self::TopRight | Self::Top(_) => CheckZorders::One(2 | clamped.x as usize),
                 Self::BottomLeft | Self::BottomRight | Self::Bottom(_) => CheckZorders::One(clamped.x as usize),
-                _ => unreachable!()
             }
         } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
     }

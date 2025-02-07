@@ -188,11 +188,12 @@ async fn main() {
                 
                 let terrain_entity = entities.get_mut_entity(terrain).unwrap();
                 let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
-                let new_pointer = GRAPH.write().get_root(color, height);
                 
-                if let Some(pointer) = set_grid_cell(new_pointer, mouse_pos, terrain_entity.location) {
-                    terrain_entity.set_root(pointer);
-                }
+                if let Some(pointer) = set_grid_cell(
+                    ExternalPointer::new(Index(color), height),
+                    mouse_pos,
+                    terrain_entity.location
+                ) { terrain_entity.set_root(pointer) }
             }
         }
 
