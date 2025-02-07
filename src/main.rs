@@ -40,8 +40,8 @@ lazy_static! {
 
 // Game constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = 0.;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.;
+const PLAYER_ROTATION_SPAWN: f32 = -0.3;
+const TERRAIN_ROTATION_SPAWN: f32 = 3.7;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 

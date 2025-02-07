@@ -62,15 +62,14 @@ impl CornerType {
         if velocity.x.is_zero() {
             match self {
                 Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * clamped.y as usize, 2 * clamped.y as usize | 1]),
-                Self::TopLeft | Self::BottomLeft => CheckZorders::One(2 * clamped.y as usize | 1),
-                Self::TopRight | Self::BottomRight => CheckZorders::One(2 * clamped.y as usize),
-                _ => unreachable!()
+                Self::TopLeft | Self::BottomLeft | Self::Left(_) => CheckZorders::One(2 * clamped.y as usize | 1),
+                Self::TopRight | Self::BottomRight | Self::Right(_) => CheckZorders::One(2 * clamped.y as usize),
             }
         } else if velocity.y.is_zero() {
             match self {
                 Self::Left(_) | Self::Right(_) => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
-                Self::TopLeft | Self::TopRight => CheckZorders::One(2 | clamped.x as usize),
-                Self::BottomLeft | Self::BottomRight => CheckZorders::One(clamped.x as usize),
+                Self::TopLeft | Self::TopRight | Self::Top(_) => CheckZorders::One(2 | clamped.x as usize),
+                Self::BottomLeft | Self::BottomRight | Self::Bottom(_) => CheckZorders::One(clamped.x as usize),
                 _ => unreachable!()
             }
         } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
@@ -112,7 +111,6 @@ impl CornerType {
     }
     pub fn from_rotation(rotation: f32) -> Self {
         // Match normalized rotation
-        dbg!(rotation, mod_with_err(rotation, 2. * PI));
         match mod_with_err(rotation, 2. * PI) {
             rot if rot.less(PI/4.) => Self::Right(rot),
             rot if rot.approx_eq(PI/4.) => Self::TopRight,
@@ -165,9 +163,9 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
             // if within_range(&entity, &other) {
-                // if let Some(obj) = entity_to_collision_object(&entity, &other) { 
-                //     objects.push(obj); 
-                // }
+                if let Some(obj) = entity_to_collision_object(&entity, &other) { 
+                    objects.push(obj); 
+                }
                 if let Some(obj) = entity_to_collision_object(&other, &entity) { 
                     objects.push(obj); 
                 }
@@ -342,10 +340,10 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             let point = (corners.points[i] - offset).rotate(point_rotation);
             let corner_type = CornerType::from_index(i).rotate(hitting.rotation - owner.rotation);
             let color = match corner_type {
-                CornerType::TopLeft => GREEN,
-                CornerType::TopRight => BLUE,
-                CornerType::BottomLeft => RED,
-                CornerType::BottomRight => YELLOW,
+                CornerType::TopLeft | CornerType::Top(_) => GREEN,
+                CornerType::TopRight | CornerType::Right(_) => BLUE,
+                CornerType::BottomLeft | CornerType::Left(_) => RED,
+                CornerType::BottomRight | CornerType::Bottom(_) => YELLOW,
                 _ => PURPLE
             };
             camera.draw_point(point + rotated_owner_pos, 0.1, color);
