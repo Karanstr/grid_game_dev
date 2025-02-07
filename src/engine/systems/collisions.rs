@@ -1,6 +1,5 @@
 use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
-use macroquad::math::BVec3;
 
 use super::*;
 
@@ -18,12 +17,11 @@ pub struct CollisionObject {
 #[derive(Debug, Clone, new)]
 pub struct Particle {
     pub offset : Vec2,
-    pub rotation : f32,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
     // #[new(value = "[None; 4]")]
     pub position_data : [Option<CellData>; 4],
-    pub type_of : usize,
+    pub corner_type : CornerType,
 }
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -46,50 +44,91 @@ impl Particle {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum CornerType {
     TopLeft,
-    Top,
+    Top(f32),
     TopRight,
-    Right,
+    Right(f32),
     BottomRight,
-    Bottom,
+    Bottom(f32),
     BottomLeft,
-    Left,
+    Left(f32),
 }
-impl CornerType {}
-
-// Dump the WallSign/Touch system, replace with CornerType
-#[derive(Debug, Clone, Copy)]
-pub enum WallSign {
-    None,
-    Negative,
-    Positive
-}
-
-// Hardcode into CornerType
-#[derive(Debug, Clone, Copy, new)]
-pub struct WallTouch {
-    pub horizontal: WallSign,
-    pub vertical: WallSign,
-}
-impl WallTouch {
-    pub fn to_zorder_index(&self, velocity: Vec2) -> CheckZorders {
+impl CornerType {
+    pub fn checks(&self, velocity:Vec2) -> CheckZorders {
         if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
         let clamped = velocity.zero_signum().max(IVec2::ZERO);
         if velocity.x.is_zero() {
-            match self.horizontal {
-                WallSign::None => CheckZorders::Two([2 * clamped.y as usize, 2 * clamped.y as usize | 1]),
-                WallSign::Negative => CheckZorders::One(2 * clamped.y as usize | 1),
-                WallSign::Positive => CheckZorders::One(2 * clamped.y as usize),
+            match self {
+                Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * clamped.y as usize, 2 * clamped.y as usize | 1]),
+                Self::TopLeft | Self::BottomLeft => CheckZorders::One(2 * clamped.y as usize | 1),
+                Self::TopRight | Self::BottomRight => CheckZorders::One(2 * clamped.y as usize),
+                _ => unreachable!()
             }
         } else if velocity.y.is_zero() {
-            match self.vertical {
-                WallSign::None => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
-                WallSign::Negative => CheckZorders::One(2 | clamped.x as usize),
-                WallSign::Positive => CheckZorders::One(clamped.x as usize),
+            match self {
+                Self::Left(_) | Self::Right(_) => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
+                Self::TopLeft | Self::TopRight => CheckZorders::One(2 | clamped.x as usize),
+                Self::BottomLeft | Self::BottomRight => CheckZorders::One(clamped.x as usize),
+                _ => unreachable!()
             }
         } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
     }
+    pub fn hittable_walls(&self, velocity:Vec2) -> [bool; 2] {
+        match self {
+            Self::TopLeft => [velocity.x.less(0.), velocity.y.less(0.)],
+            Self::Top(_) => [false, velocity.y.less(0.)],
+            Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
+            Self::Right(_) => [velocity.x.greater(0.), false],
+            Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
+            Self::Bottom(_) => [false, velocity.y.greater(0.)],
+            Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
+            Self::Left(_) => [velocity.x.less(0.), false],
+        }
+    }
+    
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::TopLeft,
+            1 => Self::TopRight,
+            2 => Self::BottomLeft,
+            3 => Self::BottomRight,
+            _ => unimplemented!()
+        }
+    }
+
+    pub fn rotation(&self) -> f32 {
+        match self {
+            Self::TopRight => PI/4.,
+            Self::TopLeft => PI * 3./4.,
+            Self::BottomLeft => PI * 5./4.,
+            Self::BottomRight => PI * 7./4.,
+            Self::Top(angle) 
+            | Self::Left(angle) 
+            | Self::Right(angle) 
+            | Self::Bottom(angle) => *angle,
+        }
+    }
+    pub fn from_rotation(rotation: f32) -> Self {
+        // Match normalized rotation
+        dbg!(rotation, mod_with_err(rotation, 2. * PI));
+        match mod_with_err(rotation, 2. * PI) {
+            rot if rot.less(PI/4.) => Self::Right(rot),
+            rot if rot.approx_eq(PI/4.) => Self::TopRight,
+            rot if rot.less(PI * 3./4.) => Self::Top(rot),
+            rot if rot.approx_eq(PI * 3./4.) => Self::TopLeft,
+            rot if rot.less(PI * 5./4.) => Self::Left(rot),
+            rot if rot.approx_eq(PI * 5./4.) => Self::BottomLeft,
+            rot if rot.less(PI * 7./4.) => Self::Bottom(rot),
+            rot if rot.approx_eq(PI * 7./4.) => Self::BottomRight,
+            rot => Self::Right(rot),
+        }
+    }
+    pub fn rotate(&self, rotation: f32) -> Self {
+        Self::from_rotation(self.rotation() + rotation)
+    }
+
 }
 
 // Hardcode into CornerType
@@ -117,36 +156,6 @@ struct Hit {
     pub ticks : f32,
 }
 
-// Determines which specific walls of the bounding box a corner touches given its rotation in radians
-// Needs to know which corner we're in
-pub fn rotate_corner_type(corner: usize, rotation: f32) -> usize {
-    // Normalize rotation to be between 0 and 2π
-    let rotation = mod_with_err(rotation + 2.0 * PI, 2.0 * PI);
-
-    // Calculate which quadrant we're in after rotation (each π/2 radians)
-    let quadrant = (rotation / (PI / 2.0)) as usize;
-    
-    // Convert from z-order to rotation order
-    // Z-order:    0=(-,-), 1=(+,-), 2=(-,+), 3=(+,+)
-    // Rotation:   0=TR(+,-), 1=TL(-,-), 2=BL(-,+), 3=BR(+,+)
-    let rotation_corner = match corner {
-        0 => 1, // (-,-) -> TL
-        1 => 0, // (+,-) -> TR
-        other => other
-    };
-
-    // Apply rotation in rotation-order space (counterclockwise, so subtract)
-    let rotated = (4 + rotation_corner - quadrant) % 4;
-
-    // Convert back to z-order
-    match rotated {
-        0 => 1, // TR -> (+,-)
-        1 => 0, // TL -> (-,-)
-        other => other
-    }
-
-}
-
 // Eventually turn this into an island identifier/generator
 fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
@@ -156,9 +165,9 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
             // if within_range(&entity, &other) {
-                if let Some(obj) = entity_to_collision_object(&entity, &other) { 
-                    objects.push(obj); 
-                }
+                // if let Some(obj) = entity_to_collision_object(&entity, &other) { 
+                //     objects.push(obj); 
+                // }
                 if let Some(obj) = entity_to_collision_object(&other, &entity) { 
                     objects.push(obj); 
                 }
@@ -230,11 +239,10 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
             let Some(ticks_to_hit) = next_intersection(
                 cur_corner.position(&object),
                 object.velocity,
-                cur_corner.rotation, //Remember to recompute for ticks into projection
                 cur_corner.position_data,
                 hitting_location,
                 tick_max,
-                cur_corner.type_of
+                cur_corner.corner_type
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             let position_data = gate::point_to_real_cells(
@@ -243,7 +251,7 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
             );
             cur_corner.position_data = position_data;
             
-            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.rotation, cur_corner.type_of) {
+            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.corner_type) {
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -275,16 +283,15 @@ fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: Ch
 fn next_intersection(
     point: Vec2,
     velocity: Vec2,
-    rotation: f32,
     position_data: [Option<CellData>; 4],
     hitting_location: Location,
     tick_max: f32,
-    corner_type: usize,
+    corner_type: CornerType,
 ) -> Option<f32> {
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(position_data, velocity, rotation, corner_type).is_some() { return Some(0.) }
+    if hitting_wall(position_data, velocity, corner_type).is_some() { return Some(0.) }
     let (cell, height) = if within_bounds != BVec2::TRUE {
         (hitting_aabb.exterior_will_intersect(point, velocity)?, hitting_location.pointer.height)
     } else { select_cell_and_height(&position_data, CheckZorders::from_velocity(velocity))? };
@@ -333,15 +340,22 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             //Cull any corner which isn't exposed
             if corners.mask & (1 << i) == 0 { continue }
             let point = (corners.points[i] - offset).rotate(point_rotation);
-            camera.draw_point(point + rotated_owner_pos, 0.1, RED);
+            let corner_type = CornerType::from_index(i).rotate(hitting.rotation - owner.rotation);
+            let color = match corner_type {
+                CornerType::TopLeft => GREEN,
+                CornerType::TopRight => BLUE,
+                CornerType::BottomLeft => RED,
+                CornerType::BottomRight => YELLOW,
+                _ => PURPLE
+            };
+            camera.draw_point(point + rotated_owner_pos, 0.1, color);
             collision_points.push(Reverse(Particle::new(
                 point,
-                -hitting.rotation + owner.rotation,
                 gate::point_to_real_cells(
                     hitting.location,
                     point + rotated_owner_pos
                 ),
-                i
+                corner_type
             )));
         }
     }
@@ -424,21 +438,15 @@ pub mod corner_handling {
     
 }
 
-// Update to work with CornerType
-fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f32, corner_type:usize) -> Option<BVec2> {
-    let rotated_corner = rotate_corner_type(corner_type, rotation);
-    let mut hit_walls = hittable_walls(velocity, rotated_corner);
+fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
+    let mut hit_walls = corner_type.hittable_walls(velocity);
     { // Velocity check
-        let collision = match wall_checks(rotated_corner).to_zorder_index(velocity) {
-            CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
-            CheckZorders::Two(indices) => {
-                BLOCKS.is_solid_cell(position_data[indices[0]]) | BLOCKS.is_solid_cell(position_data[indices[1]])
-            }
+        let hit = match corner_type.checks(velocity) {
+            CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
+            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) || BLOCKS.is_solid_cell(position_data[idx2]),
         };
-        for i in 0 .. 2 {
-            if velocity[i].is_zero() { continue }
-            hit_walls[i] &= collision;
-        }
+        if !velocity.x.is_zero() { hit_walls[0] &= hit }
+        if !velocity.y.is_zero() { hit_walls[1] &= hit }
     };
     'slide_check: {
         if hit_walls != [true; 2] { break 'slide_check } 
@@ -457,27 +465,4 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, rotation: f3
     };
     let result = BVec2::from_array(hit_walls);
     (result != BVec2::FALSE).then_some(result)
-}
-
-// Remove and plug it into CornerType
-// Allow this to take in a rotation and output more than exact corner types
-fn wall_checks(corner_type:usize) -> WallTouch {
-    match corner_type {
-        0 => WallTouch::new(WallSign::Negative, WallSign::Negative), // (-,-)
-        1 => WallTouch::new(WallSign::Positive, WallSign::Negative), // (+,-)
-        2 => WallTouch::new(WallSign::Negative, WallSign::Positive), // (-,+)
-        3 => WallTouch::new(WallSign::Positive, WallSign::Positive), // (+,+)
-        _ => unreachable!(),
-    }
-}
-
-// Hardcode into CornerType
-pub fn hittable_walls(velocity:Vec2, corner_type:usize) -> [bool; 2] {
-    match corner_type {
-        0 => [velocity.x.less(0.), velocity.y.less(0.)],
-        1 => [velocity.x.greater(0.), velocity.y.less(0.)],
-        2 => [velocity.x.less(0.), velocity.y.greater(0.)],
-        3 => [velocity.x.greater(0.), velocity.y.greater(0.)],
-        _ => unreachable!()
-    }
 }

@@ -1,5 +1,6 @@
 use super::*;
-use std::f32::EPSILON;
+// use std::f32::EPSILON;
+const EPSILON: f32 = 0.00001;
 
 pub trait FloatUtils { 
     fn approx_eq(self, b:Self) -> bool;
