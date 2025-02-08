@@ -73,17 +73,17 @@ impl CornerType {
             }
         } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
     }
-    pub fn hittable_walls(&self, velocity:Vec2) -> [bool; 2] {
-        match self {
+    pub fn hittable_walls(&self, velocity:Vec2) -> BVec2 {
+        BVec2::from_array(match self {
             Self::TopLeft => [velocity.x.less(0.), velocity.y.less(0.)],
-            Self::Top(_) => [false, velocity.y.less(0.)],
+            Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
-            Self::Right(_) => [velocity.x.greater(0.), false],
+            Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
             Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
-            Self::Bottom(_) => [false, velocity.y.greater(0.)],
+            Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
-            Self::Left(_) => [velocity.x.less(0.), false],
-        }
+            Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
+        })
     }
     
     pub fn from_index(index: usize) -> Self {
@@ -189,6 +189,7 @@ fn tick_entities(delta_tick: f32) {
     }
 }
 
+// Add wedge check
 pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     loop {
@@ -209,15 +210,15 @@ pub fn n_body_collisions(static_thing: ID) {
         let relative_velocity = world_to_hitting.mul_vec2(
             entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
         );
-        
-        let impulse = world_to_hitting.transpose().mul_vec2(-relative_velocity * walls_as_int).remove_err();
+        let relative_impulse = -relative_velocity * walls_as_int;
+        let world_impulse = world_to_hitting.transpose().mul_vec2(relative_impulse).remove_err();
         if hit.owner != static_thing {
             let entity = entities.get_mut_entity(hit.owner).unwrap();
-            entity.velocity = (entity.velocity + impulse).remove_err();
+            entity.velocity = (entity.velocity + world_impulse).remove_err();
         }
         if hit.hitting != static_thing {
             let entity = entities.get_mut_entity(hit.hitting).unwrap();
-            entity.velocity = (entity.velocity - impulse).remove_err();
+            entity.velocity = (entity.velocity - world_impulse).remove_err();
         }
     }
     
@@ -288,7 +289,10 @@ fn next_intersection(
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(position_data, velocity, corner_type).is_some() { return Some(0.) }
+    if hitting_wall(position_data, velocity, corner_type).is_some() {
+        // hitting_wall(position_data, velocity, corner_type);
+        return Some(0.)
+    }
     let (cell, height) = if within_bounds != BVec2::TRUE {
         (hitting_aabb.exterior_will_intersect(point, velocity)?, hitting_location.pointer.height)
     } else { select_cell_and_height(&position_data, CheckZorders::from_velocity(velocity))? };
@@ -326,7 +330,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
     // Worldspace to hitting aligned
-    let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).remove_err();
+    let rel_velocity = ((owner.velocity - hitting.velocity).remove_err().rotate(align_to_hitting)).remove_err();
     if rel_velocity.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
@@ -339,11 +343,14 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             let point = (corners.points[i] - offset).rotate(point_rotation);
             let corner_type = CornerType::from_index(i).rotate(hitting.rotation - owner.rotation);
             let color = match corner_type {
-                CornerType::TopLeft | CornerType::Top(_) => GREEN,
-                CornerType::TopRight | CornerType::Right(_) => BLUE,
-                CornerType::BottomLeft | CornerType::Left(_) => RED,
-                CornerType::BottomRight | CornerType::Bottom(_) => YELLOW,
-                _ => PURPLE
+                CornerType::TopLeft => GREEN,
+                CornerType::TopRight => BLUE,
+                CornerType::BottomLeft => RED,
+                CornerType::BottomRight => YELLOW,
+                CornerType::Top(_) => PURPLE,
+                CornerType::Bottom(_) => DARKPURPLE,
+                CornerType::Left(_) => GRAY,
+                CornerType::Right(_) => DARKGRAY,
             };
             camera.draw_point(point + rotated_owner_pos, 0.1, color);
             collision_points.push(Reverse(Particle::new(
@@ -437,29 +444,28 @@ pub mod corner_handling {
 
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
     let mut hit_walls = corner_type.hittable_walls(velocity);
-    { // Velocity check
+    'velocity_check: {
         let hit = match corner_type.checks(velocity) {
             CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
-            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) || BLOCKS.is_solid_cell(position_data[idx2]),
+            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
         };
-        if !velocity.x.is_zero() { hit_walls[0] &= hit }
-        if !velocity.y.is_zero() { hit_walls[1] &= hit }
+        if !velocity.x.is_zero() { hit_walls.x &= hit }
+        if !velocity.y.is_zero() { hit_walls.y &= hit }
     };
     'slide_check: {
-        if hit_walls != [true; 2] { break 'slide_check } 
-        let inds = match velocity.zero_signum() {
+        if hit_walls != BVec2::TRUE { break 'slide_check } 
+        let idxs = match velocity.zero_signum() {
             IVec2{x: -1, y: -1} => [2, 1],
             IVec2{x: -1, y: 1} => [0, 3],
             IVec2{x: 1, y: -1} => [3, 0],
             IVec2{x: 1, y: 1} => [1, 2],
             _ => unreachable!(),
         };
-        let mut slide = [false; 2];
-        for i in 0 .. 2 {
-            slide[i] = BLOCKS.is_solid_cell(position_data[inds[i]]);
-        }
-        if slide != [false; 2] { hit_walls[0] &= slide[0]; hit_walls[1] &= slide[1] }
+        let mut slide = BVec2::FALSE;
+        slide.x = BLOCKS.is_solid_cell(position_data[idxs[0]]);
+        slide.y = BLOCKS.is_solid_cell(position_data[idxs[1]]);
+
+        if slide != BVec2::FALSE { hit_walls &= slide }
     };
-    let result = BVec2::from_array(hit_walls);
-    (result != BVec2::FALSE).then_some(result)
+    (hit_walls != BVec2::FALSE).then_some(hit_walls)
 }
