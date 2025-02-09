@@ -192,12 +192,24 @@ fn tick_entities(delta_tick: f32) {
 // Add wedge check
 pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
+    let mut last_walls = BVec2::FALSE;
     loop {
         let objects = collect_collision_objects();
         let Some(hit) = find_next_action(objects, tick_max) else {
             tick_entities(tick_max);
             break
         };
+        if hit.ticks.is_zero() && hit.walls == last_walls {
+            let mut entities = ENTITIES.write();
+            if hit.owner != static_thing {
+                entities.get_mut_entity(hit.owner).unwrap().velocity = Vec2::ZERO;
+            }
+            if hit.hitting != static_thing {
+                entities.get_mut_entity(hit.hitting).unwrap().velocity = Vec2::ZERO;
+            }
+            break
+        }
+        last_walls = hit.walls;
         
         tick_entities(hit.ticks);
         tick_max -= hit.ticks;
@@ -444,7 +456,8 @@ pub mod corner_handling {
 
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
     let mut hit_walls = corner_type.hittable_walls(velocity);
-    'velocity_check: {
+    // Velocity Check 
+    {
         let hit = match corner_type.checks(velocity) {
             CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
             CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
@@ -461,9 +474,10 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
             IVec2{x: 1, y: 1} => [1, 2],
             _ => unreachable!(),
         };
-        let mut slide = BVec2::FALSE;
-        slide.x = BLOCKS.is_solid_cell(position_data[idxs[0]]);
-        slide.y = BLOCKS.is_solid_cell(position_data[idxs[1]]);
+        let slide = BVec2::new(
+            BLOCKS.is_solid_cell(position_data[idxs[0]]),
+            BLOCKS.is_solid_cell(position_data[idxs[1]])
+        );
 
         if slide != BVec2::FALSE { hit_walls &= slide }
     };
