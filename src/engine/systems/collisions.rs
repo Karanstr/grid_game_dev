@@ -109,16 +109,15 @@ impl CornerType {
         }
     }
     pub fn from_rotation(rotation: f32) -> Self {
-        // Match normalized rotation
-        match mod_with_err(rotation, 2. * PI) {
+        match rotation.normalize_angle() {
+            rot if rot.angle_approx_eq(PI/4.) => Self::TopRight,
+            rot if rot.angle_approx_eq(PI * 3./4.) => Self::TopLeft,
+            rot if rot.angle_approx_eq(PI * 5./4.) => Self::BottomLeft,
+            rot if rot.angle_approx_eq(PI * 7./4.) => Self::BottomRight,
             rot if rot.less(PI/4.) => Self::Right(rot),
-            rot if rot.approx_eq(PI/4.) => Self::TopRight,
             rot if rot.less(PI * 3./4.) => Self::Top(rot),
-            rot if rot.approx_eq(PI * 3./4.) => Self::TopLeft,
             rot if rot.less(PI * 5./4.) => Self::Left(rot),
-            rot if rot.approx_eq(PI * 5./4.) => Self::BottomLeft,
             rot if rot.less(PI * 7./4.) => Self::Bottom(rot),
-            rot if rot.approx_eq(PI * 7./4.) => Self::BottomRight,
             rot => Self::Right(rot),
         }
     }
@@ -128,7 +127,7 @@ impl CornerType {
 
 }
 
-// Hardcode into CornerType
+// Hardcode into CornerType?
 pub enum CheckZorders {
     One(usize),
     Two([usize; 2]),
@@ -149,6 +148,7 @@ impl CheckZorders {
 struct Hit {
     pub owner : ID,
     pub hitting : ID,
+    // Relative Normal of the hit
     pub walls : BVec2,
     pub ticks : f32,
 }
@@ -177,37 +177,39 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
 fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
     for entity in &mut ENTITIES.write().entities { 
-        entity.velocity = (entity.velocity * DRAG_MULTIPLIER).remove_err();
+        entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
 
 fn tick_entities(delta_tick: f32) {
     for entity in &mut ENTITIES.write().entities {
-        let delta = entity.velocity * delta_tick;
-        // Skip tiny movements that could cause precision issues
-        if !delta.is_zero() { entity.location.position += delta }
+        entity.location.position += (entity.velocity * delta_tick).snap_zero();
     }
 }
 
-// This is gross, figure out how to handle static objects correctly.
-// Figure out why we can't just rotate the normals
-fn apply_normal_force(static_thing: ID, hit: &Hit) {
+fn apply_normal_force(static_thing: ID, hit: Hit) {
     let mut entities = ENTITIES.write();
     let hitting = entities.get_entity(hit.hitting).unwrap();
+    // // I want this guy, but the precision errors are strong with him
+    // let world_normal = hit.walls.to_vec2().rotate(hitting.forward);
+    // let rel_velocity = entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity;
+    // let world_impulse = (rel_velocity.dot(world_normal) * world_normal).snap_zero();
+    
     let world_to_hitting = Mat2::from_angle(-hitting.rotation);
-    let walls_as_int = IVec2::from(hit.walls).as_vec2();
     let relative_velocity = world_to_hitting.mul_vec2(
         entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
     );
-    let relative_impulse = -relative_velocity * walls_as_int;
-    let world_impulse = world_to_hitting.transpose().mul_vec2(relative_impulse).remove_err();
-    if hit.owner != static_thing {
-        let entity = entities.get_mut_entity(hit.owner).unwrap();
-        entity.velocity = (entity.velocity + world_impulse).remove_err();
-    }
-    if hit.hitting != static_thing {
-        let entity = entities.get_mut_entity(hit.hitting).unwrap();
-        entity.velocity = (entity.velocity - world_impulse).remove_err();
+    let relative_normals = hit.walls.as_vec2();
+    let world_impulse = world_to_hitting.transpose()
+        .mul_vec2(relative_velocity * relative_normals)
+        .snap_zero();
+
+    let objects = [(hit.owner, -1.0), (hit.hitting, 1.0)];
+    for (id, multiplier) in objects {
+        if id != static_thing {
+            let entity = entities.get_mut_entity(id).unwrap();
+            entity.velocity = (entity.velocity + world_impulse * multiplier).snap_zero();
+        }
     }
 }
 
@@ -221,14 +223,15 @@ pub fn n_body_collisions(static_thing: ID) {
         };
         if hit.ticks.is_zero() {
             wedge_count += 1;
-            // if wedge_count == 2: Cancel the velocity
+            // if wedge_count == 2: Balance the velocity of the axis we double tap
+            // ^ Only relevant when we have elastic collisions
             if wedge_count == 3 { hit.walls = BVec2::TRUE }
         } else {
             wedge_count = 0;
             tick_max -= hit.ticks;
             tick_entities(hit.ticks);
         }
-        apply_normal_force(static_thing, &hit);
+        apply_normal_force(static_thing, hit);
     }
     apply_drag();
 }
@@ -332,13 +335,12 @@ fn next_intersection(
 //     result
 // }
 
-// Add culling edgecase for no rotation
+// Add culling for when no rotation?
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
-    // Worldspace to hitting aligned
-    let rel_velocity = ((owner.velocity - hitting.velocity).remove_err().rotate(align_to_hitting)).remove_err();
+    let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
     if rel_velocity.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
