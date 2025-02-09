@@ -76,13 +76,17 @@ impl CornerType {
     pub fn hittable_walls(&self, velocity:Vec2) -> BVec2 {
         BVec2::from_array(match self {
             Self::TopLeft => [velocity.x.less(0.), velocity.y.less(0.)],
-            Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
-            Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
             Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
-            Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
-            Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
+            // Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
+            // Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
+            // Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
+            // Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
+            Self::Top(_) => [false, velocity.y.less(0.)],
+            Self::Right(_) => [velocity.x.greater(0.), false],
+            Self::Bottom(_) => [false, velocity.y.greater(0.)],
+            Self::Left(_) => [velocity.x.less(0.), false]
         })
     }
     
@@ -259,7 +263,7 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
                 object.velocity,
                 cur_corner.position_data,
                 hitting_location,
-                tick_max,
+                ticks_to_action,
                 cur_corner.corner_type
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
