@@ -189,27 +189,35 @@ fn tick_entities(delta_tick: f32) {
     }
 }
 
-// Add wedge check
 pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     let mut last_walls = BVec2::FALSE;
+    let mut wedge_count = 0;
     loop {
         let objects = collect_collision_objects();
         let Some(hit) = find_next_action(objects, tick_max) else {
             tick_entities(tick_max);
             break
         };
-        if hit.ticks.is_zero() && hit.walls == last_walls {
+        // Wedge Check (extract into function?)
+        if hit.ticks.is_zero() && last_walls == hit.walls {
+            dbg!("Wedge Check");
+            wedge_count += 1;
+            let (vel_change, done) = if wedge_count == 1 {
+                (Vec2::new(
+                    if hit.walls.x { 0. } else { 1. },
+                    if hit.walls.y { 0. } else { 1. }
+                ), false)
+            } else { (Vec2::ZERO, true) };
             let mut entities = ENTITIES.write();
             if hit.owner != static_thing {
-                entities.get_mut_entity(hit.owner).unwrap().velocity = Vec2::ZERO;
+                entities.get_mut_entity(hit.owner).unwrap().velocity *= vel_change;
             }
             if hit.hitting != static_thing {
-                entities.get_mut_entity(hit.hitting).unwrap().velocity = Vec2::ZERO;
+                entities.get_mut_entity(hit.hitting).unwrap().velocity *= vel_change;
             }
-            break
-        }
-        last_walls = hit.walls;
+            if done { break }
+        } else { last_walls = hit.walls }
         
         tick_entities(hit.ticks);
         tick_max -= hit.ticks;
@@ -355,7 +363,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             let point = (corners.points[i] - offset).rotate(point_rotation);
             let corner_type = CornerType::from_index(i).rotate(hitting.rotation - owner.rotation);
             let color = match corner_type {
-                CornerType::TopLeft => GREEN,
+                CornerType::TopLeft => LIME,
                 CornerType::TopRight => BLUE,
                 CornerType::BottomLeft => RED,
                 CornerType::BottomRight => YELLOW,

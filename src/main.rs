@@ -38,9 +38,9 @@ lazy_static! {
     pub static ref BLOCKS: BlockPalette = BlockPalette::new();
 }
 
-// Game constants
+// Constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = 0.2;
+const PLAYER_ROTATION_SPAWN: f32 = PI/4.;
 const TERRAIN_ROTATION_SPAWN: f32 = 0.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
