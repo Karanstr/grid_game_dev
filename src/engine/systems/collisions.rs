@@ -79,10 +79,6 @@ impl CornerType {
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
             Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
-            // Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
-            // Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
-            // Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
-            // Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
             Self::Top(_) => [false, velocity.y.less(0.)],
             Self::Right(_) => [velocity.x.greater(0.), false],
             Self::Bottom(_) => [false, velocity.y.greater(0.)],
@@ -130,6 +126,12 @@ impl CornerType {
         Self::from_rotation(self.rotation() + rotation)
     }
 
+}
+
+enum ControlFlow {
+    Continue,
+    Break,
+    None,
 }
 
 // Hardcode into CornerType
@@ -193,59 +195,66 @@ fn tick_entities(delta_tick: f32) {
     }
 }
 
+// This is gross, figure out how to handle static objects correctly.
+fn apply_normal_force(static_thing: ID, hit: &Hit) {
+    let mut entities = ENTITIES.write();
+    let hitting = entities.get_entity(hit.hitting).unwrap();
+    let world_to_hitting = Mat2::from_angle(-hitting.rotation);
+    
+    let walls_as_int = IVec2::from(hit.walls).as_vec2();
+    let relative_velocity = world_to_hitting.mul_vec2(
+        entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
+    );
+    let relative_impulse = -relative_velocity * walls_as_int;
+    let world_impulse = world_to_hitting.transpose().mul_vec2(relative_impulse).remove_err();
+    if hit.owner != static_thing {
+        let entity = entities.get_mut_entity(hit.owner).unwrap();
+        entity.velocity = (entity.velocity + world_impulse).remove_err();
+    }
+    if hit.hitting != static_thing {
+        let entity = entities.get_mut_entity(hit.hitting).unwrap();
+        entity.velocity = (entity.velocity - world_impulse).remove_err();
+    }
+
+}
+
+fn wedge_check(hit: &Hit, cur_count: &mut u8, static_thing: ID) -> ControlFlow {
+    if hit.ticks.is_zero() {
+        *cur_count += 1;
+        dbg!("Wedge Check");
+        let vel_change = match *cur_count {
+            1 => return ControlFlow::None,
+            2 => if hit.owner == static_thing { hit.walls } else { !hit.walls }.to_vec2(),
+            _ => Vec2::ZERO,
+        };
+        let mut entities = ENTITIES.write();
+        if hit.owner != static_thing {
+            entities.get_mut_entity(hit.owner).unwrap().velocity *= vel_change;
+        }
+        if hit.hitting != static_thing {
+            entities.get_mut_entity(hit.hitting).unwrap().velocity *= vel_change;
+        }
+        if *cur_count == 3 { ControlFlow::Break } else { ControlFlow::Continue }
+    } else { *cur_count = 0; ControlFlow::None }
+}
+
 pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
-    let mut last_walls = BVec2::FALSE;
     let mut wedge_count = 0;
     loop {
         let objects = collect_collision_objects();
         let Some(hit) = find_next_action(objects, tick_max) else {
-            tick_entities(tick_max);
-            break
+            tick_entities(tick_max); break
         };
-        // Wedge Check (extract into function?)
-        if hit.ticks.is_zero() && last_walls == hit.walls {
-            dbg!("Wedge Check");
-            wedge_count += 1;
-            let (vel_change, done) = if wedge_count == 1 {
-                (Vec2::new(
-                    if hit.walls.x { 0. } else { 1. },
-                    if hit.walls.y { 0. } else { 1. }
-                ), false)
-            } else { (Vec2::ZERO, true) };
-            let mut entities = ENTITIES.write();
-            if hit.owner != static_thing {
-                entities.get_mut_entity(hit.owner).unwrap().velocity *= vel_change;
-            }
-            if hit.hitting != static_thing {
-                entities.get_mut_entity(hit.hitting).unwrap().velocity *= vel_change;
-            }
-            if done { break }
-        } else { last_walls = hit.walls }
-        
-        tick_entities(hit.ticks);
+        match wedge_check(&hit, &mut wedge_count, static_thing) {
+            ControlFlow::Break => break,
+            ControlFlow::Continue => continue,
+            _ => (),
+        }
         tick_max -= hit.ticks;
-        
-        let mut entities = ENTITIES.write();
-        let hitting = entities.get_entity(hit.hitting).unwrap();
-        let world_to_hitting = Mat2::from_angle(-hitting.rotation);
-        
-        let walls_as_int = IVec2::from(hit.walls).as_vec2();
-        let relative_velocity = world_to_hitting.mul_vec2(
-            entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
-        );
-        let relative_impulse = -relative_velocity * walls_as_int;
-        let world_impulse = world_to_hitting.transpose().mul_vec2(relative_impulse).remove_err();
-        if hit.owner != static_thing {
-            let entity = entities.get_mut_entity(hit.owner).unwrap();
-            entity.velocity = (entity.velocity + world_impulse).remove_err();
-        }
-        if hit.hitting != static_thing {
-            let entity = entities.get_mut_entity(hit.hitting).unwrap();
-            entity.velocity = (entity.velocity - world_impulse).remove_err();
-        }
+        tick_entities(hit.ticks);
+        apply_normal_force(static_thing, &hit);
     }
-    
     apply_drag();
 }
 

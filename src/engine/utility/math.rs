@@ -63,6 +63,16 @@ impl FloatUtils for Vec2 {
     fn is_zero(self) -> bool { self.x.is_zero() && self.y.is_zero() }
 }
 
+pub trait BVecUtils {
+    fn to_vec2(self) -> Vec2;
+}
+impl BVecUtils for BVec2 {
+    fn to_vec2(self) -> Vec2 { Vec2::new(
+        if self.x { 1. } else { 0. }, 
+        if self.y { 1. } else { 0. }) 
+    }
+}
+
 // Idk if I trust this, look through it properly later.
 pub fn mod_with_err(x: f32, m: f32) -> f32 {
     let r = x % m;
