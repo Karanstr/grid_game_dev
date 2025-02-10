@@ -1,5 +1,4 @@
 mod engine;
-
 mod imports {
     use super::*;
     pub use engine::graph::{SparseDirectedGraph, GraphNode, BasicNode, ExternalPointer, Index};
@@ -7,7 +6,7 @@ mod imports {
     pub use engine::systems::collisions;
     pub use engine::systems::collisions::{Corners, corner_handling::*};
     pub use macroquad::math::{Vec2, UVec2, BVec2, IVec2, Mat2};
-    pub use engine::utility::partition::{AABB, grid::*};
+    pub use engine::utility::partition::{Aabb, grid::*};
     pub use super::{ID, Entity, Location};
     pub use macroquad::color::colors::*;
     pub use engine::utility::blocks::*;
@@ -30,12 +29,12 @@ lazy_static! {
     // Not sure how permanent these'll be, but they're here for now
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-        AABB::new(Vec2::ZERO, Vec2::splat(4.)), 
+        Aabb::new(Vec2::ZERO, Vec2::splat(4.)), 
         0.9
     ));
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
     // Temporary until I create a proper solution
-    pub static ref BLOCKS: BlockPalette = BlockPalette::new();
+    pub static ref BLOCKS: BlockPalette = BlockPalette::default();
 }
 
 // Constants
@@ -215,7 +214,7 @@ async fn main() {
                 let save_data = std::fs::read_to_string("src/save.json").unwrap();
                 let new_pointer = graph.load_object_json(save_data);
                 let old_removal = engine::graph::bfs_nodes(
-                    &graph.nodes.internal_memory(),
+                    graph.nodes.internal_memory(),
                     terrain_entity.location.pointer.pointer,
                     3
                 );

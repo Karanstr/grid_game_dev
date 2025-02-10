@@ -13,11 +13,12 @@ pub struct Block {
     pub color : Color,
     pub collision_type : CollisionType
 }
+//Consider making this private and writing getters for block data
 pub struct BlockPalette {
     pub blocks : Vec<Block>
 }
-impl BlockPalette {
-    pub fn new() -> Self {
+impl Default for BlockPalette {
+    fn default() -> Self {
         Self {
             blocks : vec![
                 Block {
@@ -39,6 +40,8 @@ impl BlockPalette {
             ]
         }
     }
+}
+impl BlockPalette {
     pub fn index_type(&self, index : usize) -> CollisionType {
         self.blocks[index].collision_type
     }

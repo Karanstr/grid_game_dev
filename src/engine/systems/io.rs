@@ -60,14 +60,14 @@ pub mod output {
 use macroquad::shapes::{draw_circle, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
 use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
-    pub aabb : AABB,
+    pub aabb : Aabb,
     scale_zoom: f32,
     zoom:f32,
     screen_percentage: f32,
 }
 #[allow(dead_code)]
 impl Camera {
-    pub fn new(aabb:AABB, screen_percentage:f32) -> Self {
+    pub fn new(aabb:Aabb, screen_percentage:f32) -> Self {
         let scale_zoom = (Vec2::from(screen_size()) * screen_percentage).min_element() / (2. * aabb.radius().min_element());
         Self { 
             aabb, 
@@ -139,7 +139,7 @@ impl Camera {
         draw_line(p1.x, p1.y, p2.x, p2.y, line_width*self.zoom(), color);
     }
 
-    pub fn outline_bounds(&self, bounds:AABB, line_width:f32, color:Color) {
+    pub fn outline_bounds(&self, bounds:Aabb, line_width:f32, color:Color) {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
 

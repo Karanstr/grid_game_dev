@@ -58,6 +58,7 @@ pub mod grid {
             self.with_depth(layer).zorder & 0b11
         }
 
+        #[allow(dead_code)]
         pub fn shared_parent(&self, other: Self) -> Self {
             let common_depth = u32::max(self.depth, other.depth);
             let a_zorder = self.with_depth(common_depth);
@@ -85,7 +86,8 @@ pub mod grid {
             steps
         }
 
-        pub fn cells_intersecting_aabb(aabb:AABB, max_depth: u32) -> Vec<(u32, u32)> {
+        #[allow(dead_code)]
+        pub fn cells_intersecting_aabb(_aabb:Aabb, _max_depth: u32) -> Vec<(u32, u32)> {
             todo!()
         }
 
@@ -111,8 +113,8 @@ pub mod grid {
             cell_length(height) / 2.
         }
 
-        pub fn aabb(position:Vec2, height:u32) -> AABB {
-            AABB::new(position, center_to_edge(height))
+        pub fn aabb(position:Vec2, height:u32) -> Aabb {
+            Aabb::new(position, center_to_edge(height))
         }
 
     }
@@ -181,11 +183,11 @@ pub mod grid {
 
 
 #[derive(Debug, Clone, Copy, new)]
-pub struct AABB {
+pub struct Aabb {
     center: Vec2,
     radius: Vec2
 }
-impl AABB {
+impl Aabb {
 
     pub fn min(&self) -> Vec2 { self.center - self.radius }
     pub fn max(&self) -> Vec2 { self.center + self.radius }

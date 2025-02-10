@@ -22,15 +22,15 @@ pub struct Particle {
     pub corner_type : CornerType,
 }
 impl PartialOrd for Particle {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.ticks_into_projection.approx_eq(other.ticks_into_projection) { Some(Ordering::Equal) }
-        else if self.ticks_into_projection.less(other.ticks_into_projection) { Some(Ordering::Less) }
-        else if self.ticks_into_projection.greater(other.ticks_into_projection) { Some(Ordering::Greater) }
-        else { unreachable!() }
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 impl Ord for Particle { 
-    fn cmp(&self, other: &Self) -> Ordering { self.partial_cmp(other).unwrap() } 
+    fn cmp(&self, other: &Self) -> Ordering { 
+        if self.ticks_into_projection.approx_eq(other.ticks_into_projection) { Ordering::Equal }
+        else if self.ticks_into_projection.less(other.ticks_into_projection) { Ordering::Less }
+        else if self.ticks_into_projection.greater(other.ticks_into_projection) { Ordering::Greater }
+        else { unreachable!() }
+    } 
 }
 impl PartialEq for Particle {
     fn eq(&self, other: &Self) -> bool { self.ticks_into_projection.approx_eq(other.ticks_into_projection) }
@@ -59,8 +59,8 @@ impl CornerType {
         let clamped = velocity.zero_signum().max(IVec2::ZERO);
         if velocity.x.is_zero() {
             match self {
-                Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * clamped.y as usize, 2 * clamped.y as usize | 1]),
-                Self::TopLeft | Self::BottomLeft | Self::Left(_) => CheckZorders::One(2 * clamped.y as usize | 1),
+                Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * clamped.y as usize, (2 * clamped.y as usize) | 1]),
+                Self::TopLeft | Self::BottomLeft | Self::Left(_) => CheckZorders::One((2 * clamped.y as usize) | 1),
                 Self::TopRight | Self::BottomRight | Self::Right(_) => CheckZorders::One(2 * clamped.y as usize),
             }
         } else if velocity.y.is_zero() {
@@ -69,7 +69,7 @@ impl CornerType {
                 Self::TopLeft | Self::TopRight | Self::Top(_) => CheckZorders::One(2 | clamped.x as usize),
                 Self::BottomLeft | Self::BottomRight | Self::Bottom(_) => CheckZorders::One(clamped.x as usize),
             }
-        } else { CheckZorders::One(clamped.x as usize | 2 * clamped.y as usize) }
+        } else { CheckZorders::One(clamped.x as usize | (2 * clamped.y as usize)) }
     }
     pub fn hittable_walls(&self, velocity:Vec2) -> BVec2 {
         BVec2::from_array(match self {
@@ -160,10 +160,10 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
             // if within_range(&entity, &other) {
-                if let Some(obj) = entity_to_collision_object(&entity, &other) { 
+                if let Some(obj) = entity_to_collision_object(entity, other) { 
                     objects.push(obj); 
                 }
-                if let Some(obj) = entity_to_collision_object(&other, &entity) { 
+                if let Some(obj) = entity_to_collision_object(other, entity) { 
                     objects.push(obj); 
                 }
             // }

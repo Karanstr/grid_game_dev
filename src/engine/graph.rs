@@ -166,7 +166,7 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
     
     pub fn read(&self, start:ExternalPointer, path:&[u32]) -> Option<ExternalPointer> {
         let trail = self.get_trail(start.pointer, path);
-        let Some(node_pointer) = trail.last() else { return None };
+        let node_pointer = trail.last()?;
         Some(ExternalPointer::new(*node_pointer, start.height - (trail.len() as u32 - 1)))
     }
 
@@ -199,6 +199,7 @@ impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
         ExternalPointer::new(self.clone_graph(&temp.nodes, temp.root.pointer), temp.root.height)
     }
 
+    // Clippy thinks I should pass a slice here instead of a vector, but passing a partial slice is very likely to lead to operation failure
     //Assumes equal leaf count (between the two graphs)
     fn clone_graph<N : Node> (&mut self, from:&Vec<N>, start:Index) -> Index {
         let mut remapped = HashMap::new();
@@ -221,6 +222,7 @@ impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
 
 }
 
+// Clippy thinks I should pass a slice here instead of a vector, but passing a partial slice is very likely to lead to operation failure
 //Assumes leaves are stored contiguously at the front of the slice.
 pub fn bfs_nodes<N: Node>(nodes:&Vec<N>, start:Index, last_leaf:usize) -> Vec<Index> {
     let mut queue = VecDeque::from([start]);
