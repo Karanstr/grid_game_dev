@@ -8,7 +8,6 @@ pub struct CollisionObject {
     pub position : Vec2, //Grid Center
     pub velocity : Vec2,
     // pub angular_velocity : f32,
-    // pub CoR : Vec2, //Center of Rotation
     pub owner : ID,
     pub hitting : ID,
     pub particles : BinaryHeap<Reverse<Particle>>,
@@ -19,16 +18,15 @@ pub struct Particle {
     pub offset : Vec2,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
-    // #[new(value = "[None; 4]")]
     pub position_data : [Option<CellData>; 4],
     pub corner_type : CornerType,
 }
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self == other { Some(Ordering::Equal) }
+        if self.ticks_into_projection.approx_eq(other.ticks_into_projection) { Some(Ordering::Equal) }
         else if self.ticks_into_projection.less(other.ticks_into_projection) { Some(Ordering::Less) }
         else if self.ticks_into_projection.greater(other.ticks_into_projection) { Some(Ordering::Greater) }
-        else { None }
+        else { unreachable!() }
     }
 }
 impl Ord for Particle { 

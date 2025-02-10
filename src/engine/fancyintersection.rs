@@ -1,7 +1,7 @@
 use super::*;
 use roots::{find_root_brent, SimpleConvergency};
 const EPSILON:f32 = f32::EPSILON;
-// https://www.desmos.com/calculator/58hsmddrjy
+// https://www.desmos.com/calculator/rtvp1esep0
 const CONVERGENCY:SimpleConvergency<f32> = SimpleConvergency {
     eps: EPSILON,
     max_iter: 12,
@@ -126,12 +126,12 @@ impl Motion {
 
     fn solve_pure_rotation(&self, line: Line, max_time: f32) -> Option<f32> {
         //Can we unify these matches so we only match once instead of thrice?
-        let (start, offset_x, offset_y) = match line {
-            Line::Vertical(_) => (self.start.x, self.offset.x, self.offset.y),
-            Line::Horizontal(_) => (self.start.y, self.offset.y, self.offset.x),
+        let (start, offset) = match line {
+            Line::Vertical(_) => (self.start.x, self.offset),
+            Line::Horizontal(_) => (self.start.y, self.offset),
         };
 
-        let r = (offset_x * offset_x + offset_y * offset_y).sqrt();
+        let r = offset.length();
         if r < EPSILON { return None }
 
         let delta = match line {

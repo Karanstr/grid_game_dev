@@ -40,8 +40,11 @@ lazy_static! {
 
 // Constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPAWN: f32 = PI/4.;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.;
+const _PLAYER_ROTATION_SPEED: f32 = 0.01;
+const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
+const TERRAIN_SPAWN: Vec2 = Vec2::new(0.,0.);
+const PLAYER_ROTATION_SPAWN: f32 = 0.0;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.0;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -154,18 +157,15 @@ async fn main() {
     };
     
     let terrain = ENTITIES.write().add_entity(
-        Location::new(world_pointer, Vec2::new(0., 0.)),
+        Location::new(world_pointer, TERRAIN_SPAWN),
         TERRAIN_ROTATION_SPAWN,
     );
 
     let player = {
-        //Graph has to be unlocked before add_entity is called so entity corners can be read from the graph
+        //Graph has to be unlocked before add_entity is called so corners can be read
         let root = GRAPH.write().get_root(3, 0);
         ENTITIES.write().add_entity(
-            Location::new(
-                root,
-                Vec2::new(0., 0.)
-            ),
+            Location::new(root, PLAYER_SPAWN),
             PLAYER_ROTATION_SPAWN,
         )
     };
@@ -227,26 +227,22 @@ async fn main() {
         
         render::draw_all(true);
         
-        //We want to move the camera to where the player is drawn, not where the player is moved to.
+        // We want to move the camera to where the player is drawn, not where the player is moved to.
         let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
         
         collisions::n_body_collisions(terrain);
-
+        
+        // We don't want to move the camera until after we've drawn all the collision debug
         CAMERA.write().update(player_pos, 0.1);
-
+        
         macroquad::window::next_frame().await
     }
 
 }
 
 pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
-    let height = to.height;
-    if height <= location.pointer.height {
-        let cell = gate::point_to_cells(location, height, world_point)[0]?;
-        let path = ZorderPath::from_cell(cell, location.pointer.height - height);
-        if let Ok(pointer) = GRAPH.write().set_node(location.pointer, &path.steps(), to.pointer) {
-            return Some(pointer);
-        }
-    }
-    None
+    if to.height > location.pointer.height { return None; }
+    let cell = gate::point_to_cells(location, to.height, world_point)[0]?; 
+    let path = ZorderPath::from_cell(cell, location.pointer.height - to.height);
+    GRAPH.write().set_node(location.pointer, &path.steps(), to.pointer).ok()
 }
