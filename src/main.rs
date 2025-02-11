@@ -39,11 +39,11 @@ lazy_static! {
 
 // Constants
 const PLAYER_SPEED: f32 = 0.01;
-const _PLAYER_ROTATION_SPEED: f32 = 0.01;
+const PLAYER_ROTATION_SPEED: f32 = 0.05;
 const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
 const TERRAIN_SPAWN: Vec2 = Vec2::new(0.,0.);
-const PLAYER_ROTATION_SPAWN: f32 = 0.0;
-const TERRAIN_ROTATION_SPAWN: f32 = 0.0;
+const PLAYER_ROTATION_SPAWN: f32 = 0.5;
+const TERRAIN_ROTATION_SPAWN: f32 = 0.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -54,14 +54,14 @@ pub struct Location {
 }
 
 pub type ID = u32;
-//Chunk and store corner locations in u8s?
+// Chunk and store corner locations in u8s?
 pub struct Entity {
     id : ID,
     location: Location,
-    forward: Vec2,
     rotation: f32,
+    forward: Vec2,
     velocity: Vec2,
-    // angular_velocity: f32,
+    angular_velocity: f32,
     corners : Vec<Corners>,
 }
 impl Entity {
@@ -69,9 +69,10 @@ impl Entity {
         Self {
             id,
             location,
-            forward: Vec2::from_angle(orientation),
             rotation: orientation,
+            forward: Vec2::from_angle(orientation),
             velocity: Vec2::ZERO,
+            angular_velocity: 0.0,
             corners: tree_corners(location.pointer),
         }
     }
@@ -144,7 +145,6 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(512., 512.);
-    
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
@@ -180,7 +180,12 @@ async fn main() {
             if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
             if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.)); }
             if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.)); }
-            if is_key_down(KeyCode::Space) { player_entity.velocity = Vec2::ZERO }
+            if is_key_down(KeyCode::Q) { player_entity.rel_rotate(-PLAYER_ROTATION_SPEED); }
+            if is_key_down(KeyCode::E) { player_entity.rel_rotate(PLAYER_ROTATION_SPEED); }
+            if is_key_down(KeyCode::Space) { 
+                player_entity.velocity = Vec2::ZERO;
+                player_entity.angular_velocity = 0.0;
+            }
             
             if is_mouse_button_down(MouseButton::Left) {
                 let mouse_pos = CAMERA.read().screen_to_world(Vec2::from(mouse_position()));

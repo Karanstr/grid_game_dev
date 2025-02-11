@@ -96,10 +96,10 @@ impl CornerType {
 
     pub fn rotation(&self) -> f32 {
         match self {
-            Self::TopRight => PI/4.,
-            Self::TopLeft => PI * 3./4.,
-            Self::BottomLeft => PI * 5./4.,
-            Self::BottomRight => PI * 7./4.,
+            Self::BottomRight => PI/4.,
+            Self::BottomLeft => PI * 3./4.,
+            Self::TopLeft => PI * 5./4.,
+            Self::TopRight => PI * 7./4.,
             Self::Top(angle) 
             | Self::Left(angle) 
             | Self::Right(angle) 
@@ -108,14 +108,14 @@ impl CornerType {
     }
     pub fn from_rotation(rotation: f32) -> Self {
         match rotation.normalize_angle() {
-            rot if rot.angle_approx_eq(PI/4.) => Self::TopRight,
-            rot if rot.angle_approx_eq(PI * 3./4.) => Self::TopLeft,
-            rot if rot.angle_approx_eq(PI * 5./4.) => Self::BottomLeft,
-            rot if rot.angle_approx_eq(PI * 7./4.) => Self::BottomRight,
-            rot if rot.less(PI/4.) => Self::Right(rot),
-            rot if rot.less(PI * 3./4.) => Self::Top(rot),
+            rot if rot.angle_approx_eq(PI / 4.) => Self::BottomRight,
+            rot if rot.angle_approx_eq(PI * 3./4.) => Self::BottomLeft,
+            rot if rot.angle_approx_eq(PI * 5./4.) => Self::TopLeft,
+            rot if rot.angle_approx_eq(PI * 7./4.) => Self::TopRight,
+            rot if rot.less(PI / 4.) => Self::Right(rot),
+            rot if rot.less(PI * 3./4.) => Self::Bottom(rot),
             rot if rot.less(PI * 5./4.) => Self::Left(rot),
-            rot if rot.less(PI * 7./4.) => Self::Bottom(rot),
+            rot if rot.less(PI * 7./4.) => Self::Top(rot),
             rot => Self::Right(rot),
         }
     }
@@ -349,14 +349,14 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             //Cull any corner which isn't exposed
             if corners.mask & (1 << i) == 0 { continue }
             let point = (corners.points[i] - offset).rotate(point_rotation);
-            let corner_type = CornerType::from_index(i).rotate(hitting.rotation - owner.rotation);
+            let corner_type = CornerType::from_index(i).rotate(owner.rotation - hitting.rotation);
             let color = match corner_type {
                 CornerType::TopLeft => LIME,
                 CornerType::TopRight => BLUE,
                 CornerType::BottomLeft => RED,
                 CornerType::BottomRight => YELLOW,
                 CornerType::Top(_) => PURPLE,
-                CornerType::Bottom(_) => DARKPURPLE,
+                CornerType::Bottom(_) => WHITE,
                 CornerType::Left(_) => GRAY,
                 CornerType::Right(_) => DARKGRAY,
             };
