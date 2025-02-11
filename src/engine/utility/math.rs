@@ -83,3 +83,24 @@ impl BVecUtils for BVec2 {
         if self.y { 1. } else { 0. }) 
     }
 }
+
+/// Converts angular velocity to tangential velocity for a point offset from the center of rotation.
+/// 
+/// # Arguments
+/// * `angular_velocity` - Angular velocity in radians per second
+/// * `offset` - Vector from the center of rotation to the point (x, y components)
+/// 
+/// # Returns
+/// A Vec2 representing the tangential velocity (x, y components)
+pub fn angular_to_tangential_velocity(angular_velocity: f32, offset: Vec2) -> Vec2 {
+    // For a point at position (x, y) relative to center of rotation,
+    // the tangential velocity components are:
+    // vx = -ω * y
+    // vy = ω * x
+    // where ω is the angular velocity
+    Vec2::new(
+        -angular_velocity * offset.y,
+        angular_velocity * offset.x
+    )
+}
+

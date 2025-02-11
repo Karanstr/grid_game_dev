@@ -19,6 +19,7 @@ mod imports {
     pub use crate::BLOCKS;
     pub use std::f32::consts::PI;
     pub use engine::utility::math::*;
+    pub use engine::fancyintersection::*;
 }
 use imports::*;
 use lazy_static::lazy_static;
@@ -29,7 +30,7 @@ lazy_static! {
     // Not sure how permanent these'll be, but they're here for now
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-        Aabb::new(Vec2::ZERO, Vec2::splat(4.)), 
+        Aabb::new(Vec2::ZERO, Vec2::splat(0.85)), 
         0.9
     ));
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
@@ -39,7 +40,7 @@ lazy_static! {
 
 // Constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPEED: f32 = PI/64.;
+const PLAYER_ROTATION_SPEED: f32 = PI/256.;
 const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
 const TERRAIN_SPAWN: Vec2 = Vec2::new(0.,0.);
 const PLAYER_ROTATION_SPAWN: f32 = 0.;
@@ -144,7 +145,7 @@ async fn main() {
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
     println!("Release mode");
-    macroquad::window::request_new_screen_size(512., 512.);
+    macroquad::window::request_new_screen_size(1024., 1024.);
     // Load world state once at startup
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
@@ -235,10 +236,10 @@ async fn main() {
         // We want to move the camera to where the player is drawn, not where the player is moved to.
         let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
         
-        collisions::n_body_collisions(terrain);
+        collisions::n_body_collisions(terrain).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug
-        CAMERA.write().update(player_pos, 0.1);
+        CAMERA.write().update(player_pos, 1.);
         
         macroquad::window::next_frame().await
     }

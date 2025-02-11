@@ -7,7 +7,7 @@ use super::*;
 pub struct CollisionObject {
     pub position : Vec2, //Grid Center
     pub velocity : Vec2,
-    // pub angular_velocity : f32,
+    pub angular_velocity : f32,
     pub owner : ID,
     pub hitting : ID,
     pub particles : BinaryHeap<Reverse<Particle>>,
@@ -41,6 +41,11 @@ impl Eq for Particle {}
 impl Particle {
     fn position(&self, owner:&CollisionObject) -> Vec2 {
         self.offset + owner.position + owner.velocity * self.ticks_into_projection
+    }
+    fn tick(&mut self, delta_tick: f32, angular_velocity:f32) {
+        self.ticks_into_projection += delta_tick;
+        self.offset = self.offset.rotate(Vec2::from_angle(angular_velocity * delta_tick));
+        self.corner_type = self.corner_type.rotate(angular_velocity * delta_tick);
     }
 }
 
@@ -163,9 +168,9 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
             // if within_range(&entity, &other) {
-                if let Some(obj) = entity_to_collision_object(entity, other) { 
-                    objects.push(obj); 
-                }
+                // if let Some(obj) = entity_to_collision_object(entity, other) { 
+                //     objects.push(obj); 
+                // }
                 if let Some(obj) = entity_to_collision_object(other, entity) { 
                     objects.push(obj); 
                 }
@@ -179,12 +184,14 @@ fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
     for entity in &mut ENTITIES.write().entities { 
         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
+        entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
 
 fn tick_entities(delta_tick: f32) {
     for entity in &mut ENTITIES.write().entities {
         entity.location.position += (entity.velocity * delta_tick).snap_zero();
+        entity.rel_rotate(entity.angular_velocity * delta_tick);
     }
 }
 
@@ -210,16 +217,17 @@ fn apply_normal_force(static_thing: ID, hit: Hit) {
         if id != static_thing {
             let entity = entities.get_mut_entity(id).unwrap();
             entity.velocity = (entity.velocity + world_impulse * multiplier).snap_zero();
+            entity.angular_velocity = 0.;
         }
     }
 }
 
-pub fn n_body_collisions(static_thing: ID) {
+pub async fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     let mut wedge_count = 0;
     loop {
         let objects = collect_collision_objects();
-        let Some(mut hit) = find_next_action(objects, tick_max) else {
+        let Some(mut hit) = find_next_action(objects, tick_max).await else {
             tick_entities(tick_max); break
         };
         if hit.ticks.is_zero() {
@@ -238,32 +246,43 @@ pub fn n_body_collisions(static_thing: ID) {
 }
 
 // Eventually make this work with islands, solving each island by itself
-fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
+async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let entities = ENTITIES.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
             cur_corner.itt_counter += 1;
-            if cur_corner.itt_counter > 25 { dbg!("Too many iterations"); continue }
+            CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
+                r: (cur_corner.itt_counter as f32) / 6.,
+                g: (cur_corner.itt_counter as f32) / 6.,
+                b: (cur_corner.itt_counter as f32) / 6.,
+                a: 1.,
+            });
+            if cur_corner.itt_counter > 5 {
+                macroquad::window::next_frame().await;
+                dbg!("Too many iterations"); 
+                // continue 
+            }
             if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
-                cur_corner.position(&object),
-                object.velocity,
-                cur_corner.position_data,
+                &cur_corner,
+                &object,
                 hitting_location,
                 ticks_to_action,
-                cur_corner.corner_type
             ) else { continue };
-            cur_corner.ticks_into_projection += ticks_to_hit;
+            cur_corner.tick(ticks_to_hit, object.angular_velocity);
             let position_data = gate::point_to_real_cells(
                 hitting_location,
                 cur_corner.position(&object)
             );
             cur_corner.position_data = position_data;
-            
-            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, object.velocity, cur_corner.corner_type) {
+            let real_velocity = object.velocity + angular_to_tangential_velocity(
+                object.angular_velocity,
+                cur_corner.offset
+            );
+            if let Some(walls_hit) = hitting_wall(cur_corner.position_data, real_velocity, cur_corner.corner_type) {
                 action = Some( Hit {
                         owner : object.owner,
                         hitting : object.hitting,
@@ -293,28 +312,48 @@ fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: Ch
 }
 
 fn next_intersection(
-    point: Vec2,
-    velocity: Vec2,
-    position_data: [Option<CellData>; 4],
+    particle: &Particle,
+    object: &CollisionObject,
     hitting_location: Location,
     tick_max: f32,
-    corner_type: CornerType,
 ) -> Option<f32> {
+    let point = particle.position(object);
+    let point_velocity = object.velocity + angular_to_tangential_velocity(
+        object.angular_velocity,
+        particle.offset
+    );
     let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
     let top_left = hitting_aabb.min();
     let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(position_data, velocity, corner_type).is_some() {
+    if hitting_wall(particle.position_data, point_velocity, particle.corner_type).is_some() {
         // hitting_wall(position_data, velocity, corner_type);
         return Some(0.)
     }
     let (cell, height) = if within_bounds != BVec2::TRUE {
-        (hitting_aabb.exterior_will_intersect(point, velocity)?, hitting_location.pointer.height)
-    } else { select_cell_and_height(&position_data, CheckZorders::from_velocity(velocity))? };
+        (hitting_aabb.exterior_will_intersect(point, point_velocity)?, hitting_location.pointer.height)
+    } else { select_cell_and_height(&particle.position_data, CheckZorders::from_velocity(point_velocity))? };
 
-    let quadrant = velocity.signum().max(Vec2::ZERO);
+    let quadrant = point_velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
-    let boundary_corner = top_left + cell * cell_length + cell_length * quadrant;
-    let ticks = (boundary_corner - point) / velocity;
+    let boundary_corner = top_left + (cell + quadrant) * cell_length;
+    // let ticks = (boundary_corner - point) / velocity;
+    let mut ticks  = Vec2::splat(f32::INFINITY);
+    let motion = Motion {
+        start : object.position,
+        velocity : object.velocity,
+        offset : particle.offset,
+        angular_velocity : object.angular_velocity,
+    };
+    if let Some(tickx) = motion.solve_line_intersection(
+        Line::Vertical(boundary_corner.x), 
+        tick_max
+    ) { ticks.x = tickx }
+    if let Some(ticky) = motion.solve_line_intersection(
+        Line::Horizontal(boundary_corner.y), 
+        tick_max.min(ticks.x.abs())
+    ) { 
+        if ticky.abs().less(ticks.y.abs()) { ticks.y = ticky } 
+    }
 
     let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
         (false, false) => ticks.max_element(),
@@ -343,8 +382,9 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
     let offset = bounds::center_to_edge(owner.location.pointer.height);
+    let rel_angular = (owner.angular_velocity - hitting.angular_velocity).snap_zero();
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
-    if rel_velocity.is_zero() { return None }
+    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
@@ -379,6 +419,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     Some(CollisionObject::new(
         rotated_owner_pos,
         rel_velocity,
+        rel_angular,
         owner.id,
         hitting.id,
         collision_points

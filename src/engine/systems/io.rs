@@ -57,7 +57,7 @@ pub mod output {
     }
 }
 
-use macroquad::shapes::{draw_circle, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
+use macroquad::shapes::{draw_circle, draw_circle_lines, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
 use macroquad::miniquad::window::screen_size;
 pub struct Camera { 
     pub aabb : Aabb,
@@ -131,6 +131,12 @@ impl Camera {
         let pos = self.world_to_screen(position);
         draw_circle(pos.x, pos.y, radius*self.zoom(), color);
     }
+
+    pub fn outline_point(&self, position:Vec2, radius:f32, thickness:f32, color:Color) {
+        let pos = self.world_to_screen(position);
+        draw_circle_lines(pos.x, pos.y, radius*self.zoom(), thickness*self.zoom(), color);
+    }
+
 
     #[allow(dead_code)]
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, line_width:f32, color:Color) {

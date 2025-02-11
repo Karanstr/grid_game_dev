@@ -23,7 +23,7 @@ impl Motion {
 
     // Solves for time T when the motion intersects the given line
     // Returns the first time an intersection occurs, ignoring sign
-    fn solve_line_intersection(&self, line: Line, max_time: f32) -> Option<f32> {
+    pub fn solve_line_intersection(&self, line: Line, max_time: f32) -> Option<f32> {
 
         // Get the relevant components based on whether this is vertical or horizontal
         let (target, start, velocity, offset_x, offset_y) = match line {
@@ -120,33 +120,67 @@ impl Motion {
             period_num += 1.0;
         }
         
-        if closest_t.is_infinite() { None } else { Some(closest_t) }
+        if closest_t.is_infinite() { None } else { Some(closest_t.snap_zero()) }
     }
 
     fn solve_pure_rotation(&self, line: Line, max_time: f32) -> Option<f32> {
-        //Can we unify these matches so we only match once instead of thrice?
-        let (start, offset) = match line {
-            Line::Vertical(_) => (self.start.x, self.offset),
-            Line::Horizontal(_) => (self.start.y, self.offset),
+        // Extract the target value and relevant components based on line type
+        let (target, start_pos, offset_pos, offset_perp) = match line {
+            Line::Vertical(x) => (x, self.start.x, self.offset.x, -self.offset.y),
+            Line::Horizontal(y) => (y, self.start.y, self.offset.y, self.offset.x),
         };
 
-        let r = offset.length();
-        if r.is_zero() { return None }
+        // If we're already on the line, return immediately
+        if (start_pos + offset_pos).approx_eq(target) {
+            return Some(0.0);
+        }
 
-        let delta = match line {
-            Line::Vertical(x) => x - start,
-            Line::Horizontal(y) => y - start,
-        };
-
-        if delta.abs() > r { return None }
-
-        let angle = match line {
-            Line::Vertical(_) => (delta / r).acos() * delta.signum(),
-            Line::Horizontal(_) => (delta / r).asin(),
-        };
-
-        let t = angle / self.angular_velocity;
-        if t.abs() <= max_time { Some(t) } else { None }
+        // For pure rotation, the position follows:
+        // pos(t) = start + offset*cos(ωt) + perp_offset*sin(ωt)
+        // where ω is angular_velocity
+        
+        // Solve: pos(t) = target
+        // start + offset*cos(ωt) + perp_offset*sin(ωt) = target
+        // offset*cos(ωt) + perp_offset*sin(ωt) = target - start
+        
+        // Let A = target - start
+        let a = target - start_pos;
+        
+        // If the radius of rotation is too small to ever reach the target, return None
+        let radius = (offset_pos * offset_pos + offset_perp * offset_perp).sqrt();
+        if (a.abs() - radius).greater(0.0) {
+            return None;
+        }
+        
+        // Using the fact that offset = r*cos(θ) and perp_offset = r*sin(θ)
+        // where r is radius and θ is initial angle
+        // We can solve for the intersection time using atan2
+        let initial_angle = offset_perp.atan2(offset_pos);
+        let target_angle = (a / radius).acos();
+        
+        // There are two possible angles that satisfy our equation: target_angle and -target_angle
+        // We need to find which one is reachable first given our angular velocity
+        let mut possible_angles = vec![
+            target_angle - initial_angle,
+            -target_angle - initial_angle
+        ];
+        
+        // Normalize angles to be in the range [-π, π]
+        possible_angles.iter_mut().for_each(|angle| {
+            *angle = angle.normalize_angle();
+            if *angle > PI {
+                *angle -= 2.0 * PI;
+            }
+        });
+        
+        // Convert angles to times based on angular velocity
+        let possible_times: Vec<f32> = possible_angles.into_iter()
+            .map(|angle| angle / self.angular_velocity)
+            .filter(|&t| t.abs() <= max_time)
+            .collect();
+        
+        // Return the time with the smallest magnitude
+        possible_times.into_iter().min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
     }
 
 }
@@ -158,12 +192,12 @@ mod tests {
     #[test]
     fn test() {
         let motion = Motion {
-            start: Vec2::new(0., 0.),
-            velocity: Vec2::new(5.0, 5.0),
-            offset: Vec2::new(1., -1.),
-            angular_velocity: 3.7,
+            start: Vec2::new(0.695020676, 0.),
+            velocity: Vec2::new(-0.00475104246, 0.),
+            offset: Vec2::new(-0.695016265, 0.130200937),
+            angular_velocity: 0.170000225,
         };
-        dbg!(motion.solve_line_intersection(Line::Horizontal(2.), 1.0));
+        dbg!(motion.solve_line_intersection(Line::Horizontal(0.), 1.0));
 
     }
 }
