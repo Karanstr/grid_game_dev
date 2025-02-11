@@ -39,10 +39,10 @@ lazy_static! {
 
 // Constants
 const PLAYER_SPEED: f32 = 0.01;
-const PLAYER_ROTATION_SPEED: f32 = 0.05;
+const PLAYER_ROTATION_SPEED: f32 = PI/64.;
 const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
 const TERRAIN_SPAWN: Vec2 = Vec2::new(0.,0.);
-const PLAYER_ROTATION_SPAWN: f32 = 0.5;
+const PLAYER_ROTATION_SPAWN: f32 = 0.;
 const TERRAIN_ROTATION_SPAWN: f32 = 0.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
@@ -180,13 +180,14 @@ async fn main() {
             if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
             if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.)); }
             if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.)); }
-            if is_key_down(KeyCode::Q) { player_entity.rel_rotate(-PLAYER_ROTATION_SPEED); }
-            if is_key_down(KeyCode::E) { player_entity.rel_rotate(PLAYER_ROTATION_SPEED); }
+            // if is_key_down(KeyCode::Q) { player_entity.rel_rotate(-PLAYER_ROTATION_SPEED); }
+            // if is_key_down(KeyCode::E) { player_entity.rel_rotate(PLAYER_ROTATION_SPEED); }
+            if is_key_down(KeyCode::Q) { player_entity.angular_velocity -= PLAYER_ROTATION_SPEED; }
+            if is_key_down(KeyCode::E) { player_entity.angular_velocity += PLAYER_ROTATION_SPEED; }
             if is_key_down(KeyCode::Space) { 
                 player_entity.velocity = Vec2::ZERO;
                 player_entity.angular_velocity = 0.0;
             }
-            
             if is_mouse_button_down(MouseButton::Left) {
                 let mouse_pos = CAMERA.read().screen_to_world(Vec2::from(mouse_position()));
                 

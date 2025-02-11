@@ -1,9 +1,8 @@
 use super::*;
 use roots::{find_root_brent, SimpleConvergency};
-const EPSILON:f32 = f32::EPSILON;
 // https://www.desmos.com/calculator/rtvp1esep0
 const CONVERGENCY:SimpleConvergency<f32> = SimpleConvergency {
-    eps: EPSILON,
+    eps: FP_EPSILON,
     max_iter: 12,
 };
 
@@ -35,10 +34,10 @@ impl Motion {
         // Create case for if both are negligible?
 
         // Handle pure rotation (no linear motion) separately
-        if velocity.abs() < EPSILON { return self.solve_pure_rotation(line, max_time) }
+        if velocity.is_zero() { return self.solve_pure_rotation(line, max_time) }
 
         // Handle pure linear motion (no rotation) separately
-        if self.angular_velocity.abs() < EPSILON {
+        if self.angular_velocity.is_zero() {
             // For linear motion, the offset is constant (like at t=0)
             let effective_start = start + offset_x;  // Add the constant offset
             let t = (target - effective_start) / velocity;
@@ -132,7 +131,7 @@ impl Motion {
         };
 
         let r = offset.length();
-        if r < EPSILON { return None }
+        if r.is_zero() { return None }
 
         let delta = match line {
             Line::Vertical(x) => x - start,

@@ -20,11 +20,13 @@ pub struct Particle {
     pub ticks_into_projection : f32,
     pub position_data : [Option<CellData>; 4],
     pub corner_type : CornerType,
+    #[new(value = "0")]
+    itt_counter : usize,
 }
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
-impl Ord for Particle { 
+impl Ord for Particle {
     fn cmp(&self, other: &Self) -> Ordering { 
         if self.ticks_into_projection.approx_eq(other.ticks_into_projection) { Ordering::Equal }
         else if self.ticks_into_projection.less(other.ticks_into_projection) { Ordering::Less }
@@ -242,6 +244,8 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
+            cur_corner.itt_counter += 1;
+            if cur_corner.itt_counter > 25 { dbg!("Too many iterations"); continue }
             if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
