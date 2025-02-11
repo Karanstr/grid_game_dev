@@ -3,7 +3,7 @@ use roots::{find_root_brent, SimpleConvergency};
 // https://www.desmos.com/calculator/rtvp1esep0
 const CONVERGENCY:SimpleConvergency<f32> = SimpleConvergency {
     eps: FP_EPSILON,
-    max_iter: 12,
+    max_iter: 30,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -12,6 +12,7 @@ pub enum Line {
     Horizontal(f32), // y = value
 }
 
+#[derive(Clone, Copy)]
 pub struct Motion {
     pub start: Vec2,
     pub velocity: Vec2,
@@ -23,7 +24,7 @@ impl Motion {
 
     // Solves for time T when the motion intersects the given line
     // Returns the first time an intersection occurs, ignoring sign
-    pub fn solve_line_intersection(&self, line: Line, max_time: f32) -> Option<f32> {
+    pub fn solve_line_intersection(self, line: Line, max_time: f32) -> Option<f32> {
 
         // Get the relevant components based on whether this is vertical or horizontal
         let (target, start, velocity, offset_x, offset_y) = match line {
@@ -46,7 +47,7 @@ impl Motion {
 
         // Start with the linear intersection time as our best guess
         let t_linear = (target - start) / velocity;
-        let period = 2.0 * std::f32::consts::PI / self.angular_velocity.abs();
+        let period: f32 = 2.0 * std::f32::consts::PI / self.angular_velocity.abs();
         
         // Define the motion equation we're solving
         let f = |t: f32| {

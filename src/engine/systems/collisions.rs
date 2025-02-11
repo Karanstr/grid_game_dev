@@ -43,7 +43,7 @@ impl Particle {
         self.offset + owner.position + owner.velocity * self.ticks_into_projection
     }
     fn tick(&mut self, delta_tick: f32, angular_velocity:f32) {
-        self.ticks_into_projection += delta_tick;
+        self.ticks_into_projection = (self.ticks_into_projection + delta_tick).snap_zero();
         self.offset = self.offset.rotate(Vec2::from_angle(angular_velocity * delta_tick));
         self.corner_type = self.corner_type.rotate(angular_velocity * delta_tick);
     }
@@ -237,7 +237,7 @@ pub async fn n_body_collisions(static_thing: ID) {
             if wedge_count == 3 { hit.walls = BVec2::TRUE }
         } else {
             wedge_count = 0;
-            tick_max -= hit.ticks;
+            tick_max = (tick_max - hit.ticks).snap_zero().abs();
             tick_entities(hit.ticks);
         }
         apply_normal_force(static_thing, hit);
@@ -247,30 +247,31 @@ pub async fn n_body_collisions(static_thing: ID) {
 
 // Eventually make this work with islands, solving each island by itself
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
+    let itt_cut = 30;
     let entities = ENTITIES.read();
-    let mut ticks_to_action = tick_max;
+    let mut ticks_to_action = tick_max.snap_zero();
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
             cur_corner.itt_counter += 1;
             CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
-                r: (cur_corner.itt_counter as f32) / 6.,
-                g: (cur_corner.itt_counter as f32) / 6.,
-                b: (cur_corner.itt_counter as f32) / 6.,
+                r: (cur_corner.itt_counter as f32) / itt_cut as f32,
+                g: (cur_corner.itt_counter as f32) / itt_cut as f32,
+                b: (cur_corner.itt_counter as f32) / itt_cut as f32,
                 a: 1.,
             });
-            if cur_corner.itt_counter > 5 {
-                macroquad::window::next_frame().await;
+            if cur_corner.itt_counter >= itt_cut {
+                if cur_corner.itt_counter == itt_cut { macroquad::window::next_frame().await }
                 dbg!("Too many iterations"); 
                 // continue 
             }
-            if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
+            if cur_corner.ticks_into_projection.abs().greater_eq(ticks_to_action.abs()) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
                 &cur_corner,
                 &object,
                 hitting_location,
-                ticks_to_action,
+                ticks_to_action.abs(),
             ) else { continue };
             cur_corner.tick(ticks_to_hit, object.angular_velocity);
             let position_data = gate::point_to_real_cells(
@@ -336,10 +337,9 @@ fn next_intersection(
     let quadrant = point_velocity.signum().max(Vec2::ZERO);
     let cell_length = bounds::cell_length(height);
     let boundary_corner = top_left + (cell + quadrant) * cell_length;
-    // let ticks = (boundary_corner - point) / velocity;
     let mut ticks  = Vec2::splat(f32::INFINITY);
     let motion = Motion {
-        start : object.position,
+        start : object.position + object.velocity * particle.ticks_into_projection,
         velocity : object.velocity,
         offset : particle.offset,
         angular_velocity : object.angular_velocity,
