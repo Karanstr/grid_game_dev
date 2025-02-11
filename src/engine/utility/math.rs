@@ -1,5 +1,5 @@
 use super::*;
-const FP_EPSILON: f32 = f32::EPSILON;
+const FP_EPSILON: f32 = 0.000_01;
 const ROTATIONAL_EPSILON: f32 = FP_EPSILON;
 
 pub trait FloatUtils {

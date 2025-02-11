@@ -54,6 +54,7 @@ pub enum CornerType {
     Left(f32),
 }
 impl CornerType {
+    // Replace this clamped logic with .less and .greater methods
     pub fn checks(&self, velocity:Vec2) -> CheckZorders {
         if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
         let clamped = velocity.zero_signum().max(IVec2::ZERO);
@@ -75,12 +76,12 @@ impl CornerType {
         BVec2::from_array(match self {
             Self::TopLeft => [velocity.x.less(0.), velocity.y.less(0.)],
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
-            Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
+            Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
             Self::Top(_) => [false, velocity.y.less(0.)],
-            Self::Right(_) => [velocity.x.greater(0.), false],
             Self::Bottom(_) => [false, velocity.y.greater(0.)],
-            Self::Left(_) => [velocity.x.less(0.), false]
+            Self::Left(_) => [velocity.x.less(0.), false],
+            Self::Right(_) => [velocity.x.greater(0.), false],
         })
     }
     
