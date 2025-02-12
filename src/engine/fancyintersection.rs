@@ -2,8 +2,10 @@ use super::*;
 use roots::{find_root_brent, SimpleConvergency};
 // https://www.desmos.com/calculator/rtvp1esep0
 
+#[derive(new)]
 struct IterationTracker {
     convergency: SimpleConvergency<f32>,
+    #[new(value = "0")]
     iterations: usize,
 }
 
@@ -73,49 +75,26 @@ impl Motion {
             let f_end = f(t_end);
             
             if f_start * f_end <= 0.0 {
-                let mut iter_tracker = IterationTracker { convergency: BASE_CONVERGENCY, iterations: 0 };
+                let mut iter_tracker = IterationTracker::new(BASE_CONVERGENCY);
                 if let Ok(t) = find_root_brent(t_start, t_end, &f, &mut iter_tracker) {
-                    // if t <= max_time { // Only check if t is within max_time, no abs() needed
-                        println!("Found in {} iterations", iter_tracker.iterations);
-                        return Some(t);
-                    // }
+                    println!("Found in {} iterations", iter_tracker.iterations);
+                    return Some(t);
                 }
             }
             None
         };
 
-        // Calculate the earliest possible intersection time based on distance and maximum speed
         let radius = self.offset.length();
         
         // Calculate the minimum time needed to reach the target based on linear motion and rotation radius
-        let min_time_needed = ((target-center).abs() - radius) / velocity.abs();
+        let min_time_needed = (((target-center).abs() - radius) / velocity.abs()).max(0.);
         
-        // If we can't reach the target within max_time, return early
-        if min_time_needed.greater(max_time) || min_time_needed.less(0.) {
-            return None;
-        }
+        if min_time_needed.greater(max_time) { return None }
         
         // Calculate time for a complete rotation
         let rotation_period = 2.0 * PI / self.angular_velocity.abs();
+        check_range(min_time_needed, min_time_needed + rotation_period)
         
-        // Start searching from the earliest possible time
-        let mut search_start = min_time_needed;
-        
-        let mut it_count = 0;
-
-        // Search each rotation period until we exceed max_time
-        while search_start <= max_time {
-            let search_end = search_start + rotation_period;
-            if let Some(t) = check_range(search_start, search_end) {
-                return Some(t.snap_zero()); // This will be the earliest intersection in this period
-            }
-            search_start = search_end;
-            it_count += 1;
-            if it_count == 100 { dbg!("Failed to reach target"); break }
-        }
-        
-        // No intersection found within max_time
-        None
     }
 
     pub fn solve_pure_linear(self, line: Line, max_time: f32) -> Option<f32> {
