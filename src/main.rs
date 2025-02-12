@@ -23,18 +23,7 @@ use lazy_static::lazy_static;
 use parking_lot::{RwLock, deadlock};
 use std::time::Duration;
 use std::thread;
-lazy_static! {
-    pub static ref GAME_STATE: GameState = GameState::default();
-    // // Not sure how permanent these'll be, but they're here for now
-    // pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
-    // pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-    //     Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
-    //     0.9
-    // ));
-    // pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-    // // Temporary until I create a proper solution
-    // pub static ref BLOCKS: BlockPalette = BlockPalette::default();
-}
+lazy_static! { pub static ref GAME_STATE: GameState = GameState::default(); }
 
 // Constants
 const PLAYER_SPEED: f32 = 0.01;
@@ -116,6 +105,12 @@ impl EntityPool {
     }
 }
 
+fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+    
+    }));
+}
+
 fn init_deadlock_detection() {
     thread::spawn(move || {
         loop {
@@ -139,6 +134,7 @@ fn init_deadlock_detection() {
 #[macroquad::main("Window")]
 async fn main() {
     init_deadlock_detection();
+    set_panic_hook();
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
@@ -257,7 +253,6 @@ pub struct GameState {
     pub camera: RwLock<Camera>,
     pub blocks: BlockPalette
 }
-
 impl Default for GameState {
     fn default() -> Self {
         Self {
@@ -271,7 +266,6 @@ impl Default for GameState {
         }
     }
 }
-
 impl GameState {
 
 }
