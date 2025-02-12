@@ -1,6 +1,7 @@
 use super::*;
 use roots::{find_root_brent, SimpleConvergency};
-// https://www.desmos.com/calculator/rtvp1esep0
+
+// https://www.desmos.com/calculator/8iqoshfwcg
 
 #[derive(new)]
 struct IterationTracker {
@@ -55,7 +56,7 @@ impl Motion {
         }
     }
 
-    pub fn solve_linear_and_rotation(self, line: Line, max_time: f32) -> Option<f32> {
+    fn solve_linear_and_rotation(self, line: Line, max_time: f32) -> Option<f32> {
         // Get the relevant components based on whether this is vertical or horizontal
         let (target, center, velocity, offset_parallel, offset_perp) = match line {
             Line::Vertical(x) => (x, self.center_of_rotation.x, self.velocity.x, self.offset.x, -self.offset.y),
@@ -97,7 +98,7 @@ impl Motion {
         
     }
 
-    pub fn solve_pure_linear(self, line: Line, max_time: f32) -> Option<f32> {
+    fn solve_pure_linear(self, line: Line, max_time: f32) -> Option<f32> {
         // Get the relevant components based on whether this is vertical or horizontal
         let (target, center, velocity, offset) = match line {
             Line::Vertical(x) => (x, self.center_of_rotation.x, self.velocity.x, self.offset.x),
@@ -110,7 +111,7 @@ impl Motion {
         if t > 0.0 && t <= max_time { Some(t) } else { None }
     }
 
-    pub fn solve_pure_rotation(&self, line: Line, max_time: f32) -> Option<f32> {
+    fn solve_pure_rotation(self, line: Line, max_time: f32) -> Option<f32> {
         // Extract the target value and relevant components based on line type
         let (target, center_pos, offset_parallel, offset_perp) = match line {
             Line::Vertical(x) => (x, self.center_of_rotation.x, self.offset.x, -self.offset.y),
@@ -145,29 +146,17 @@ impl Motion {
         let initial_angle = offset_perp.atan2(offset_parallel);
         let target_angle = (a / radius).acos();
         
-        // There are two possible angles that satisfy our equation: target_angle and -target_angle
-        // We need to find which one is reachable first given our angular velocity
-        let mut possible_angles = vec![
-            target_angle - initial_angle,
-            -target_angle - initial_angle
-        ];
+        // Calculate the angle we need to rotate, considering the direction of rotation
+        let mut angle = target_angle - initial_angle;
         
-        // Normalize angles to be in the range [-π, π]
-        possible_angles.iter_mut().for_each(|angle| {
-            *angle = angle.normalize_angle();
-            if *angle > PI {
-                *angle -= 2. * PI;
-            }
-        });
+        // Normalize and adjust angle based on rotation direction
+        angle = angle.normalize_angle();
+        if (angle > 0.0) != (self.angular_velocity > 0.0) {
+            angle -= angle.signum() * 2.0 * PI;
+        }
         
-        // Convert angles to times based on angular velocity and only keep positive times
-        let possible_times: Vec<f32> = possible_angles.into_iter()
-            .map(|angle| angle / self.angular_velocity)
-            .filter(|&t| t > 0.0 && t <= max_time) // Only consider positive times
-            .collect();
-        
-        // Return the smallest positive time
-        possible_times.into_iter().min_by(|a, b| a.partial_cmp(b).unwrap())
+        let t = angle / self.angular_velocity;
+        if t.greater(0.) && t.less_eq(max_time) { Some(t) } else { None }
     }
 
 }
