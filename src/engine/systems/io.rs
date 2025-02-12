@@ -29,9 +29,9 @@ pub mod output {
         use super::*;
         
         pub fn draw_all(outline:bool) {
-            let entities = ENTITIES.read();            for entity in entities.entities.iter() {
+            let entities = GAME_STATE.entities.read();            for entity in entities.entities.iter() {
                 let location = &entity.location;
-                if CAMERA.read().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
+                if GAME_STATE.camera.read().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
                     draw(entity, outline);
                 }
             }
@@ -50,7 +50,7 @@ pub mod output {
                 ))}
             }).collect();
             for (points, index) in points_list {
-                CAMERA.read().draw_rectangle_from_corners(&points, BLOCKS.blocks[index].color, outline);
+                GAME_STATE.camera.read().draw_rectangle_from_corners(&points, GAME_STATE.blocks.blocks[index].color, outline);
             }
         }
     }

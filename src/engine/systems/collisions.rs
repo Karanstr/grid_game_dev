@@ -161,7 +161,7 @@ struct Hit {
 // Eventually turn this into an island identifier/generator
 fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
-    let entities = ENTITIES.read();
+    let entities = GAME_STATE.entities.read();
     for idx in 0..entities.entities.len() {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
@@ -181,21 +181,21 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
 
 fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
-    for entity in &mut ENTITIES.write().entities { 
+    for entity in &mut GAME_STATE.entities.write().entities { 
         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
         entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
 
 fn tick_entities(delta_tick: f32) {
-    for entity in &mut ENTITIES.write().entities {
+    for entity in &mut GAME_STATE.entities.write().entities {
         entity.location.position += (entity.velocity * delta_tick).snap_zero();
         entity.rel_rotate(entity.angular_velocity * delta_tick);
     }
 }
 
 fn apply_normal_force(static_thing: ID, hit: Hit) {
-    let mut entities = ENTITIES.write();
+    let mut entities = GAME_STATE.entities.write();
     let hitting = entities.get_entity(hit.hitting).unwrap();
     // // I want this guy, but the precision errors are strong with him
     // let world_normal = hit.walls.to_vec2().rotate(hitting.forward);
@@ -247,13 +247,13 @@ pub async fn n_body_collisions(static_thing: ID) {
 // Eventually make this work with islands, solving each island by itself
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let itt_cut = 30;
-    let entities = ENTITIES.read();
+    let entities = GAME_STATE.entities.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
             cur_corner.itt_counter += 1;
-            CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
+            GAME_STATE.camera.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
                 r: (cur_corner.itt_counter as f32) / itt_cut as f32,
                 g: (cur_corner.itt_counter as f32) / itt_cut as f32,
                 b: (cur_corner.itt_counter as f32) / itt_cut as f32,
@@ -370,7 +370,7 @@ fn next_intersection(
 //     let aabb2 = bounds::aabb(entity2.location.position, entity2.location.pointer.height).expand(entity2.velocity);
 //     let result = aabb.intersects(aabb2) == BVec2::TRUE;
 //     let color = if result { GREEN } else { RED };
-//     let camera = CAMERA.read();
+//     let camera = GAME_STATE.camera.read();
 //     camera.outline_bounds(aabb, 0.05, color);
 //     camera.outline_bounds(aabb2, 0.05, color);
 //     result
@@ -385,7 +385,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
     if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
-    let camera = CAMERA.read();
+    let camera = GAME_STATE.camera.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     let point_rotation = align_to_hitting.rotate(owner.forward);
     for corners in owner.corners.iter() {
@@ -459,8 +459,8 @@ pub mod corner_handling {
                     for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
-                    let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
-                    if BLOCKS.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
+                    let pointer = GAME_STATE.graph.read().read(start, &check_zorder.steps()).unwrap();
+                    if GAME_STATE.blocks.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
             }
             exposed_mask
@@ -479,14 +479,14 @@ pub mod corner_handling {
     }
 
     pub fn tree_corners(start:ExternalPointer) -> Vec<Corners> {
-        let leaves = GRAPH.read().dfs_leaf_cells(start);
+        let leaves = GAME_STATE.graph.read().dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
             let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
             corners.push( Corners::new(
                 cell_corners(cell),
                 cell.pointer.pointer,
-                if !BLOCKS.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
+                if !GAME_STATE.blocks.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 
@@ -500,8 +500,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
     // Velocity Check 
     {
         let hit = match corner_type.checks(velocity) {
-            CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
-            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
+            CheckZorders::One(index) => GAME_STATE.blocks.is_solid_cell(position_data[index]),
+            CheckZorders::Two([idx1, idx2]) => GAME_STATE.blocks.is_solid_cell(position_data[idx1]) | GAME_STATE.blocks.is_solid_cell(position_data[idx2]),
         };
         if !velocity.x.is_zero() { hit_walls.x &= hit }
         if !velocity.y.is_zero() { hit_walls.y &= hit }
@@ -516,8 +516,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
             _ => unreachable!(),
         };
         let slide = BVec2::new(
-            BLOCKS.is_solid_cell(position_data[idxs[0]]),
-            BLOCKS.is_solid_cell(position_data[idxs[1]])
+            GAME_STATE.blocks.is_solid_cell(position_data[idxs[0]]),
+            GAME_STATE.blocks.is_solid_cell(position_data[idxs[1]])
         );
 
         if slide != BVec2::FALSE { hit_walls &= slide }

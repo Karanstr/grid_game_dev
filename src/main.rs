@@ -13,10 +13,7 @@ mod imports {
     pub use macroquad::color::Color;
     pub use macroquad::input::*;
     pub use derive_new::new;
-    pub use crate::GRAPH;
-    pub use crate::CAMERA;
-    pub use crate::ENTITIES;
-    pub use crate::BLOCKS;
+    pub use crate::GAME_STATE;
     pub use std::f32::consts::PI;
     pub use engine::utility::math::*;
     pub use engine::fancyintersection::*;
@@ -27,15 +24,16 @@ use parking_lot::{RwLock, deadlock};
 use std::time::Duration;
 use std::thread;
 lazy_static! {
-    // Not sure how permanent these'll be, but they're here for now
-    pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
-    pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-        Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
-        0.9
-    ));
-    pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-    // Temporary until I create a proper solution
-    pub static ref BLOCKS: BlockPalette = BlockPalette::default();
+    pub static ref GAME_STATE: GameState = GameState::default();
+    // // Not sure how permanent these'll be, but they're here for now
+    // pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
+    // pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
+    //     Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
+    //     0.9
+    // ));
+    // pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
+    // // Temporary until I create a proper solution
+    // pub static ref BLOCKS: BlockPalette = BlockPalette::default();
 }
 
 // Constants
@@ -150,21 +148,21 @@ async fn main() {
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
         if string.is_empty() { 
-            GRAPH.write().get_root(0, 3)
+            GAME_STATE.graph.write().get_root(0, 3)
         } else { 
-            GRAPH.write().load_object_json(string)
+            GAME_STATE.graph.write().load_object_json(string)
         }
     };
     
-    let terrain = ENTITIES.write().add_entity(
+    let terrain = GAME_STATE.entities.write().add_entity(
         Location::new(world_pointer, TERRAIN_SPAWN),
         TERRAIN_ROTATION_SPAWN,
     );
 
     let player = {
         //Graph has to be unlocked before add_entity is called so corners can be read
-        let root = GRAPH.write().get_root(3, 0);
-        ENTITIES.write().add_entity(
+        let root = GAME_STATE.graph.write().get_root(3, 0);
+        GAME_STATE.entities.write().add_entity(
             Location::new(root, PLAYER_SPAWN),
             PLAYER_ROTATION_SPAWN,
         )
@@ -175,7 +173,7 @@ async fn main() {
 
     loop {
         { // Scoped to visualize the lock of entities
-            let mut entities = ENTITIES.write();
+            let mut entities = GAME_STATE.entities.write();
             let player_entity = entities.get_mut_entity(player).unwrap();
             if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED)); }
             if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
@@ -190,7 +188,7 @@ async fn main() {
                 player_entity.angular_velocity = 0.0;
             }
             if is_mouse_button_down(MouseButton::Left) {
-                let mouse_pos = CAMERA.read().screen_to_world(Vec2::from(mouse_position()));
+                let mouse_pos = GAME_STATE.camera.read().screen_to_world(Vec2::from(mouse_position()));
                 
                 let terrain_entity = entities.get_mut_entity(terrain).unwrap();
                 let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
@@ -206,18 +204,18 @@ async fn main() {
         if is_key_pressed(KeyCode::V) { color = (color + 1) % MAX_COLOR; }
         if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
         
-        if is_key_pressed(KeyCode::P) { dbg!(GRAPH.read().nodes.internal_memory()); }
+        if is_key_pressed(KeyCode::P) { dbg!(GAME_STATE.graph.read().nodes.internal_memory()); }
         
         if is_key_pressed(KeyCode::K) {
-            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(terrain).unwrap().location.pointer);
+            let save_data = GAME_STATE.graph.read().save_object_json(GAME_STATE.entities.read().get_entity(terrain).unwrap().location.pointer);
             std::fs::write("src/save.json", save_data).unwrap();
         }
         
         if is_key_pressed(KeyCode::L) {
-            let mut entities = ENTITIES.write();
+            let mut entities = GAME_STATE.entities.write();
             let terrain_entity = entities.get_mut_entity(terrain).unwrap();
             let new_pointer = {
-                let mut graph = GRAPH.write();
+                let mut graph = GAME_STATE.graph.write();
                 let save_data = std::fs::read_to_string("src/save.json").unwrap();
                 let new_pointer = graph.load_object_json(save_data);
                 let old_removal = engine::graph::bfs_nodes(
@@ -234,12 +232,12 @@ async fn main() {
         render::draw_all(true);
         
         // We want to move the camera to where the player is drawn, not where the player is moved to.
-        let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
+        let player_pos = GAME_STATE.entities.read().get_entity(player).unwrap().location.position;
         
         collisions::n_body_collisions(terrain).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug
-        CAMERA.write().update(player_pos, 1.);
+        GAME_STATE.camera.write().update(player_pos, 1.);
         
         macroquad::window::next_frame().await
     }
@@ -250,5 +248,30 @@ pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) ->
     if to.height > location.pointer.height { return None; }
     let cell = gate::point_to_cells(location, to.height, world_point)[0]?; 
     let path = ZorderPath::from_cell(cell, location.pointer.height - to.height);
-    GRAPH.write().set_node(location.pointer, &path.steps(), to.pointer).ok()
+    GAME_STATE.graph.write().set_node(location.pointer, &path.steps(), to.pointer).ok()
+}
+
+pub struct GameState {
+    pub graph: RwLock<SparseDirectedGraph<BasicNode>>,
+    pub entities: RwLock<EntityPool>,
+    pub camera: RwLock<Camera>,
+    pub blocks: BlockPalette
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            graph: RwLock::new(SparseDirectedGraph::new(4)),
+            entities: RwLock::new(EntityPool::new()),
+            camera: RwLock::new(Camera::new(
+                Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
+                0.9
+            )),
+            blocks: BlockPalette::default()
+        }
+    }
+}
+
+impl GameState {
+
 }

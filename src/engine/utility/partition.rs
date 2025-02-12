@@ -155,7 +155,7 @@ pub mod grid {
         //Only works if cell is at height 0
         pub fn find_real_cell(start:ExternalPointer, cell:UVec2) -> CellData {
             let path = ZorderPath::from_cell(cell, start.height);
-            let pointer = GRAPH.read().read(start, &path.steps()).unwrap();
+            let pointer = GAME_STATE.graph.read().read(start, &path.steps()).unwrap();
             let zorder = path.with_depth(start.height - pointer.height);
             CellData::new(pointer, zorder.to_cell())
         }
