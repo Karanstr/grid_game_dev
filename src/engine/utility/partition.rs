@@ -2,7 +2,7 @@ use super::*;
 
 pub mod grid {
     use super::*;
-    pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(2.);
+    pub const MIN_CELL_LENGTH: Vec2 = Vec2::splat(1.);
     //Value loosely tuned to prevent both phasing and catching on corners
     //Used to sample area around a point to determine what cell(s) it's in
     pub const LIM_OFFSET: f32 = 2. / 0xFFF as f32;

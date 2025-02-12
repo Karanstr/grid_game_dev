@@ -30,7 +30,7 @@ lazy_static! {
     // Not sure how permanent these'll be, but they're here for now
     pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::new(4));
     pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-        Aabb::new(Vec2::ZERO, Vec2::splat(4.)), 
+        Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
         0.9
     ));
     pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
@@ -147,7 +147,6 @@ async fn main() {
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
     // Load world state once at startup
-    dbg!((1.17549435E-38).snap_zero());
     let world_pointer = {
         let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
         if string.is_empty() { 

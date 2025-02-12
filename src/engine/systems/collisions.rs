@@ -85,10 +85,10 @@ impl CornerType {
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
             Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
-            Self::Top(_) => [false, velocity.y.less(0.)],
-            Self::Bottom(_) => [false, velocity.y.greater(0.)],
-            Self::Left(_) => [velocity.x.less(0.), false],
-            Self::Right(_) => [velocity.x.greater(0.), false],
+            Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
+            Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
+            Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
+            Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
         })
     }
     
@@ -133,7 +133,6 @@ impl CornerType {
 
 }
 
-// Hardcode into CornerType?
 pub enum CheckZorders {
     One(usize),
     Two([usize; 2]),
@@ -168,9 +167,9 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
             // if within_range(&entity, &other) {
-                // if let Some(obj) = entity_to_collision_object(entity, other) { 
-                //     objects.push(obj); 
-                // }
+                if let Some(obj) = entity_to_collision_object(entity, other) { 
+                    objects.push(obj); 
+                }
                 if let Some(obj) = entity_to_collision_object(other, entity) { 
                     objects.push(obj); 
                 }
@@ -237,7 +236,7 @@ pub async fn n_body_collisions(static_thing: ID) {
             if wedge_count == 3 { hit.walls = BVec2::TRUE }
         } else {
             wedge_count = 0;
-            tick_max = (tick_max - hit.ticks).snap_zero().abs();
+            tick_max = tick_max - hit.ticks;
             tick_entities(hit.ticks);
         }
         apply_normal_force(static_thing, hit);
@@ -249,7 +248,7 @@ pub async fn n_body_collisions(static_thing: ID) {
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let itt_cut = 30;
     let entities = ENTITIES.read();
-    let mut ticks_to_action = tick_max.snap_zero();
+    let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
@@ -265,13 +264,13 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 dbg!("Too many iterations"); 
                 // continue 
             }
-            if cur_corner.ticks_into_projection.abs().greater_eq(ticks_to_action.abs()) { continue 'objectloop }
+            if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
                 &cur_corner,
                 &object,
                 hitting_location,
-                ticks_to_action.abs(),
+                ticks_to_action,
             ) else { continue };
             cur_corner.tick(ticks_to_hit, object.angular_velocity);
             let position_data = gate::point_to_real_cells(
@@ -339,7 +338,7 @@ fn next_intersection(
     let boundary_corner = top_left + (cell + quadrant) * cell_length;
     let mut ticks  = Vec2::splat(f32::INFINITY);
     let motion = Motion {
-        start : object.position + object.velocity * particle.ticks_into_projection,
+        center_of_rotation : object.position + object.velocity * particle.ticks_into_projection,
         velocity : object.velocity,
         offset : particle.offset,
         angular_velocity : object.angular_velocity,
