@@ -107,7 +107,7 @@ impl EntityPool {
 
 fn set_panic_hook() {
     std::panic::set_hook(Box::new(|panic_info| {
-    
+        
     }));
 }
 
