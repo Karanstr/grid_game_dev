@@ -106,7 +106,7 @@ pub mod grid {
         use super::*;
 
         pub fn cell_length(height:u32) -> Vec2 {
-            MIN_CELL_LENGTH.powf((height) as f32)
+            MIN_CELL_LENGTH * 2_f32.powi(height as i32 + 1)
         }
 
         pub fn center_to_edge(height:u32) -> Vec2 {

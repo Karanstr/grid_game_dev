@@ -29,8 +29,7 @@ pub mod output {
         use super::*;
         
         pub fn draw_all(outline:bool) {
-            let entities = &*ENTITIES.read();
-            for entity in entities.entities.iter() {
+            let entities = ENTITIES.read();            for entity in entities.entities.iter() {
                 let location = &entity.location;
                 if CAMERA.read().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
                     draw(entity, outline);
