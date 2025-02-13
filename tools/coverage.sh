@@ -42,12 +42,12 @@ echo "Merging coverage data..."
 $LLVM_PROFDATA merge -sparse ../coverage/*.profraw -o ../coverage/grid_game.profdata
 
 echo -e "\n=== Coverage Summary ===\n"
-$LLVM_COV report target/debug/Voxel-Test-1 \
+$LLVM_COV report target/debug/Grid-Game \
     --instr-profile=../coverage/grid_game.profdata \
     src/engine/systems/collisions.rs
 
 echo -e "\n=== Detailed Coverage Report ===\n"
-$LLVM_COV show target/debug/Voxel-Test-1 \
+$LLVM_COV show target/debug/Grid-Game \
     --instr-profile=../coverage/grid_game.profdata \
     --show-instantiations \
     --show-line-counts-or-regions \
