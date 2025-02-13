@@ -175,30 +175,22 @@ async fn main() {
             if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
             if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.)); }
             if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.)); }
-            // if is_key_down(KeyCode::Q) { player_entity.rel_rotate(-PLAYER_ROTATION_SPEED); }
-            // if is_key_down(KeyCode::E) { player_entity.rel_rotate(PLAYER_ROTATION_SPEED); }
             if is_key_down(KeyCode::Q) { player_entity.angular_velocity -= PLAYER_ROTATION_SPEED; }
             if is_key_down(KeyCode::E) { player_entity.angular_velocity += PLAYER_ROTATION_SPEED; }
             if is_key_down(KeyCode::Space) { 
                 player_entity.velocity = Vec2::ZERO;
                 player_entity.angular_velocity = 0.0;
             }
-            if is_mouse_button_down(MouseButton::Left) {
-                let mouse_pos = GAME_STATE.camera.read().screen_to_world(Vec2::from(mouse_position()));
-                
-                let terrain_entity = entities.get_mut_entity(terrain).unwrap();
-                let mouse_pos = (mouse_pos - terrain_entity.location.position).rotate(Vec2::from_angle(-terrain_entity.rotation)) + terrain_entity.location.position;
-                
-                if let Some(pointer) = set_grid_cell(
-                    ExternalPointer::new(Index(color), height),
-                    mouse_pos,
-                    terrain_entity.location
-                ) { terrain_entity.set_root(pointer) }
-            }
         }
-
         if is_key_pressed(KeyCode::V) { color = (color + 1) % MAX_COLOR; }
         if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
+        if is_mouse_button_down(MouseButton::Left) {
+            GAME_STATE.set_grid_cell(
+                terrain,
+                GAME_STATE.camera.read().screen_to_world(Vec2::from(mouse_position())),
+                ExternalPointer::new(Index(color), height)
+            );
+        }
         
         if is_key_pressed(KeyCode::P) { dbg!(GAME_STATE.graph.read().nodes.internal_memory()); }
         
@@ -240,13 +232,6 @@ async fn main() {
 
 }
 
-pub fn set_grid_cell(to:ExternalPointer, world_point:Vec2, location:Location) -> Option<ExternalPointer> {
-    if to.height > location.pointer.height { return None; }
-    let cell = gate::point_to_cells(location, to.height, world_point)[0]?; 
-    let path = ZorderPath::from_cell(cell, location.pointer.height - to.height);
-    GAME_STATE.graph.write().set_node(location.pointer, &path.steps(), to.pointer).ok()
-}
-
 pub struct GameState {
     pub graph: RwLock<SparseDirectedGraph<BasicNode>>,
     pub entities: RwLock<EntityPool>,
@@ -267,5 +252,18 @@ impl Default for GameState {
     }
 }
 impl GameState {
+    // Lot of unwraps here, add proper safety down the road
+    pub fn set_grid_cell(&self, entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
+        let mut entities = self.entities.write();
+        let location = &mut entities.get_mut_entity(entity).unwrap().location;
+        if new_cell.height > location.pointer.height { return; }
+        let Some(cell) = gate::point_to_cells(*location, new_cell.height, world_point)[0] else { return };
+        let path = ZorderPath::from_cell(cell, location.pointer.height - new_cell.height);
+        location.pointer = self.graph.write().set_node(location.pointer, &path.steps(), new_cell.pointer).unwrap();
+    }
+    
+    // pub fn save_object
+
+    // pub fn load_object
 
 }
