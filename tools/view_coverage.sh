@@ -9,20 +9,20 @@ if [ -z "$LLVM_COV" ]; then
     exit 1
 fi
 
-if [ ! -f "coverage/grid_game.profdata" ]; then
-    echo "Error: No coverage data found at coverage/grid_game.profdata"
+if [ ! -f "../coverage/grid_game.profdata" ]; then
+    echo "Error: No coverage data found at ../coverage/grid_game.profdata"
     echo "Please run coverage.sh first to generate coverage data"
     exit 1
 fi
 
 echo -e "\n=== Coverage Summary ===\n"
 $LLVM_COV report target/debug/Voxel-Test-1 \
-    --instr-profile=coverage/grid_game.profdata \
+    --instr-profile=../coverage/grid_game.profdata \
     src/engine/systems/collisions.rs
 
 echo -e "\n=== Detailed Coverage Report ===\n"
 $LLVM_COV show target/debug/Voxel-Test-1 \
-    --instr-profile=coverage/grid_game.profdata \
+    --instr-profile=../coverage/grid_game.profdata \
     --show-instantiations \
     --show-line-counts-or-regions \
     --use-color \
