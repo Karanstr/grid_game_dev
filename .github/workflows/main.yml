@@ -28,8 +28,7 @@ jobs:
       - name: Prepare Deployment Directory
         run: |
           mkdir -p ./deploy
-          cp ./target/wasm32-unknown-unknown/release/grid_game.wasm ./deploy/
-          cp index.html ./deploy/
+          cp ./target/wasm32-unknown-unknown/release/Grid-Game.wasm ./deploy/
 
       - name: Set up Git user
         run: |
