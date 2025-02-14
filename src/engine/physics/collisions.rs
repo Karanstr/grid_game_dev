@@ -2,6 +2,10 @@ use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
 
 use super::*;
+pub use macroquad::color::colors::*;
+pub use macroquad::color::Color;
+use crate::globals::*;
+
 
 #[derive(Debug, Clone, new)]
 pub struct CollisionObject {
@@ -161,7 +165,7 @@ struct Hit {
 // Eventually turn this into an island identifier/generator
 fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
-    let entities = GAME_STATE.entities.read();
+    let entities = ENTITIES.read();
     for idx in 0..entities.entities.len() {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
@@ -181,21 +185,21 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
 
 fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
-    for entity in &mut GAME_STATE.entities.write().entities { 
+    for entity in &mut ENTITIES.write().entities { 
         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
         entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
 
 fn tick_entities(delta_tick: f32) {
-    for entity in &mut GAME_STATE.entities.write().entities {
+    for entity in &mut ENTITIES.write().entities {
         entity.location.position += (entity.velocity * delta_tick).snap_zero();
         entity.rel_rotate(entity.angular_velocity * delta_tick);
     }
 }
 
 fn apply_normal_force(static_thing: ID, hit: Hit) {
-    let mut entities = GAME_STATE.entities.write();
+    let mut entities = ENTITIES.write();
     let hitting = entities.get_entity(hit.hitting).unwrap();
     // // I want this guy, but the precision errors are strong with him
     // let world_normal = hit.walls.to_vec2().rotate(hitting.forward);
@@ -247,13 +251,13 @@ pub async fn n_body_collisions(static_thing: ID) {
 // Eventually make this work with islands, solving each island by itself
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
     let itt_cut = 30;
-    let entities = GAME_STATE.entities.read();
+    let entities = ENTITIES.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
             cur_corner.itt_counter += 1;
-            GAME_STATE.camera.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
+            CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
                 r: (cur_corner.itt_counter as f32) / itt_cut as f32,
                 g: (cur_corner.itt_counter as f32) / itt_cut as f32,
                 b: (cur_corner.itt_counter as f32) / itt_cut as f32,
@@ -311,6 +315,7 @@ fn select_cell_and_height(position_data: &[Option<CellData>; 4], col_zorders: Ch
     })
 }
 
+use super::raymarching::*;
 fn next_intersection(
     particle: &Particle,
     object: &CollisionObject,
@@ -322,11 +327,10 @@ fn next_intersection(
         object.angular_velocity,
         particle.offset
     );
-    let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
+    let hitting_aabb = hitting_location.to_aabb();
     let top_left = hitting_aabb.min();
     let within_bounds = hitting_aabb.contains(point);
     if hitting_wall(particle.position_data, point_velocity, particle.corner_type).is_some() {
-        // hitting_wall(position_data, velocity, corner_type);
         return Some(0.)
     }
     let (cell, height) = if within_bounds != BVec2::TRUE {
@@ -334,7 +338,7 @@ fn next_intersection(
     } else { select_cell_and_height(&particle.position_data, CheckZorders::from_velocity(point_velocity))? };
 
     let quadrant = point_velocity.signum().max(Vec2::ZERO);
-    let cell_length = bounds::cell_length(height);
+    let cell_length = cell_length(height, hitting_location.min_cell_length);
     let boundary_corner = top_left + (cell + quadrant) * cell_length;
     let mut ticks  = Vec2::splat(f32::INFINITY);
     let motion = Motion {
@@ -343,11 +347,11 @@ fn next_intersection(
         offset : particle.offset,
         angular_velocity : object.angular_velocity,
     };
-    if let Some(tickx) = motion.solve_line_intersection(
+    if let Some(tickx) = motion.first_intersection(
         Line::Vertical(boundary_corner.x), 
         tick_max
     ) { ticks.x = tickx }
-    if let Some(ticky) = motion.solve_line_intersection(
+    if let Some(ticky) = motion.first_intersection(
         Line::Horizontal(boundary_corner.y), 
         tick_max.min(ticks.x.abs())
     ) { 
@@ -380,12 +384,12 @@ fn next_intersection(
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
-    let offset = bounds::center_to_edge(owner.location.pointer.height);
+    let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
     let rel_angular = (owner.angular_velocity - hitting.angular_velocity).snap_zero();
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
     if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
-    let camera = GAME_STATE.camera.read();
+    let camera = CAMERA.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     let point_rotation = align_to_hitting.rotate(owner.forward);
     for corners in owner.corners.iter() {
@@ -409,7 +413,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
                 point,
                 gate::point_to_real_cells(
                     hitting.location,
-                    point + rotated_owner_pos
+                    point + rotated_owner_pos,
                 ),
                 corner_type
             )));
@@ -459,16 +463,16 @@ pub mod corner_handling {
                     for _ in 0 .. start.height - check_zorder.depth {
                         check_zorder = check_zorder.step_down(direction)
                     }
-                    let pointer = GAME_STATE.graph.read().read(start, &check_zorder.steps()).unwrap();
-                    if GAME_STATE.blocks.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
+                    let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
+                    if BLOCKS.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
                 }
             }
             exposed_mask
         }
 
     //The top left corner of the root is (0, 0)
-    fn cell_corners(cell:CellData) -> [Vec2; 4] {
-        let cell_size = bounds::cell_length(cell.pointer.height);
+    fn cell_corners(cell:CellData, min_cell_length:Vec2) -> [Vec2; 4] {
+        let cell_size = cell_length(cell.pointer.height, min_cell_length);
         let top_left_corner = cell.cell.as_vec2() * cell_size;
         [
             top_left_corner,
@@ -478,15 +482,15 @@ pub mod corner_handling {
         ]
     }
 
-    pub fn tree_corners(start:ExternalPointer) -> Vec<Corners> {
-        let leaves = GAME_STATE.graph.read().dfs_leaf_cells(start);
+    pub fn tree_corners(start:ExternalPointer, min_cell_length:Vec2) -> Vec<Corners> {
+        let leaves = GRAPH.read().dfs_leaf_cells(start);
         let mut corners = Vec::new();
         for cell in leaves {
             let zorder = ZorderPath::from_cell(cell.cell, start.height - cell.pointer.height);
             corners.push( Corners::new(
-                cell_corners(cell),
+                cell_corners(cell, min_cell_length),
                 cell.pointer.pointer,
-                if !GAME_STATE.blocks.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
+                if !BLOCKS.is_solid_index(*cell.pointer.pointer) { 0 } else { cell_corner_mask(start, zorder) }
             ));
         }
         corners 
@@ -500,8 +504,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
     // Velocity Check 
     {
         let hit = match corner_type.checks(velocity) {
-            CheckZorders::One(index) => GAME_STATE.blocks.is_solid_cell(position_data[index]),
-            CheckZorders::Two([idx1, idx2]) => GAME_STATE.blocks.is_solid_cell(position_data[idx1]) | GAME_STATE.blocks.is_solid_cell(position_data[idx2]),
+            CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
+            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
         };
         if !velocity.x.is_zero() { hit_walls.x &= hit }
         if !velocity.y.is_zero() { hit_walls.y &= hit }
@@ -516,8 +520,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
             _ => unreachable!(),
         };
         let slide = BVec2::new(
-            GAME_STATE.blocks.is_solid_cell(position_data[idxs[0]]),
-            GAME_STATE.blocks.is_solid_cell(position_data[idxs[1]])
+            BLOCKS.is_solid_cell(position_data[idxs[0]]),
+            BLOCKS.is_solid_cell(position_data[idxs[1]])
         );
 
         if slide != BVec2::FALSE { hit_walls &= slide }

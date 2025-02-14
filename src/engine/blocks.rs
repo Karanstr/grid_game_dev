@@ -1,4 +1,3 @@
-use super::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CollisionType {
@@ -7,20 +6,19 @@ pub enum CollisionType {
     Void,   // None
 }
 
+use macroquad::color::*;
+use super::grid::partition::CellData;
 
-#[derive(Debug, new)]
-pub struct Block {
-    pub color : Color,
-    pub collision_type : CollisionType
+#[derive(Debug)]
+struct Block {
+    color : Color,
+    collision_type : CollisionType
 }
-//Consider making this private and writing getters for block data
-pub struct BlockPalette {
-    pub blocks : Vec<Block>
-}
+
+pub struct BlockPalette([Block; 4]);
 impl Default for BlockPalette {
     fn default() -> Self {
-        Self {
-            blocks : vec![
+        Self ( [
                 Block {
                     color : BLACK,
                     collision_type : CollisionType::Air
@@ -38,19 +36,25 @@ impl Default for BlockPalette {
                     collision_type : CollisionType::Solid
                 },
             ]
-        }
+        )
     }
 }
 impl BlockPalette {
     pub fn index_type(&self, index : usize) -> CollisionType {
-        self.blocks[index].collision_type
+        self.0[index].collision_type
     }
+    
     pub fn cell_type(&self, cell: Option<CellData>) -> CollisionType {
         match cell {
             None => CollisionType::Void,
             Some(cell) => self.index_type(*cell.pointer.pointer)
         }
     }
+
+    pub fn color(&self, index : usize) -> Color {
+        self.0[index].color
+    }
+
     pub fn is_solid_cell(&self, cell: Option<CellData>) -> bool {
         matches!(self.cell_type(cell), CollisionType::Solid)
     }

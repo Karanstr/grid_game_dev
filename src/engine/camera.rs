@@ -1,63 +1,8 @@
-use super::*;
-
-    /*
-    pub fn expand_object_domain(&mut self, object_index:usize, direction:usize) {
-        let object = &mut self.objects[object_index];
-        //Prevent zorder overflow for now
-        if object.root.height == 15 { dbg!("We don't overflow around here"); return }
-        object.position += object.cell_length(0) * zorder_to_direction(direction as u32)/2.;
-        let new_root = self.graph.set_node(NodePointer::new(Index(0)), &[direction as u32], object.root.pointer).unwrap();
-        self.graph.swap_root(object.root.pointer, new_root);
-        object.root.pointer = new_root;
-        object.root.height += 1;
-    }
-
-    pub fn shrink_object_domain(&mut self, object_index:usize, preserve_direction:usize) {
-        let object = &mut self.objects[object_index];
-        if object.root.height == 0 { return }
-        object.position += object.cell_length(0) * -zorder_to_direction(preserve_direction as u32)/4.;
-        let new_root = self.graph.set_node(object.root.pointer, &[], self.graph.child(object.root.pointer, preserve_direction).unwrap()).unwrap();
-        self.graph.swap_root(object.root.pointer, new_root);
-        object.root.pointer = new_root;
-        object.root.height -= 1;
-    }*/
-
-pub mod output {
-    use super::*;
-
-    pub mod render {
-        use super::*;
-        
-        pub fn draw_all(outline:bool) {
-            let entities = GAME_STATE.entities.read();            for entity in entities.entities.iter() {
-                let location = &entity.location;
-                if GAME_STATE.camera.read().aabb.intersects(bounds::aabb(location.position, location.pointer.height)) == BVec2::TRUE {
-                    draw(entity, outline);
-                }
-            }
-        }
-    
-        pub fn draw(entity:&Entity, outline:bool) {
-            let rotation = entity.forward;
-            let point_offset = bounds::center_to_edge(entity.location.pointer.height);
-            let points_list: Vec<([Vec2; 4], usize)> = entity.corners.iter().filter_map(|cell| {
-                if *cell.index == 0 && !outline { None } else { Some(([
-                        (cell.points[0] - point_offset).rotate(rotation) + entity.location.position,
-                        (cell.points[1] - point_offset).rotate(rotation) + entity.location.position,
-                        (cell.points[2] - point_offset).rotate(rotation) + entity.location.position,
-                        (cell.points[3] - point_offset).rotate(rotation) + entity.location.position
-                    ], *cell.index
-                ))}
-            }).collect();
-            for (points, index) in points_list {
-                GAME_STATE.camera.read().draw_rectangle_from_corners(&points, GAME_STATE.blocks.blocks[index].color, outline);
-            }
-        }
-    }
-}
-
 use macroquad::shapes::{draw_circle, draw_circle_lines, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
+pub use macroquad::color::colors::*;
+pub use macroquad::color::Color;
 use macroquad::miniquad::window::screen_size;
+use super::*;
 pub struct Camera { 
     pub aabb : Aabb,
     scale_zoom: f32,
@@ -65,6 +10,7 @@ pub struct Camera {
     screen_percentage: f32,
 }
 #[allow(dead_code)]
+// Basic State changes
 impl Camera {
     pub fn new(aabb:Aabb, screen_percentage:f32) -> Self {
         let scale_zoom = (Vec2::from(screen_size()) * screen_percentage).min_element() / (2. * aabb.radius().min_element());
@@ -99,6 +45,7 @@ impl Camera {
     }
  
 }
+// Conversions between screen and world spaces
 impl Camera {
     fn global_offset(&self) -> Vec2 {
         self.aabb.center() - Vec2::from(screen_size()) / 2. / self.zoom()
@@ -112,6 +59,7 @@ impl Camera {
         screen_position / self.zoom() + self.global_offset()
     }
 }
+// Drawing methods
 impl Camera {
     #[allow(dead_code)]
     pub fn draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {

@@ -1,6 +1,65 @@
 use super::*;
-pub const FP_EPSILON: f32 = 0.000_001;
-const ROTATIONAL_EPSILON: f32 = FP_EPSILON;
+// pub const FP_EPSILON: f32 = 0.000_001;
+pub const FP_EPSILON: f32 = f32::EPSILON;
+pub const ROTATIONAL_EPSILON: f32 = FP_EPSILON;
+
+#[derive(Debug, Clone, Copy, new)]
+pub struct Aabb {
+    center: Vec2,
+    radius: Vec2
+}
+impl Aabb {
+
+    pub fn min(&self) -> Vec2 { self.center - self.radius }
+    pub fn max(&self) -> Vec2 { self.center + self.radius }
+
+    pub fn center(&self) -> Vec2 { self.center }
+    pub fn radius(&self) -> Vec2 { self.radius }
+
+    pub fn intersects(&self, other:Self) -> BVec2 {
+        (other.center - self.center).abs().less_eq(self.radius + other.radius)
+    }
+    pub fn contains(&self, point:Vec2) -> BVec2 {
+        (point - self.center).abs().less_eq(self.radius)
+    }
+    
+    pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }
+    pub fn move_to(&mut self, position:Vec2) { self.center = position }
+    
+    pub fn expand(&self, distance:Vec2) -> Self {
+        Self {
+            center: self.center + distance / 2.,
+            radius: self.radius + distance.abs() / 2.,
+        }
+    }
+    pub fn shrink(&self, distance:Vec2) -> Self {
+        Self {
+            center: self.center - distance / 2.,
+            radius: (self.radius - distance.abs() / 2.).abs(),
+        }
+    }
+
+    pub fn exterior_will_intersect(&self, point:Vec2, velocity:Vec2) -> Option<Vec2> {
+        let mut walls_will_hit = Vec2::ZERO;
+        let top_left = self.min();
+        let bottom_right = self.max();
+
+        if point.x.less_eq(top_left.x) {
+            if velocity.x.greater(0.) { walls_will_hit.x = -1. } else { return None }
+        } else if point.x.greater_eq(bottom_right.x) {
+            if velocity.x.less(0.) { walls_will_hit.x = 1. } else { return None }
+        }
+
+        // Check y-axis boundaries
+        if point.y.less_eq(top_left.y) {
+            if velocity.y.greater(0.) { walls_will_hit.y = -1. } else { return None }
+        } else if point.y.greater_eq(bottom_right.y) {
+            if velocity.y.less(0.) { walls_will_hit.y = 1. } else { return None }
+        }
+        
+        Some(walls_will_hit)
+    }
+}
 
 pub trait FloatUtils {
     fn approx_eq(self, b:Self) -> bool;
@@ -9,8 +68,12 @@ pub trait FloatUtils {
     type ComponentTruth;
     fn greater(self, b:Self) -> Self::ComponentTruth;
     fn greater_eq(self, b:Self) -> Self::ComponentTruth;
+    fn greater_mag(self, b:Self) -> Self::ComponentTruth;
+    fn greater_eq_mag(self, b:Self) -> Self::ComponentTruth;
     fn less(self, b:Self) -> Self::ComponentTruth;
     fn less_eq(self, b:Self) -> Self::ComponentTruth;
+    fn less_mag(self, b:Self) -> Self::ComponentTruth;
+    fn less_eq_mag(self, b:Self) -> Self::ComponentTruth;
     type SignumType;
     fn zero_signum(self) -> Self::SignumType;
 }
@@ -21,8 +84,12 @@ impl FloatUtils for f32 {
     type ComponentTruth = bool;
     fn greater(self, b:Self) -> Self::ComponentTruth { (self - b).snap_zero() > 0. }
     fn greater_eq(self, b:Self) -> Self::ComponentTruth { (self - b).snap_zero() >= 0. }
+    fn greater_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() > 0. }
+    fn greater_eq_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() >= 0. }
     fn less(self, b:Self) -> Self::ComponentTruth { (self - b).snap_zero() < 0. }
     fn less_eq(self, b:Self) -> Self::ComponentTruth { (self - b).snap_zero() <= 0. }
+    fn less_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() < 0. }
+    fn less_eq_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() <= 0. }
     type SignumType = i32;
     fn zero_signum(self) -> Self::SignumType { if self.is_zero() { 0 } else { self.signum() as i32 } }
 }
@@ -43,6 +110,18 @@ impl FloatUtils for Vec2 {
             self.y.greater_eq(b.y)
         )
     }
+    fn greater_mag(self, b:Self) -> Self::ComponentTruth { 
+        BVec2::new(
+            self.x.greater_mag(b.x),
+            self.y.greater_mag(b.y)
+        )
+    }
+    fn greater_eq_mag(self, b:Self) -> Self::ComponentTruth {   
+        BVec2::new(
+            self.x.greater_eq_mag(b.x),
+            self.y.greater_eq_mag(b.y)
+        )
+    }
     fn less(self, b:Self) -> Self::ComponentTruth { 
         BVec2::new(
             self.x.less(b.x),
@@ -53,6 +132,18 @@ impl FloatUtils for Vec2 {
         BVec2::new(
             self.x.less_eq(b.x),
             self.y.less_eq(b.y)
+        )
+    }
+    fn less_mag(self, b:Self) -> Self::ComponentTruth { 
+        BVec2::new(
+            self.x.less_mag(b.x),
+            self.y.less_mag(b.y)
+        )
+    }
+    fn less_eq_mag(self, b:Self) -> Self::ComponentTruth { 
+        BVec2::new(
+            self.x.less_eq_mag(b.x),
+            self.y.less_eq_mag(b.y)
         )
     }
     type SignumType = IVec2;

@@ -222,8 +222,7 @@ impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
 
 }
 
-// Clippy thinks I should pass a slice here instead of a vector, but passing a partial slice is very likely to lead to operation failure
-//Assumes leaves are stored contiguously at the front of the slice.
+// Assumes leaves are stored contiguously at the front of the slice.
 pub fn bfs_nodes<N: Node>(nodes:&Vec<N>, start:Index, last_leaf:usize) -> Vec<Index> {
     let mut queue = VecDeque::from([start]);
     let mut bfs_indexes = Vec::new();
