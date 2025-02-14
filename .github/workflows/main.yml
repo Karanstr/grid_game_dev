@@ -26,13 +26,10 @@ jobs:
       - name: Build WebAssembly
         run: cargo build --release --target wasm32-unknown-unknown  # Build the WASM file
 
-      - name: Debug Build Output
-        run: ls -R target/wasm32-unknown-unknown/release/
-
       - name: Prepare Deployment Files
         run: |
           mkdir -p ./deploy
-          cp ./target/wasm32-unknown-unknown/release/my_game.wasm ./deploy/
+          cp ./target/wasm32-unknown-unknown/release/grid_game.wasm ./deploy/
           cp index.html ./deploy/  # Copy .wasm and index.html to deploy folder
 
       - name: Push to Deployment Repository
