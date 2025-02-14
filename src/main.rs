@@ -20,25 +20,45 @@ mod globals {
     use macroquad::math::Vec2;
     use crate::engine::math::Aabb;
     use crate::engine::entities::EntityPool;
-    use static_init::dynamic;
-    #[dynamic(drop)]
-    pub static mut GRAPH: SparseDirectedGraph<BasicNode> = SparseDirectedGraph::<BasicNode>::new(4);
-    #[dynamic(drop)]
-    pub static mut ENTITIES: EntityPool = EntityPool::new();
-    // Must be lazy so camera can access miniquad screen resources
-    #[dynamic(drop, lazy)]
-    pub static mut CAMERA: Camera = Camera::new(
-        Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
-        0.9
-    );
-    #[dynamic()]
-    pub static BLOCKS: BlockPalette = BlockPalette::default();
+    use lazy_static::lazy_static;
+    use parking_lot::RwLock;
+    lazy_static! { 
+        pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
+        pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
+        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
+            Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
+            0.9
+        ));
+        pub static ref BLOCKS: BlockPalette = BlockPalette::default();
+    }
 }
 use globals::*;
 use engine::input::*;
-// Find a better solution to this (so our input handler doesn't complain)
-use static_init::dynamic;
 
+use std::time::Duration;
+use std::thread;
+fn init_deadlock_detection() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if !deadlocks.is_empty() {
+                println!("{} deadlocks detected", deadlocks.len());
+                for deadlock in deadlocks {
+                    println!("Deadlock threads:");
+                    for thread in deadlock {
+                        println!("Thread Id {:#?}", thread.thread_id());
+                        println!("Backtrace:\n{:#?}", thread.backtrace());
+                    }
+                }
+                panic!("Deadlock detected");
+            }
+        }
+    });
+}
+
+use lazy_static::lazy_static;
+use parking_lot::RwLock;
 #[derive(new)]
 pub struct InputData {
     pub movement_id : ID,
@@ -46,8 +66,9 @@ pub struct InputData {
     pub edit_color : usize,
     pub edit_height : u32,
 }
-#[dynamic(lazy)]
-pub static mut INPUT_DATA: InputData = InputData::new(0, 0, 0, 0);
+lazy_static! {
+    pub static ref INPUT_DATA: RwLock<InputData> = RwLock::new(InputData::new(0, 0, 0, 0));
+}
 
 const PLAYER_SPEED: f32 = 0.01;
 const PLAYER_ROTATION_SPEED: f32 = PI/256.;
@@ -82,6 +103,7 @@ fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
 #[macroquad::main("Window")]
 async fn main() {
     set_panic_hook();
+    init_deadlock_detection();
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
@@ -111,7 +133,7 @@ async fn main() {
             PLAYER_ROTATION_SPAWN,
         )
     };
-    
+
     INPUT_DATA.write().edit_id = terrain_id;
     INPUT_DATA.write().movement_id = player_id;
 
