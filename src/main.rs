@@ -111,6 +111,9 @@ async fn main() {
             PLAYER_ROTATION_SPAWN,
         )
     };
+    
+    INPUT_DATA.write().edit_id = terrain_id;
+    INPUT_DATA.write().movement_id = player_id;
 
     let mut input = set_key_binds();
     
