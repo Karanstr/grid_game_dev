@@ -164,9 +164,11 @@ pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     if new_cell.height > entity.location.pointer.height { return; }
     let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, world_point)[0] else { return };
     let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
-    if let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) {
-        entity.set_root(root);
-    } else { dbg!("Failed to set cell"); }
+    let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) else {
+        dbg!("Failed to set cell");
+        return;
+    };
+    entity.set_root(root);
 }
 
 pub fn set_key_binds() -> InputHandler {
@@ -243,7 +245,6 @@ pub fn set_key_binds() -> InputHandler {
     input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
         dbg!(GRAPH.read().nodes.internal_memory());
     });
-    input
 
-    
+    input
 }

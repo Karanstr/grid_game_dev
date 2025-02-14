@@ -26,6 +26,9 @@ jobs:
       - name: Build WebAssembly
         run: cargo build --release --target wasm32-unknown-unknown  # Build the WASM file
 
+      - name: Debug Build Output
+        run: ls -R target/wasm32-unknown-unknown/release/
+
       - name: Prepare Deployment Files
         run: |
           mkdir -p ./deploy
