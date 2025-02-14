@@ -35,14 +35,20 @@ mod globals {
     pub static BLOCKS: BlockPalette = BlockPalette::default();
 }
 use globals::*;
-// use parking_lot::RwLock;
-// use std::sync::Arc;
 use engine::input::*;
+// Find a better solution to this (so our input handler doesn't complain)
 use static_init::dynamic;
-#[dynamic]
-pub static mut EDIT_COLOR: usize = 0;
-#[dynamic]
-pub static mut EDIT_HEIGHT: u32 = 0;
+
+#[derive(new)]
+pub struct InputData {
+    pub movement_id : ID,
+    pub edit_id : ID,
+    pub edit_color : usize,
+    pub edit_height : u32,
+}
+#[dynamic(lazy)]
+pub static mut INPUT_DATA: InputData = InputData::new(0, 0, 0, 0);
+
 const PLAYER_SPEED: f32 = 0.01;
 const PLAYER_ROTATION_SPEED: f32 = PI/256.;
 const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
@@ -82,20 +88,20 @@ async fn main() {
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
     
-    // Load world state once at startup
-    let world_pointer = {
-        let string = std::fs::read_to_string("data/save.json").unwrap_or_default();
-        if string.is_empty() { 
-            GRAPH.write().get_root(0, 3)
-        } else { 
-            GRAPH.write().load_object_json(string)
-        }
+    let terrain_id = {
+        let world_pointer = {
+            let string = std::fs::read_to_string("data/save.json").unwrap_or_default();
+            if string.is_empty() { 
+                GRAPH.write().get_root(0, 3)
+            } else { 
+                GRAPH.write().load_object_json(string)
+            }
+        };
+        ENTITIES.write().add_entity(
+            Location::new(TERRAIN_SPAWN, world_pointer),
+            TERRAIN_ROTATION_SPAWN,
+        )
     };
-    
-    let terrain_id = ENTITIES.write().add_entity(
-        Location::new(TERRAIN_SPAWN, world_pointer),
-        TERRAIN_ROTATION_SPAWN,
-    );
 
     let player_id = {
         //Graph has to be unlocked before add_entity is called so corners can be read from it
@@ -106,77 +112,8 @@ async fn main() {
         )
     };
 
+    let mut input = set_key_binds();
     
-    // let color = Arc::new(0);
-    // let height = Arc::new(0);
-    
-    let mut input = InputHandler::new();
-    { // Input bindings
-        // Movement
-        input.bind_key(KeyCode::W, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED));
-        });
-        input.bind_key(KeyCode::S, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(0., PLAYER_SPEED));
-        });
-        input.bind_key(KeyCode::A, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.));
-        });
-        input.bind_key(KeyCode::D, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.));
-        });
-        input.bind_key(KeyCode::Q, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().angular_velocity -= PLAYER_ROTATION_SPEED;
-        });
-        input.bind_key(KeyCode::E, InputTrigger::Down, move || {
-            ENTITIES.write().get_mut_entity(player_id).unwrap().angular_velocity += PLAYER_ROTATION_SPEED;
-        });
-        input.bind_key(KeyCode::Space, InputTrigger::Down, move || {
-            let mut entities = ENTITIES.write();
-            entities.get_mut_entity(player_id).unwrap().velocity = Vec2::ZERO;
-            entities.get_mut_entity(player_id).unwrap().angular_velocity = 0.0;
-        });
-
-        // Editing
-        input.bind_key(KeyCode::V, InputTrigger::Pressed, move || {
-            let mut color = EDIT_COLOR.write();
-            *color = (*color + 1) % MAX_COLOR;
-        });
-        input.bind_key(KeyCode::B, InputTrigger::Pressed, move || {
-            let mut height = EDIT_HEIGHT.write();
-            *height = (*height + 1) % MAX_HEIGHT;
-        });
-        input.bind_mouse(MouseButton::Left, InputTrigger::Down, move || {
-            set_grid_cell(
-                terrain_id,
-                CAMERA.read().screen_to_world(mouse_pos()),
-                ExternalPointer::new(Index(*EDIT_COLOR.read()), *EDIT_HEIGHT.read())
-            );
-        });
-        
-        // Save/Load
-        input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
-            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(terrain_id).unwrap().location.pointer);
-            std::fs::write("data/save.json", save_data).unwrap();
-        });
-        input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
-            let mut entities = ENTITIES.write();
-            let terrain_entity = entities.get_mut_entity(terrain_id).unwrap();
-            let new_pointer = {
-                let mut graph = GRAPH.write();
-                let save_data = std::fs::read_to_string("data/save.json").unwrap();
-                let new_pointer = graph.load_object_json(save_data);
-                new_pointer
-            };
-            terrain_entity.location.pointer = new_pointer;
-        });
-
-        // Debug
-        input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
-            dbg!(GRAPH.read().nodes.internal_memory());
-        });
-
-    }
     loop {
 
         input.handle();
@@ -196,11 +133,6 @@ async fn main() {
 
 }
 
-// pub fn set_key_binds() -> InputHandler {
-    
-// }
-
-
 pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     let mut entities = ENTITIES.write();
     let entity = &mut entities.get_mut_entity(entity).unwrap();
@@ -210,4 +142,83 @@ pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     if let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) {
         entity.set_root(root);
     } else { dbg!("Failed to set cell"); }
+}
+
+pub fn set_key_binds() -> InputHandler {
+    let mut input = InputHandler::new();
+    // Movement
+    input.bind_key(KeyCode::W, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED));
+    });
+    input.bind_key(KeyCode::S, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(0., PLAYER_SPEED));
+    });
+    input.bind_key(KeyCode::A, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.));
+    });
+    input.bind_key(KeyCode::D, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.));
+    });
+    input.bind_key(KeyCode::Q, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= PLAYER_ROTATION_SPEED;
+    });
+    input.bind_key(KeyCode::E, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += PLAYER_ROTATION_SPEED;
+    });
+    input.bind_key(KeyCode::Space, InputTrigger::Down, move || {
+        let id = INPUT_DATA.read().movement_id;
+        ENTITIES.write().get_mut_entity(id).unwrap().velocity = Vec2::ZERO;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity = 0.0;
+    });
+
+    // Editing
+    input.bind_key(KeyCode::V, InputTrigger::Pressed, move || {
+        let color = &mut INPUT_DATA.write().edit_color;
+        *color = (*color + 1) % MAX_COLOR;
+    });
+    input.bind_key(KeyCode::B, InputTrigger::Pressed, move || {
+        let height = &mut INPUT_DATA.write().edit_height;
+        *height = (*height + 1) % MAX_HEIGHT;
+    });
+    input.bind_mouse(MouseButton::Left, InputTrigger::Down, move || {
+        let data = INPUT_DATA.read();
+        set_grid_cell(
+            data.edit_id,
+            CAMERA.read().screen_to_world(mouse_pos()),
+            ExternalPointer::new(Index(data.edit_color), data.edit_height)
+        );
+    });
+    
+    // Save/Load
+    input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
+        let id = INPUT_DATA.read().edit_id;
+        let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
+        std::fs::write("data/save.json", save_data).unwrap();
+    });
+    input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
+        let id = INPUT_DATA.read().edit_id;
+        let mut entities = ENTITIES.write();
+        let terrain_entity = entities.get_mut_entity(id).unwrap();
+        let new_pointer = {
+            let mut graph = GRAPH.write();
+            let save_data = std::fs::read_to_string("data/save.json").unwrap();
+            let new_pointer = graph.load_object_json(save_data);
+            new_pointer
+        };
+        terrain_entity.location.pointer = new_pointer;
+    });
+
+    // Debug
+    input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
+        dbg!(GRAPH.read().nodes.internal_memory());
+    });
+    input
+
+    
 }
