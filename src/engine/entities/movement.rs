@@ -1,5 +1,6 @@
 use super::*;
 
+#[allow(dead_code)]
 impl Entity {
     pub fn rel_rotate(&mut self, angle: f32) {
         self.rotation += angle;

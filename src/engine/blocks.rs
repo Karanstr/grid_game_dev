@@ -3,7 +3,7 @@
 pub enum CollisionType {
     Solid,  // index 1 or 3
     Air,    // index 0 or 2
-    Void,   // None
+    Void,   // No block, unspecified behavior
 }
 
 use macroquad::color::*;

@@ -14,26 +14,35 @@ mod imports {
     pub use std::f32::consts::PI;
 }
 mod globals {
-    use parking_lot::RwLock;
-    use lazy_static::lazy_static;
     use crate::engine::blocks::BlockPalette;
     use crate::engine::grid::dag::{SparseDirectedGraph, BasicNode};
     use crate::engine::camera::Camera;
     use macroquad::math::Vec2;
     use crate::engine::math::Aabb;
     use crate::engine::entities::EntityPool;
-    lazy_static! { 
-        pub static ref BLOCKS: BlockPalette = BlockPalette::default();
-        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-            Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
-            0.9
-        ));
-        pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-        pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
-    }
+    use static_init::dynamic;
+    #[dynamic(drop)]
+    pub static mut GRAPH: SparseDirectedGraph<BasicNode> = SparseDirectedGraph::<BasicNode>::new(4);
+    #[dynamic(drop)]
+    pub static mut ENTITIES: EntityPool = EntityPool::new();
+    // Must be lazy so camera can access miniquad screen resources
+    #[dynamic(drop, lazy)]
+    pub static mut CAMERA: Camera = Camera::new(
+        Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
+        0.9
+    );
+    #[dynamic()]
+    pub static BLOCKS: BlockPalette = BlockPalette::default();
 }
 use globals::*;
-
+// use parking_lot::RwLock;
+// use std::sync::Arc;
+use engine::input::*;
+use static_init::dynamic;
+#[dynamic]
+pub static mut EDIT_COLOR: usize = 0;
+#[dynamic]
+pub static mut EDIT_HEIGHT: u32 = 0;
 const PLAYER_SPEED: f32 = 0.01;
 const PLAYER_ROTATION_SPEED: f32 = PI/256.;
 const PLAYER_SPAWN: Vec2 = Vec2::new(0.,0.);
@@ -62,33 +71,10 @@ fn set_panic_hook() {
     }));
 }
 
-use std::time::Duration;
-use std::thread;
-fn init_deadlock_detection() {
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(1));
-            let deadlocks = parking_lot::deadlock::check_deadlock();
-            if !deadlocks.is_empty() {
-                println!("{} deadlocks detected", deadlocks.len());
-                for deadlock in deadlocks {
-                    println!("Deadlock threads:");
-                    for thread in deadlock {
-                        println!("Thread Id {:#?}", thread.thread_id());
-                        println!("Backtrace:\n{:#?}", thread.backtrace());
-                    }
-                }
-                panic!("Deadlock detected");
-            }
-        }
-    });
-}
-
 fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
 
 #[macroquad::main("Window")]
 async fn main() {
-    init_deadlock_detection();
     set_panic_hook();
     #[cfg(debug_assertions)]
     println!("Debug mode");
@@ -98,7 +84,7 @@ async fn main() {
     
     // Load world state once at startup
     let world_pointer = {
-        let string = std::fs::read_to_string("src/save.json").unwrap_or_default();
+        let string = std::fs::read_to_string("data/save.json").unwrap_or_default();
         if string.is_empty() { 
             GRAPH.write().get_root(0, 3)
         } else { 
@@ -106,80 +92,100 @@ async fn main() {
         }
     };
     
-    let terrain = ENTITIES.write().add_entity(
+    let terrain_id = ENTITIES.write().add_entity(
         Location::new(TERRAIN_SPAWN, world_pointer),
         TERRAIN_ROTATION_SPAWN,
     );
 
-    let player = {
-        //Graph has to be unlocked before add_entity is called so corners can be read
-        let root = GRAPH.write().get_root(3, 0);
+    let player_id = {
+        //Graph has to be unlocked before add_entity is called so corners can be read from it
+        let player_pointer = GRAPH.write().get_root(3, 0);
         ENTITIES.write().add_entity(
-            Location::new(PLAYER_SPAWN, root),
+            Location::new(PLAYER_SPAWN, player_pointer),
             PLAYER_ROTATION_SPAWN,
         )
     };
-    
-    let mut color = 0;
-    let mut height = 0;
 
-    loop {
-        { // Scoped to visualize the lock of entities
+    
+    // let color = Arc::new(0);
+    // let height = Arc::new(0);
+    
+    let mut input = InputHandler::new();
+    { // Input bindings
+        // Movement
+        input.bind_key(KeyCode::W, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED));
+        });
+        input.bind_key(KeyCode::S, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(0., PLAYER_SPEED));
+        });
+        input.bind_key(KeyCode::A, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.));
+        });
+        input.bind_key(KeyCode::D, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.));
+        });
+        input.bind_key(KeyCode::Q, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().angular_velocity -= PLAYER_ROTATION_SPEED;
+        });
+        input.bind_key(KeyCode::E, InputTrigger::Down, move || {
+            ENTITIES.write().get_mut_entity(player_id).unwrap().angular_velocity += PLAYER_ROTATION_SPEED;
+        });
+        input.bind_key(KeyCode::Space, InputTrigger::Down, move || {
             let mut entities = ENTITIES.write();
-            let player_entity = entities.get_mut_entity(player).unwrap();
-            if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) { player_entity.apply_abs_velocity(Vec2::new(0., -PLAYER_SPEED)); }
-            if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) { player_entity.apply_abs_velocity(Vec2::new(0., PLAYER_SPEED)); }
-            if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) { player_entity.apply_abs_velocity(Vec2::new(-PLAYER_SPEED, 0.)); }
-            if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) { player_entity.apply_abs_velocity(Vec2::new(PLAYER_SPEED, 0.)); }
-            if is_key_down(KeyCode::Q) { player_entity.angular_velocity -= PLAYER_ROTATION_SPEED; }
-            if is_key_down(KeyCode::E) { player_entity.angular_velocity += PLAYER_ROTATION_SPEED; }
-            if is_key_down(KeyCode::Space) { 
-                player_entity.velocity = Vec2::ZERO;
-                player_entity.angular_velocity = 0.0;
-            }
-        }
-        if is_key_pressed(KeyCode::V) { color = (color + 1) % MAX_COLOR; }
-        if is_key_pressed(KeyCode::B) { height = (height + 1) % MAX_HEIGHT; }
-        if is_mouse_button_down(MouseButton::Left) {
+            entities.get_mut_entity(player_id).unwrap().velocity = Vec2::ZERO;
+            entities.get_mut_entity(player_id).unwrap().angular_velocity = 0.0;
+        });
+
+        // Editing
+        input.bind_key(KeyCode::V, InputTrigger::Pressed, move || {
+            let mut color = EDIT_COLOR.write();
+            *color = (*color + 1) % MAX_COLOR;
+        });
+        input.bind_key(KeyCode::B, InputTrigger::Pressed, move || {
+            let mut height = EDIT_HEIGHT.write();
+            *height = (*height + 1) % MAX_HEIGHT;
+        });
+        input.bind_mouse(MouseButton::Left, InputTrigger::Down, move || {
             set_grid_cell(
-                terrain,
+                terrain_id,
                 CAMERA.read().screen_to_world(mouse_pos()),
-                ExternalPointer::new(Index(color), height)
+                ExternalPointer::new(Index(*EDIT_COLOR.read()), *EDIT_HEIGHT.read())
             );
-        }
+        });
         
-        if is_key_pressed(KeyCode::P) { dbg!(GRAPH.read().nodes.internal_memory()); }
-        
-        if is_key_pressed(KeyCode::K) {
-            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(terrain).unwrap().location.pointer);
-            std::fs::write("src/save.json", save_data).unwrap();
-        }
-        
-        if is_key_pressed(KeyCode::L) {
+        // Save/Load
+        input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
+            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(terrain_id).unwrap().location.pointer);
+            std::fs::write("data/save.json", save_data).unwrap();
+        });
+        input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
             let mut entities = ENTITIES.write();
-            let terrain_entity = entities.get_mut_entity(terrain).unwrap();
+            let terrain_entity = entities.get_mut_entity(terrain_id).unwrap();
             let new_pointer = {
                 let mut graph = GRAPH.write();
-                let save_data = std::fs::read_to_string("src/save.json").unwrap();
+                let save_data = std::fs::read_to_string("data/save.json").unwrap();
                 let new_pointer = graph.load_object_json(save_data);
-                let old_removal = engine::grid::dag::bfs_nodes(
-                    graph.nodes.internal_memory(),
-                    terrain_entity.location.pointer.pointer,
-                    3
-                );
-                graph.mass_remove(&old_removal);
                 new_pointer
             };
-            terrain_entity.set_root(new_pointer);
-        }
-        
+            terrain_entity.location.pointer = new_pointer;
+        });
+
+        // Debug
+        input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
+            dbg!(GRAPH.read().nodes.internal_memory());
+        });
+
+    }
+    loop {
+
+        input.handle();
         ENTITIES.read().draw_all(true);
         
         // We want to move the camera to where the player is drawn, not where the player is moved to.
-        let player_pos = ENTITIES.read().get_entity(player).unwrap().location.position;
+        let player_pos = ENTITIES.read().get_entity(player_id).unwrap().location.position;
         
-        // Move n_body_collisions into entitypool? 
-        n_body_collisions(terrain).await;
+        n_body_collisions(terrain_id).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
@@ -190,13 +196,18 @@ async fn main() {
 
 }
 
+// pub fn set_key_binds() -> InputHandler {
+    
+// }
+
 
 pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     let mut entities = ENTITIES.write();
-    let location = &mut entities.get_mut_entity(entity).unwrap().location;
-    if new_cell.height > location.pointer.height { return; }
-    let Some(cell) = gate::point_to_cells(*location, new_cell.height, world_point)[0] else { return };
-    let path = ZorderPath::from_cell(cell, location.pointer.height - new_cell.height);
-    location.pointer = GRAPH.write().set_node(location.pointer, &path.steps(), new_cell.pointer).unwrap();
+    let entity = &mut entities.get_mut_entity(entity).unwrap();
+    if new_cell.height > entity.location.pointer.height { return; }
+    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, world_point)[0] else { return };
+    let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
+    if let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) {
+        entity.set_root(root);
+    } else { dbg!("Failed to set cell"); }
 }
-    

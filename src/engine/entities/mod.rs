@@ -26,7 +26,6 @@ pub type ID = u32;
 // Chunk and store corner locations in u8s?
 pub struct Entity {
     pub id : ID,
-    pub min_cell_length : Vec2,
     pub location: Location,
     pub rotation: f32,
     pub forward: Vec2,
@@ -38,7 +37,6 @@ impl Entity {
     pub fn new(id:ID, location:Location, orientation:f32) -> Self {
         Self {
             id,
-            min_cell_length: Vec2::splat(1.0),
             location,
             rotation: orientation,
             forward: Vec2::from_angle(orientation),
