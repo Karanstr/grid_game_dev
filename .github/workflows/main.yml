@@ -42,4 +42,4 @@ jobs:
           git checkout -b main
           git add .
           git commit -m "Deploy new version"
-          git push --force https://x-access-token:${{ secrets.DEPLOY_TOKEN }}@github.com/Karanstr/grid_game.git main
+          git push --force https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
