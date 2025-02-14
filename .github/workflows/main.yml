@@ -11,32 +11,36 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v2  # Checkout the source code from the main repo
+      - name: Checkout Code
+        uses: actions/checkout@v2
 
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          override: true  # Ensure Rust toolchain is set for WASM target
+          override: true
 
       - name: Build WebAssembly
-        run: cargo build --release --target wasm32-unknown-unknown  # Build the WASM file
+        run: cargo build --release --target wasm32-unknown-unknown
 
-      - name: Prepare Deployment Files
+      - name: Prepare Deployment Directory
         run: |
           mkdir -p ./deploy
-          cp ./target/wasm32-unknown-unknown/release/Grid-Game.wasm ./deploy/
+          cp ./target/wasm32-unknown-unknown/release/grid_game.wasm ./deploy/
+          cp index.html ./deploy/
 
-      - name: Push to Deployment Repository
+      - name: Set up Git user
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Push to grid_game main branch
         run: |
           cd deploy
-          git init  # Initialize a new git repository in the deploy folder
-          git remote add origin https://github.com/Karanstr/grid_game.git  # Set the remote to your deployment repo
-          git checkout -b main  # Ensure we are on the main branch
-          git add .  # Add all deployment files
-          git commit -m "Deploy new build"  # Commit the changes
-          git push --force https://Karanstr:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main  # Push to grid_game's main branch
+          git init
+          git checkout -b main
+          git add .
+          git commit -m "Deploy new version"
+          git push --force https://x-access-token:${{ secrets.DEPLOY_TOKEN }}@github.com/Karanstr/grid_game.git main
