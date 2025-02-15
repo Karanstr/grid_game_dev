@@ -42,6 +42,9 @@ jobs:
 
       - name: Add changes
         run: |
+          # Navigate back to the deployment directory
+          cd deploy
+
           # Overwrite the existing .wasm file
           cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
 
