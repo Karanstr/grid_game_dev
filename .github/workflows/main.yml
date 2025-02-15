@@ -3,7 +3,7 @@ name: Build and Deploy to External Repo
 on:
   push:
     branches:
-      - main  # Trigger the build on a push to the main branch of your source repo
+      - productionish  # Trigger the build on a push to productionish
 
 permissions:
   contents: write  # Allow pushing to the deployment repo
