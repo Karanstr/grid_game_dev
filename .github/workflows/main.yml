@@ -26,12 +26,11 @@ jobs:
         run: cargo build --release --target wasm32-unknown-unknown
 
       - name: Prepare Deployment Directory
-        run: |
-          mkdir -p ./deploy
+        run: mkdir -p ./deploy
 
       - name: Set up Git repo
         run: |
-        # Clone the repository
+          # Clone the repository
           git clone https://github.com/Karanstr/grid_game.git deploy --depth 1
 
           # Navigate to the deploy directory
@@ -41,15 +40,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Add changes and push to main
+      - name: Add changes
         run: |
-
           # Overwrite the existing .wasm file
           cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
 
           # Overwrite the data directory
           cp -r ../data ./data
 
+
+      - name: Commit and Push
+        run: |
           # Stage and commit the changes
           git commit -am "Deploy new version"
 
