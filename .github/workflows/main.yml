@@ -46,8 +46,7 @@ jobs:
           cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
 
           # Stage and commit the changes
-          git add .
-          git commit -m "Deploy new version"
+          git commit -am "Deploy new version"
 
           # Push to the main branch using the deployment token
           git push https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main

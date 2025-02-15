@@ -109,7 +109,9 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
-    
+
+    dbg!("Working now");
+
     let terrain_id = {
         let world_pointer = {
             let string = std::fs::read_to_string("data/save.json").unwrap_or_default();
