@@ -47,13 +47,14 @@ jobs:
 
       - name: Commit and Push
         run: |
-
+          cd deploy
           # Configure bot
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Stage and commit the changes
-          git commit -am "Deploy new version"
+          git add Grid-Game.wasm
+          git commit -m "Deploy new version"
 
           # Push to the main branch using the deployment token
           git push https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
