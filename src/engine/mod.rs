@@ -4,6 +4,5 @@ pub mod grid;
 pub mod physics;
 pub mod blocks;
 pub mod camera;
-pub mod fs;
 pub mod input;
 pub mod math;

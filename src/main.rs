@@ -223,27 +223,23 @@ pub fn set_key_binds() -> InputHandler {
     });
     
     // Save/Load
-    use engine::fs::{FS, FileSystem};
-    input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
-        let id = INPUT_DATA.read().edit_id;
-        let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
-        FS::write_file("data/save.json", &save_data);
-    });
-    input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
-        let id = INPUT_DATA.read().edit_id;
-        let mut entities = ENTITIES.write();
-        let terrain_entity = entities.get_mut_entity(id).unwrap();
-        let new_pointer = {
-            let mut graph = GRAPH.write();
-            if let Some(save_data) = FS::read_file("data/save.json") {
-                let new_pointer = graph.load_object_json(save_data);
-                new_pointer
-            } else {
-                terrain_entity.location.pointer // Keep existing pointer if load fails
-            }
-        };
-        terrain_entity.location.pointer = new_pointer;
-    });
+    // input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
+    //     let id = INPUT_DATA.read().edit_id;
+    //     let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
+    //     std::fs::write("data/save.json", save_data).unwrap();
+    // });
+    // input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
+    //     let id = INPUT_DATA.read().edit_id;
+    //     let mut entities = ENTITIES.write();
+    //     let terrain_entity = entities.get_mut_entity(id).unwrap();
+    //     let new_pointer = {
+    //         let mut graph = GRAPH.write();
+    //         let save_data = std::fs::read_to_string("data/save.json").unwrap();
+    //         let new_pointer = graph.load_object_json(save_data);
+    //         new_pointer
+    //     };
+    //     terrain_entity.location.pointer = new_pointer;
+    // });
 
     // Debug
     input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {

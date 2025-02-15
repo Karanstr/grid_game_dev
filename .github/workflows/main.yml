@@ -43,7 +43,7 @@ jobs:
           cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
 
           # Overwrite the data directory
-          cp -r ../data ./data
+          # cp -r ../data ./data
 
       - name: Commit and Push
         run: |
