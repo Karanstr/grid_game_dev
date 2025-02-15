@@ -29,21 +29,26 @@ jobs:
         run: |
           mkdir -p ./deploy
 
-      - name: Set up Git user
+      - name: Set up Git repo
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Push to grid_game main branch
-        run: |
-          # Clone the repository
+        # Clone the repository
           git clone https://github.com/Karanstr/grid_game.git deploy --depth 1
 
           # Navigate to the deploy directory
           cd deploy
 
+          # Configure bot
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add changes and push to main
+        run: |
+
           # Overwrite the existing .wasm file
           cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
+
+          # Overwrite the data directory
+          cp -r ../data ./data
 
           # Stage and commit the changes
           git commit -am "Deploy new version"
