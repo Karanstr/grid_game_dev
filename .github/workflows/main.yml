@@ -28,7 +28,6 @@ jobs:
       - name: Prepare Deployment Directory
         run: |
           mkdir -p ./deploy
-          cp ./target/wasm32-unknown-unknown/release/Grid-Game.wasm ./deploy/
 
       - name: Set up Git user
         run: |
@@ -37,11 +36,18 @@ jobs:
 
       - name: Push to grid_game main branch
         run: |
+          # Clone the repository
+          git clone https://github.com/Karanstr/grid_game.git deploy --depth 1
+
+          # Navigate to the deploy directory
           cd deploy
-          git init
-          git checkout -b main
-          git remote add origin https://github.com/Karanstr/grid_game.git
+
+          # Overwrite the existing .wasm file
+          cp ../target/wasm32-unknown-unknown/release/Grid-Game.wasm ./Grid-Game.wasm
+
+          # Stage and commit the changes
           git add .
           git commit -m "Deploy new version"
-          git pull origin main --rebase || echo "No remote branch yet"
-          git push --force-with-lease https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
+
+          # Push to the main branch using the deployment token
+          git push https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
