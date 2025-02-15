@@ -35,27 +35,27 @@ mod globals {
 use globals::*;
 use engine::input::*;
 
-// use std::time::Duration;
-// use std::thread;
-// fn init_deadlock_detection() {
-//     thread::spawn(move || {
-//         loop {
-//             thread::sleep(Duration::from_secs(1));
-//             let deadlocks = parking_lot::deadlock::check_deadlock();
-//             if !deadlocks.is_empty() {
-//                 println!("{} deadlocks detected", deadlocks.len());
-//                 for deadlock in deadlocks {
-//                     println!("Deadlock threads:");
-//                     for thread in deadlock {
-//                         println!("Thread Id {:#?}", thread.thread_id());
-//                         println!("Backtrace:\n{:#?}", thread.backtrace());
-//                     }
-//                 }
-//                 panic!("Deadlock detected");
-//             }
-//         }
-//     });
-// }
+use std::time::Duration;
+use std::thread;
+fn init_deadlock_detection() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if !deadlocks.is_empty() {
+                println!("{} deadlocks detected", deadlocks.len());
+                for deadlock in deadlocks {
+                    println!("Deadlock threads:");
+                    for thread in deadlock {
+                        println!("Thread Id {:#?}", thread.thread_id());
+                        println!("Backtrace:\n{:#?}", thread.backtrace());
+                    }
+                }
+                panic!("Deadlock detected");
+            }
+        }
+    });
+}
 
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
@@ -92,18 +92,18 @@ impl Location {
     }
 }
 
-// fn set_panic_hook() {
-//     std::panic::set_hook(Box::new(|panic_info| {
-//         println!("Panic: {:?}", panic_info);
-//     }));
-// }
+fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        println!("Panic: {:?}", panic_info);
+    }));
+}
 
 fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
 
 #[macroquad::main("Window")]
 async fn main() {
-    // set_panic_hook();
-    // init_deadlock_detection();
+    set_panic_hook();
+    init_deadlock_detection();
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
@@ -223,23 +223,23 @@ pub fn set_key_binds() -> InputHandler {
     });
     
     // Save/Load
-    // input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
-    //     let id = INPUT_DATA.read().edit_id;
-    //     let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
-    //     std::fs::write("data/save.json", save_data).unwrap();
-    // });
-    // input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
-    //     let id = INPUT_DATA.read().edit_id;
-    //     let mut entities = ENTITIES.write();
-    //     let terrain_entity = entities.get_mut_entity(id).unwrap();
-    //     let new_pointer = {
-    //         let mut graph = GRAPH.write();
-    //         let save_data = std::fs::read_to_string("data/save.json").unwrap();
-    //         let new_pointer = graph.load_object_json(save_data);
-    //         new_pointer
-    //     };
-    //     terrain_entity.location.pointer = new_pointer;
-    // });
+    input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
+        let id = INPUT_DATA.read().edit_id;
+        let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
+        std::fs::write("data/save.json", save_data).unwrap();
+    });
+    input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
+        let id = INPUT_DATA.read().edit_id;
+        let mut entities = ENTITIES.write();
+        let terrain_entity = entities.get_mut_entity(id).unwrap();
+        let new_pointer = {
+            let mut graph = GRAPH.write();
+            let save_data = std::fs::read_to_string("data/save.json").unwrap();
+            let new_pointer = graph.load_object_json(save_data);
+            new_pointer
+        };
+        terrain_entity.location.pointer = new_pointer;
+    });
 
     // Debug
     input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
