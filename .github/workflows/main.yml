@@ -40,6 +40,7 @@ jobs:
           cd deploy
           git init
           git checkout -b main
+          git pull origin main --rebase || echo "No remote branch yet"
           git add .
           git commit -m "Deploy new version"
-          git push --force https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
+          git push --force-with-lease https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/Karanstr/grid_game.git main
