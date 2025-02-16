@@ -114,7 +114,11 @@ async fn main() {
 
     let terrain_id = {
         let world_pointer = {
-            let string = std::fs::read_to_string("data/save.json").unwrap_or_default();
+            let string = if cfg!(target_arch = "wasm32") { 
+                String::from_utf8(include_bytes!("../data/save.json").as_ref().to_vec()).unwrap_or_default()
+            } else { 
+                std::fs::read_to_string("data/save.json").unwrap_or_default()
+            };
             if string.is_empty() { 
                 GRAPH.write().get_root(0, 3)
             } else { 
@@ -237,7 +241,10 @@ pub fn set_key_binds() -> InputHandler {
             let terrain_entity = entities.get_mut_entity(id).unwrap();
             let new_pointer = {
                 let mut graph = GRAPH.write();
-                let save_data = std::fs::read_to_string("data/save.json").unwrap();
+                let Ok(save_data) = std::fs::read_to_string("data/save.json") else {
+                    dbg!("No save data found");
+                    return;
+                };
                 let new_pointer = graph.load_object_json(save_data);
                 new_pointer
             };
