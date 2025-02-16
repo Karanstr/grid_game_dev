@@ -198,11 +198,6 @@ fn tick_entities(delta_tick: f32) {
 fn apply_normal_force(static_thing: ID, hit: Hit) {
     let mut entities = ENTITIES.write();
     let hitting = entities.get_entity(hit.hitting).unwrap();
-    // // I want this guy, but the precision errors are strong with him
-    // let world_normal = hit.walls.to_vec2().rotate(hitting.forward);
-    // let rel_velocity = entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity;
-    // let world_impulse = (rel_velocity.dot(world_normal) * world_normal).snap_zero();
-    
     let world_to_hitting = Mat2::from_angle(-hitting.rotation);
     let relative_velocity = world_to_hitting.mul_vec2(
         entities.get_entity(hit.owner).unwrap().velocity - hitting.velocity
@@ -374,7 +369,7 @@ fn next_intersection(
         _ => ticks.min_element(),
     };
     
-    (!ticks_to_hit.is_nan() && ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit) 
+    (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit) 
 }
 
 // Add culling for when no rotation?

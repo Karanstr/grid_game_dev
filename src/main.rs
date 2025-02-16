@@ -102,8 +102,10 @@ fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
 
 #[macroquad::main("Window")]
 async fn main() {
-    set_panic_hook();
-    init_deadlock_detection();
+    if !cfg!(target_arch = "wasm32") {
+        set_panic_hook();
+        init_deadlock_detection();
+    }
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]
@@ -223,24 +225,25 @@ pub fn set_key_binds() -> InputHandler {
     });
     
     // Save/Load
-    input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
-        let id = INPUT_DATA.read().edit_id;
-        let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
-        std::fs::write("data/save.json", save_data).unwrap();
-    });
-    input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
-        let id = INPUT_DATA.read().edit_id;
-        let mut entities = ENTITIES.write();
-        let terrain_entity = entities.get_mut_entity(id).unwrap();
-        let new_pointer = {
-            let mut graph = GRAPH.write();
-            let save_data = std::fs::read_to_string("data/save.json").unwrap();
-            let new_pointer = graph.load_object_json(save_data);
-            new_pointer
-        };
-        terrain_entity.location.pointer = new_pointer;
-    });
-
+    if !cfg!(target_arch = "wasm32") {
+        input.bind_key(KeyCode::K, InputTrigger::Pressed, move || {
+            let id = INPUT_DATA.read().edit_id;
+            let save_data = GRAPH.read().save_object_json(ENTITIES.read().get_entity(id).unwrap().location.pointer);
+            std::fs::write("data/save.json", save_data).unwrap();
+        });
+        input.bind_key(KeyCode::L, InputTrigger::Pressed, move || {
+            let id = INPUT_DATA.read().edit_id;
+            let mut entities = ENTITIES.write();
+            let terrain_entity = entities.get_mut_entity(id).unwrap();
+            let new_pointer = {
+                let mut graph = GRAPH.write();
+                let save_data = std::fs::read_to_string("data/save.json").unwrap();
+                let new_pointer = graph.load_object_json(save_data);
+                new_pointer
+            };
+            terrain_entity.location.pointer = new_pointer;
+        });
+    }
     // Debug
     input.bind_key(KeyCode::P, InputTrigger::Pressed, move || {
         dbg!(GRAPH.read().nodes.internal_memory());
