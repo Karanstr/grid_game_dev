@@ -10,7 +10,6 @@ mod imports {
     pub use macroquad::input::*;
     pub use derive_new::new;
     pub use engine::math::*;
-    pub use super::Location;
     pub use std::f32::consts::PI;
 }
 mod globals {
@@ -40,7 +39,7 @@ use std::thread;
 fn init_deadlock_detection() {
     thread::spawn(move || {
         loop {
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(3));
             let deadlocks = parking_lot::deadlock::check_deadlock();
             if !deadlocks.is_empty() {
                 println!("{} deadlocks detected", deadlocks.len());
@@ -55,6 +54,109 @@ fn init_deadlock_detection() {
             }
         }
     });
+}
+
+const SPEED: f32 = 0.01;
+const ROTATION_SPEED: f32 = PI/256.;
+const MAX_COLOR: usize = 4;
+const MAX_HEIGHT: u32 = 4;
+
+fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        // Get the panic message
+        let message = panic_info.payload().downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| panic_info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("<no message>");
+
+        // Get the location
+        let location = panic_info.location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "<unknown location>".to_string());
+
+        eprintln!("\nPanic occurred:\n");
+        eprintln!("Message: {}", message);
+        eprintln!("Location: {}", location);
+        eprintln!("\nBacktrace:\n{}", std::backtrace::Backtrace::capture());
+        
+        // Exit with error code 1
+        std::process::exit(1);
+    }));
+}
+
+fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
+
+#[macroquad::main("Window")]
+async fn main() {
+    if !cfg!(target_arch = "wasm32") {
+        set_panic_hook();
+        init_deadlock_detection();
+    }
+    #[cfg(debug_assertions)]
+    println!("Debug mode");
+    #[cfg(not(debug_assertions))]
+    println!("Release mode");
+    macroquad::window::request_new_screen_size(1024., 1024.);
+    
+    // Load entities 
+    {
+        let mut entity_pool = ENTITIES.write();
+        let terrain_string = if cfg!(target_arch = "wasm32") { 
+            String::from_utf8(include_bytes!("../data/terrain.json").as_ref().to_vec()).unwrap_or_default()
+        } else {
+            std::fs::read_to_string("data/terrain.json").unwrap_or_default()
+        };
+        entity_pool.add_to_pool(
+            Entity::load(terrain_string, 0)
+        );
+        let player_string = if cfg!(target_arch = "wasm32") { 
+            String::from_utf8(include_bytes!("../data/player.json").as_ref().to_vec()).unwrap_or_default()
+        } else {
+            std::fs::read_to_string("data/player.json").unwrap_or_default()
+        };
+        entity_pool.add_to_pool(
+            Entity::load(player_string, 1)
+        );
+    }
+    
+    let mut vars = InputData::default();
+    let mut input = set_key_binds();
+    
+    loop {
+
+        let old_pos = { // Drop entities after reading from it
+            let entities = ENTITIES.read();
+            entities.draw_all(true);
+            let target = entities.get_entity(vars.target_id()).unwrap();
+            target.draw_outline(macroquad::color::DARKBLUE);
+            
+            // We want to move the camera to where the target is drawn, not where the target is moved to.
+           target.location.position
+        };
+        input.handle(&mut vars);
+        
+        n_body_collisions((vars.target_id() + 1) % 2).await;
+        
+        // We don't want to move the camera until after we've drawn all the collision debug.
+        // This ensures everything lines up with the current frame.
+        CAMERA.write().update(old_pos, 0.4);
+        
+        macroquad::window::next_frame().await
+    }
+
+}
+
+pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
+    let mut entities = ENTITIES.write();
+    let entity = &mut entities.get_mut_entity(entity).unwrap();
+    if new_cell.height > entity.location.pointer.height { return; }
+    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, world_point)[0] else { return };
+    let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
+    let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) else {
+        dbg!("Failed to set cell");
+        return;
+    };
+    entity.set_root(root);
 }
 
 pub trait DataAccess {
@@ -84,101 +186,6 @@ impl DataAccess for InputData {
     fn edit_color(&self) -> usize { self.edit_color }
     fn edit_height(&self) -> u32 { self.edit_height }
     fn file_paths(&self) -> &[String; 2] { &self.file_paths }
-}
-
-
-const SPEED: f32 = 0.01;
-const ROTATION_SPEED: f32 = PI/256.;
-const MAX_COLOR: usize = 4;
-const MAX_HEIGHT: u32 = 4;
-
-use serde::{Serialize, Deserialize};
-// Move location into entity
-#[derive(Debug, Clone, Copy, new, Serialize, Deserialize)]
-pub struct Location {
-    pub position: Vec2,
-    pub pointer: ExternalPointer,
-    #[new(value = "Vec2::splat(1.0)")]
-    pub min_cell_length: Vec2,
-}
-impl Location {
-    pub fn to_aabb(&self) -> Aabb {
-        Aabb::new(self.position, center_to_edge(self.pointer.height, self.min_cell_length))
-    }
-}
-
-fn set_panic_hook() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        println!("Panic: {:?}", panic_info);
-    }));
-}
-
-fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
-
-#[macroquad::main("Window")]
-async fn main() {
-    if !cfg!(target_arch = "wasm32") {
-        set_panic_hook();
-        init_deadlock_detection();
-    }
-    #[cfg(debug_assertions)]
-    println!("Debug mode");
-    #[cfg(not(debug_assertions))]
-    println!("Release mode");
-    macroquad::window::request_new_screen_size(1024., 1024.);
-    {
-        let mut entity_pool = ENTITIES.write();
-        // Wasm Compatability
-        // let string = if cfg!(target_arch = "wasm32") { 
-        //     String::from_utf8(include_bytes!("../data/save.json").as_ref().to_vec()).unwrap_or_default()
-        // }
-        entity_pool.add_to_pool(
-            Entity::load(std::fs::read_to_string("data/terrain.json").unwrap_or_default(), 0)
-        );
-        entity_pool.add_to_pool(
-            Entity::load(std::fs::read_to_string("data/player.json").unwrap_or_default(), 1)
-        );
-    }
-    
-    let mut vars = InputData::default();
-    let mut input = set_key_binds();
-    
-    loop {
-
-        let old_pos = {
-            let entities = ENTITIES.read();
-            entities.draw_all(true);
-            let target = entities.get_entity(vars.target_id()).unwrap();
-            target.draw_outline(macroquad::color::DARKBLUE);
-            
-            // We want to move the camera to where the target is drawn, not where the target is moved to.
-            target.location.position
-        };
-        
-        input.handle(&mut vars);
-        
-        n_body_collisions((vars.target_id() + 1) % 2).await;
-        
-        // We don't want to move the camera until after we've drawn all the collision debug.
-        // This ensures everything lines up with the current frame.
-        CAMERA.write().update(old_pos, 0.4);
-        
-        macroquad::window::next_frame().await
-    }
-
-}
-
-pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
-    let mut entities = ENTITIES.write();
-    let entity = &mut entities.get_mut_entity(entity).unwrap();
-    if new_cell.height > entity.location.pointer.height { return; }
-    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, world_point)[0] else { return };
-    let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
-    let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) else {
-        dbg!("Failed to set cell");
-        return;
-    };
-    entity.set_root(root);
 }
 
 pub fn set_key_binds() -> InputHandler<InputData> {

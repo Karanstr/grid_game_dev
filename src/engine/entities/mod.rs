@@ -21,6 +21,19 @@ impl EntityPool {
     }
 }
 
+#[derive(Debug, Clone, Copy, new, Serialize, Deserialize)]
+pub struct Location {
+    pub position: Vec2,
+    pub pointer: ExternalPointer,
+    #[new(value = "Vec2::splat(1.0)")]
+    pub min_cell_length: Vec2,
+}
+impl Location {
+    pub fn to_aabb(&self) -> Aabb {
+        Aabb::new(self.position, center_to_edge(self.pointer.height, self.min_cell_length))
+    }
+}
+
 pub type ID = u32;
 // Chunk and store corner locations in u8s?
 pub struct Entity {
