@@ -16,20 +16,20 @@ pub enum InputType {
     Mouse(MouseButton),
 }
 
-pub struct InputBinding {
+pub struct InputBinding<T> {
     input: InputType,
     trigger: InputTrigger,
-    action: Box<dyn FnMut()>,
+    action: Box<dyn FnMut(&mut T)>,
     enabled: bool,
 }
 
-pub struct InputHandler {
-    bindings: HashMap<BindingId, InputBinding>,
+pub struct InputHandler<T> {
+    bindings: HashMap<BindingId, InputBinding<T>>,
     next_id: BindingId,
     injected_events: Vec<(InputType, InputTrigger)>,
 }
 #[allow(dead_code)]
-impl InputHandler {
+impl<T> InputHandler<T> where T: crate::DataAccess {
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
@@ -40,21 +40,21 @@ impl InputHandler {
 
     pub fn bind_key<F>(&mut self, key: KeyCode, trigger: InputTrigger, action: F) -> BindingId 
     where
-        F: FnMut() + 'static,
+        F: FnMut(&mut T) + 'static,
     {
         self.bind(InputType::Keyboard(key), trigger, action)
     }
 
     pub fn bind_mouse<F>(&mut self, button: MouseButton, trigger: InputTrigger, action: F) -> BindingId 
     where
-        F: FnMut() + 'static,
+        F: FnMut(&mut T) + 'static,
     {
         self.bind(InputType::Mouse(button), trigger, action)
     }
 
     fn bind<F>(&mut self, input: InputType, trigger: InputTrigger, action: F) -> BindingId 
     where
-        F: FnMut() + 'static,
+        F: FnMut(&mut T) + 'static,
     {
         let id = self.next_id;
         self.next_id += 1;
@@ -124,12 +124,12 @@ impl InputHandler {
     }
 
     /// Loops through all bindings and executes actions
-    pub fn handle(&mut self) {
+    pub fn handle(&mut self, data: &mut T) where T: crate::DataAccess {
         // This is gross but a good temporary solution
         let injected = std::mem::take(&mut self.injected_events);
         for binding in self.bindings.values_mut() {
             if binding.enabled && Self::should_trigger(binding.input, binding.trigger, &injected) {
-                (binding.action)();
+                (binding.action)(data);
             }
         }
     }

@@ -86,10 +86,10 @@ impl Camera {
 
 
     #[allow(dead_code)]
-    pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, line_width:f32, color:Color) {
+    pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, color:Color) {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
-        draw_line(p1.x, p1.y, p2.x, p2.y, line_width*self.zoom(), color);
+        draw_line(p1.x, p1.y, p2.x, p2.y, 2., color);
     }
 
     pub fn outline_bounds(&self, bounds:Aabb, line_width:f32, color:Color) {
@@ -131,4 +131,12 @@ impl Camera {
         
     }
 
+    pub fn draw_outline(&self, points:&[Vec2], color:Color) {
+        let points:Vec<Vec2> = points.iter().map(|point| self.world_to_screen(*point)).collect();
+        for point in 0 .. points.len() {
+            let point1 = points[point];
+            let point2 = points[(point + 1) % points.len()];
+            draw_line(point1.x, point1.y, point2.x, point2.y, 4., color);
+        }
+    }
 }

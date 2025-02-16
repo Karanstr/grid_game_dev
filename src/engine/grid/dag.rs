@@ -179,17 +179,17 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
 
 #[derive(Serialize, Deserialize)]
 struct TreeStorage<T : GraphNode> {
-    nodes: Vec<T>,
     root: ExternalPointer,
+    nodes: Vec<T>,
 }
 //Assumes constant leaf count. Eventually add more metadata
 impl<T: GraphNode + Serialize + DeserializeOwned> SparseDirectedGraph<T> {
     pub fn save_object_json(&self, start:ExternalPointer) -> String {
         let mut object_graph = Self::new(self.leaf_count);
         let root_index = object_graph.clone_graph(self.nodes.internal_memory(), start.pointer);
-        serde_json::to_string_pretty(&TreeStorage {
+        serde_json::to_string(&TreeStorage {
+            root : ExternalPointer::new(root_index, start.height),
             nodes : object_graph.nodes.internal_memory().iter().map(|node| T::new(node.children())).collect(), 
-            root : ExternalPointer::new(root_index, start.height)
         }).unwrap()
     }
     

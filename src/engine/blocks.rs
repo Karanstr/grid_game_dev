@@ -20,7 +20,7 @@ impl Default for BlockPalette {
     fn default() -> Self {
         Self ( [
                 Block {
-                    color : BLACK,
+                    color : BLANK,
                     collision_type : CollisionType::Air
                 },
                 Block {

@@ -15,9 +15,12 @@ impl Entity {
     pub fn apply_forward_velocity(&mut self, speed:f32) { self.velocity += self.forward * speed }
     pub fn apply_perp_velocity(&mut self, speed:f32) { self.velocity += self.forward.perp() * speed }
     pub fn apply_abs_velocity(&mut self, delta:Vec2) { self.velocity += delta; }
+    pub fn stop(&mut self) { 
+        self.velocity = Vec2::ZERO; 
+        self.angular_velocity = 0.0;
+    }
     pub fn set_root(&mut self, new_root:ExternalPointer) { 
         self.location.pointer = new_root;
         self.recaclulate_corners();
     }
-    pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer, self.location.min_cell_length) }
 }

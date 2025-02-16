@@ -8,21 +8,10 @@ mod serialization;
 pub struct EntityPool {
     #[new(value = "Vec::new()")]
     pub entities: Vec<Entity>,
-    #[new(value = "0")]
-    last_used_id: u32,
 }
 impl EntityPool {
-    /// This is a little iffy bc it modifies last_used_id but doesn't guarantee the entity will be pushed to the pool
-    pub fn build_entity(&mut self, location:Location) -> EntityBuilder {
-        EntityBuilder::new(self.new_id(), location)
-    }
-    /// Only use if `entity` came from [EntityPool::build_entity]
     pub fn add_to_pool(&mut self, entity:Entity) {
         self.entities.push(entity);
-    }
-    fn new_id(&mut self) -> ID {
-        self.last_used_id += 1;
-        self.last_used_id
     }
     pub fn get_mut_entity(&mut self, id:ID) -> Option<&mut Entity> {
         self.entities.iter_mut().find(|entity| entity.id == id)
@@ -44,17 +33,7 @@ pub struct Entity {
     pub corners : Vec<Corners>,
 }
 impl Entity {
-    pub fn new(id:ID, location:Location, orientation:f32) -> Self {
-        Self {
-            id,
-            location,
-            rotation: orientation,
-            forward: Vec2::from_angle(orientation),
-            velocity: Vec2::ZERO,
-            angular_velocity: 0.0,
-            corners: tree_corners(location.pointer, location.min_cell_length),
-        }
-    }
+    pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer, self.location.min_cell_length) }
 }
 
 pub struct EntityBuilder {
@@ -89,7 +68,7 @@ impl EntityBuilder {
         self.angular_velocity = Some(angular_velocity);
         self
     }
-    // Replace with an add_to_pool call
+    
     pub fn build(self) -> Entity {
         Entity {
             id: self.id,
@@ -101,4 +80,5 @@ impl EntityBuilder {
             corners: tree_corners(self.location.pointer, self.location.min_cell_length),
         }
     }
+
 }
