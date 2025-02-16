@@ -1,7 +1,5 @@
 pub use intersection::*;
 
-// Insert Particle here and implement next_intersection for particle.
-
 mod intersection {
     use derive_new::new;
     use roots::{find_root_brent, SimpleConvergency};
@@ -53,7 +51,7 @@ mod intersection {
 
         pub fn first_intersection(self, line: Line, max_time: f32) -> Option<f32> {
             match (self.velocity.is_zero(), self.angular_velocity.is_zero()) {
-                (true, true) => None, // Check whether already on line instead of none?
+                (true, true) => None,
                 (false, true) => self.solve_pure_linear(line, max_time),
                 (true, false) => self.solve_pure_rotation(line, max_time),
                 (false, false) => self.solve_linear_and_rotation(line, max_time),
@@ -156,57 +154,3 @@ mod intersection {
     }
 
 }
-
-/*
-fn next_intersection(
-    particle: &Particle,
-    object: &CollisionObject,
-    hitting_location: Location,
-    tick_max: f32,
-) -> Option<f32> {
-    let point = particle.position(object);
-    let point_velocity = object.velocity + angular_to_tangential_velocity(
-        object.angular_velocity,
-        particle.offset
-    );
-    let hitting_aabb = bounds::aabb(hitting_location.position, hitting_location.pointer.height);
-    let top_left = hitting_aabb.min();
-    let within_bounds = hitting_aabb.contains(point);
-    if hitting_wall(particle.position_data, point_velocity, particle.corner_type).is_some() {
-        return Some(0.)
-    }
-    let (cell, height) = if within_bounds != BVec2::TRUE {
-        (hitting_aabb.exterior_will_intersect(point, point_velocity)?, hitting_location.pointer.height)
-    } else { select_cell_and_height(&particle.position_data, CheckZorders::from_velocity(point_velocity))? };
-
-    let quadrant = point_velocity.signum().max(Vec2::ZERO);
-    let cell_length = bounds::cell_length(height);
-    let boundary_corner = top_left + (cell + quadrant) * cell_length;
-    let mut ticks  = Vec2::splat(f32::INFINITY);
-    let motion = Motion {
-        center_of_rotation : object.position + object.velocity * particle.ticks_into_projection,
-        velocity : object.velocity,
-        offset : particle.offset,
-        angular_velocity : object.angular_velocity,
-    };
-    if let Some(tickx) = motion.first_intersection(
-        Line::Vertical(boundary_corner.x), 
-        tick_max
-    ) { ticks.x = tickx }
-    if let Some(ticky) = motion.first_intersection(
-        Line::Horizontal(boundary_corner.y), 
-        tick_max.min(ticks.x.abs())
-    ) { 
-        if ticky.less_mag(ticks.y) { ticks.y = ticky } 
-    }
-
-    let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
-        (false, false) => ticks.max_element(),
-        (true, false) if ticks.x.is_zero() => ticks.y,
-        (false, true) if ticks.y.is_zero() => ticks.x,
-        _ => ticks.min_element(),
-    };
-
-    (!ticks_to_hit.is_nan() && ticks_to_hit.less_eq_mag(tick_max)).then_some(ticks_to_hit) 
-}
-*/

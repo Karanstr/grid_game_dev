@@ -111,11 +111,11 @@ pub fn center_to_edge(height:u32, min_cell_length:Vec2) -> Vec2 {
 
 pub mod gate {
     use super::*;
-    pub fn point_to_cells(grid_location:Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
+    pub fn point_to_cells(location:Location, height:u32, point:Vec2) -> [Option<UVec2>; 4]{
         let mut surrounding = [None; 4];
-        let grid_length = cell_length(grid_location.pointer.height, grid_location.min_cell_length);
-        let cell_length = cell_length(height, grid_location.min_cell_length);
-        let origin_position = point - (grid_location.position - grid_length / 2.);
+        let grid_length = cell_length(location.pointer.height, location.min_cell_length);
+        let cell_length = cell_length(height, location.min_cell_length);
+        let origin_position = point - (location.position - grid_length / 2.);
         let directions = [
             Vec2::new(-1., -1.),
             Vec2::new(1., -1.),
@@ -131,12 +131,12 @@ pub mod gate {
         surrounding
     }
     
-    pub fn point_to_real_cells(grid_location:Location, point:Vec2) -> [Option<CellData>; 4] {
+    pub fn point_to_real_cells(location:Location, point:Vec2) -> [Option<CellData>; 4] {
         let mut surrounding = [None; 4];
-        let cells = point_to_cells(grid_location, 0, point);
+        let cells = point_to_cells(location, 0, point);
         for i in 0..4 {
             if let Some(cell) = cells[i] {
-                surrounding[i] = Some(find_real_cell(grid_location.pointer, cell));
+                surrounding[i] = Some(find_real_cell(location.pointer, cell));
             }
         }
         surrounding
