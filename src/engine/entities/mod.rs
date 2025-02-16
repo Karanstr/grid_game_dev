@@ -2,7 +2,7 @@ use super::*;
 use serde::{Serialize, Deserialize};
 mod render;
 mod movement;
-// mod serialization;
+mod serialization;
 
 #[derive(new)]
 pub struct EntityPool {
@@ -61,7 +61,6 @@ pub struct EntityBuilder {
     id: ID,
     location: Location,
     rotation: Option<f32>,
-    forward: Option<Vec2>,
     velocity: Option<Vec2>,
     angular_velocity: Option<f32>,
 }
@@ -71,7 +70,6 @@ impl EntityBuilder {
             id,
             location,
             rotation: None,
-            forward: None,
             velocity: None,
             angular_velocity: None,
         }
@@ -79,7 +77,6 @@ impl EntityBuilder {
 
     pub fn rotation(mut self, rotation: f32) -> Self {
         self.rotation = Some(rotation);
-        self.forward = Some(Vec2::from_angle(rotation));
         self
     }
 
@@ -98,7 +95,7 @@ impl EntityBuilder {
             id: self.id,
             location: self.location,
             rotation: self.rotation.unwrap_or(0.0),
-            forward: self.forward.unwrap_or(Vec2::new(1., 0.)),
+            forward: Vec2::from_angle(self.rotation.unwrap_or(0.0)),
             velocity: self.velocity.unwrap_or(Vec2::ZERO),
             angular_velocity: self.angular_velocity.unwrap_or(0.0),
             corners: tree_corners(self.location.pointer, self.location.min_cell_length),

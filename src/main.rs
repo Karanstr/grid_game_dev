@@ -116,7 +116,7 @@ async fn main() {
 
     let (terrain_id, player_id) = {
         let mut entity_pool = ENTITIES.write();
-        
+
         let terrain_pointer = {
             let string = if cfg!(target_arch = "wasm32") { 
                 String::from_utf8(include_bytes!("../data/save.json").as_ref().to_vec()).unwrap_or_default()
@@ -132,17 +132,17 @@ async fn main() {
         let terrain = entity_pool.build_entity(Location::new(TERRAIN_SPAWN, terrain_pointer))
             .rotation(TERRAIN_ROTATION_SPAWN)
             .build();
-        let id_terrain = terrain.id;
+        let terrain_id = terrain.id;
         entity_pool.add_to_pool(terrain);
 
-        let player_pointer = GRAPH.write().get_root(0, 3);
+        let player_pointer = GRAPH.write().get_root(3, 0);
         let player = entity_pool.build_entity(Location::new(PLAYER_SPAWN, player_pointer))
             .rotation(PLAYER_ROTATION_SPAWN)
             .build();
-        let id_player = player.id;
+        let player_id = player.id;
         entity_pool.add_to_pool(player);
 
-        (id_terrain, id_player)
+        (terrain_id, player_id)
     };
 
     INPUT_DATA.write().edit_id = terrain_id;
