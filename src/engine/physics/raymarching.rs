@@ -59,43 +59,37 @@ mod intersection {
         }
 
         fn solve_linear_and_rotation(self, line: Line, max_time: f32) -> Option<f32> {
-            let (target, center, velocity, offset_parallel, offset_perp) = match line {
-                Line::Vertical(x) => (x, self.center_of_rotation.x, self.velocity.x, self.offset.x, -self.offset.y),
-                Line::Horizontal(y) => (y, self.center_of_rotation.y, self.velocity.y, self.offset.y, self.offset.x),
+            let (target_offset, velocity, offset_parallel, offset_perp) = match line {
+                Line::Vertical(x) => (self.center_of_rotation.x - x, self.velocity.x, self.offset.x, -self.offset.y),
+                Line::Horizontal(y) => (self.center_of_rotation.y - y, self.velocity.y, self.offset.y, self.offset.x),
             };
 
             // https://www.desmos.com/calculator/8iqoshfwcg
             let f = |t: f32| {
                 let angle = t * self.angular_velocity;
                 let (sin_t, cos_t) = angle.sin_cos();
-                center + t*velocity + offset_parallel*cos_t + offset_perp*sin_t - target
+                target_offset + t*velocity + offset_parallel*cos_t + offset_perp*sin_t
             };
             
             let check_range = |t_start: f32, t_end: f32| -> Option<f32> {
-                let f_start = f(t_start);
-                let f_end = f(t_end);
-                
-                if f_start * f_end <= 0.0 {
+                if (f(t_start) * f(t_end)).less_eq(0.) {
                     let mut iter_tracker = IterationTracker::default();
                     if let Ok(t) = find_root_brent(t_start, t_end, &f, &mut iter_tracker) {
                         println!("Found in {} iterations", iter_tracker.iterations);
-                        return Some(t);
+                        return Some(t)
                     }
                 }
                 None
             };
 
-            let radius = self.offset.length();
-            
             // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
-            let min_time_needed = (((target-center).abs() - radius) / velocity.abs()).max(0.);
-            
+            let radius = self.offset.length();
+            let min_time_needed = ((target_offset.abs() - radius) / velocity.abs()).max(0.);
             if min_time_needed.greater(max_time) { return None }
             
-            // Calculate time for a complete rotation
-            let rotation_period = 2.0 * PI / self.angular_velocity.abs();
-            check_range(min_time_needed, min_time_needed + rotation_period)
+            let rotation_period = 2. * PI / self.angular_velocity.abs();
             
+            check_range(min_time_needed, (min_time_needed + rotation_period).min(max_time))
         }
 
         fn solve_pure_linear(self, line: Line, max_time: f32) -> Option<f32> {
