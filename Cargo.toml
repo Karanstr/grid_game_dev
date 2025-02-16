@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-macroquad = "0.4"
+macroquad = {version = "0.4", features = ["glam-serde"]}
 vec_mem_heap = "0.*"
 serde = "1.0"
 serde_json = "1.0"

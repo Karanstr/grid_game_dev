@@ -79,7 +79,9 @@ const TERRAIN_ROTATION_SPAWN: f32 = 0.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
-#[derive(Debug, Clone, Copy, new)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Copy, new, Serialize, Deserialize)]
 pub struct Location {
     pub position: Vec2,
     pub pointer: ExternalPointer,
@@ -112,8 +114,10 @@ async fn main() {
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
 
-    let terrain_id = {
-        let world_pointer = {
+    let (terrain_id, player_id) = {
+        let mut entity_pool = ENTITIES.write();
+        
+        let terrain_pointer = {
             let string = if cfg!(target_arch = "wasm32") { 
                 String::from_utf8(include_bytes!("../data/save.json").as_ref().to_vec()).unwrap_or_default()
             } else { 
@@ -125,19 +129,20 @@ async fn main() {
                 GRAPH.write().load_object_json(string)
             }
         };
-        ENTITIES.write().add_entity(
-            Location::new(TERRAIN_SPAWN, world_pointer),
-            TERRAIN_ROTATION_SPAWN,
-        )
-    };
+        let terrain = entity_pool.build_entity(Location::new(TERRAIN_SPAWN, terrain_pointer))
+            .rotation(TERRAIN_ROTATION_SPAWN)
+            .build();
+        let id_terrain = terrain.id;
+        entity_pool.add_to_pool(terrain);
 
-    let player_id = {
-        //Graph has to be unlocked before add_entity is called so corners can be read from it
-        let player_pointer = GRAPH.write().get_root(3, 0);
-        ENTITIES.write().add_entity(
-            Location::new(PLAYER_SPAWN, player_pointer),
-            PLAYER_ROTATION_SPAWN,
-        )
+        let player_pointer = GRAPH.write().get_root(0, 3);
+        let player = entity_pool.build_entity(Location::new(PLAYER_SPAWN, player_pointer))
+            .rotation(PLAYER_ROTATION_SPAWN)
+            .build();
+        let id_player = player.id;
+        entity_pool.add_to_pool(player);
+
+        (id_terrain, id_player)
     };
 
     INPUT_DATA.write().edit_id = terrain_id;
