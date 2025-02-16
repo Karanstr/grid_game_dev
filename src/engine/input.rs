@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use macroquad::input::*;
 
 pub type BindingId = usize;
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InputTrigger {
@@ -9,7 +10,6 @@ pub enum InputTrigger {
     Down,
     Released,
 }
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InputType {
     Keyboard(KeyCode),
@@ -26,6 +26,7 @@ pub struct InputBinding {
 pub struct InputHandler {
     bindings: HashMap<BindingId, InputBinding>,
     next_id: BindingId,
+    injected_events: Vec<(InputType, InputTrigger)>,
 }
 #[allow(dead_code)]
 impl InputHandler {
@@ -33,6 +34,7 @@ impl InputHandler {
         Self {
             bindings: HashMap::new(),
             next_id: 0,
+            injected_events: Vec::new(),
         }
     }
 
@@ -67,19 +69,24 @@ impl InputHandler {
         id
     }
 
+    /// Injects an input which will be processed next frame
+    pub fn inject(&mut self, input: InputType, trigger: InputTrigger) {
+        self.injected_events.push((input, trigger));
+    }
+
     /// Returns success
     pub fn remove(&mut self, id: BindingId) -> bool {
         self.bindings.remove(&id).is_some()
     }
 
-    /// Returns success and current value
+    /// Returns current value on success
     pub fn toggle(&mut self, id: BindingId) -> Option<bool> {
         let binding = self.bindings.get_mut(&id)?;
         binding.enabled = !binding.enabled;
         Some(binding.enabled)
     }
 
-    /// Returns success and old value
+    /// Returns old value on success
     pub fn enable(&mut self, id: BindingId) -> Option<bool> {
         let binding = self.bindings.get_mut(&id)?;
         let old_binding = binding.enabled;
@@ -87,7 +94,7 @@ impl InputHandler {
         Some(old_binding)
     }
 
-    /// Returns success and old value
+    /// Returns old value on success
     pub fn disable(&mut self, id: BindingId) -> Option<bool> {
         let binding = self.bindings.get_mut(&id)?;
         let old_binding = binding.enabled;
@@ -95,8 +102,8 @@ impl InputHandler {
         Some(old_binding)
     }
 
-    fn should_trigger(input: InputType, trigger: InputTrigger) -> bool {
-        match input {
+    fn should_trigger(input: InputType, trigger: InputTrigger, injected: &[(InputType, InputTrigger)]) -> bool {
+        let user = match input {
             InputType::Keyboard(key) => {
                 match trigger {
                     InputTrigger::Pressed => is_key_pressed(key),
@@ -110,17 +117,20 @@ impl InputHandler {
                     InputTrigger::Down => is_mouse_button_down(button),
                     InputTrigger::Released => is_mouse_button_released(button),
                 }
-            }
-        }
+            },
+        };
+        if user || injected.contains(&(input, trigger)) { true }
+        else { false }
     }
 
     /// Loops through all bindings and executes actions
     pub fn handle(&mut self) {
+        // This is gross but a good temporary solution
+        let injected = std::mem::take(&mut self.injected_events);
         for binding in self.bindings.values_mut() {
-            if binding.enabled && Self::should_trigger(binding.input, binding.trigger) {
+            if binding.enabled && Self::should_trigger(binding.input, binding.trigger, &injected) {
                 (binding.action)();
             }
         }
     }
-    
 }

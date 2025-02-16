@@ -146,7 +146,7 @@ async fn main() {
     let mut input = set_key_binds();
     
     loop {
-
+        
         input.handle();
         ENTITIES.read().draw_all(true);
         
