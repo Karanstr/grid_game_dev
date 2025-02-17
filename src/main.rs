@@ -21,7 +21,7 @@ mod globals {
     use crate::engine::entities::EntityPool;
     use lazy_static::lazy_static;
     use parking_lot::RwLock;
-    lazy_static! { 
+    lazy_static! {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
         pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
@@ -126,13 +126,14 @@ async fn main() {
 
         let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
-            entities.draw_all(true);
+            entities.draw_all(true, true);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
             
             // We want to move the camera to where the target is drawn, not where the target is moved to.
-           target.location.position
+            target.location.position
         };
+        
         input.handle(&mut vars);
         
         n_body_collisions((vars.target_id() + 1) % 2).await;

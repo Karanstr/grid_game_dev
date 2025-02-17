@@ -2,10 +2,8 @@ use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
 
 use super::*;
-pub use macroquad::color::colors::*;
-pub use macroquad::color::Color;
+pub use macroquad::color::*;
 use crate::globals::*;
-
 
 #[derive(Debug, Clone, new)]
 pub struct CollisionObject {
@@ -118,11 +116,11 @@ impl CornerType {
         }
     }
     pub fn from_rotation(rotation: f32) -> Self {
-        match rotation.normalize_angle() {
-            rot if rot.angle_approx_eq(PI / 4.) => Self::BottomRight,
-            rot if rot.angle_approx_eq(PI * 3./4.) => Self::BottomLeft,
-            rot if rot.angle_approx_eq(PI * 5./4.) => Self::TopLeft,
-            rot if rot.angle_approx_eq(PI * 7./4.) => Self::TopRight,
+        match rotation.rem_euclid(PI * 2.) {
+            rot if rot.approx_eq(PI / 4.) => Self::BottomRight,
+            rot if rot.approx_eq(PI * 3./4.) => Self::BottomLeft,
+            rot if rot.approx_eq(PI * 5./4.) => Self::TopLeft,
+            rot if rot.approx_eq(PI * 7./4.) => Self::TopRight,
             rot if rot.less(PI / 4.) => Self::Right(rot),
             rot if rot.less(PI * 3./4.) => Self::Bottom(rot),
             rot if rot.less(PI * 5./4.) => Self::Left(rot),

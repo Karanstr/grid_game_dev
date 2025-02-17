@@ -96,23 +96,21 @@ impl Camera {
         self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
     } 
 
-    pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, outline:bool) {
+    pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, render_dbg:bool) {
         let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
-        if color != BLACK {
-            draw_triangle(
-                corners[0],
-                corners[1],
-                corners[2],
-                color
-            );
-            draw_triangle(
-                corners[1],
-                corners[2],
-                corners[3],
-                color
-            );
-        }
-        if outline {
+        draw_triangle(
+            corners[0],
+            corners[1],
+            corners[2],
+            color
+        );
+        draw_triangle(
+            corners[1],
+            corners[2],
+            corners[3],
+            color
+        );
+        if render_dbg {
             draw_triangle_lines(
                 corners[0],
                 corners[1],
@@ -128,7 +126,6 @@ impl Camera {
                 WHITE
             );
         }
-        
     }
 
     pub fn draw_outline(&self, points:&[Vec2], color:Color) {

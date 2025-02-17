@@ -53,8 +53,9 @@ mod intersection {
             match (self.velocity.is_zero(), self.angular_velocity.is_zero()) {
                 (true, true) => None,
                 (false, true) => self.solve_pure_linear(line, max_time),
-                (true, false) => self.solve_pure_rotation(line, max_time),
-                (false, false) => self.solve_linear_and_rotation(line, max_time),
+                // (true, false) => self.solve_pure_rotation(line, max_time),
+                // (false, false) => self.solve_linear_and_rotation(line, max_time),
+                _ => self.solve_linear_and_rotation(line, max_time),
             }
         }
 
@@ -108,30 +109,7 @@ mod intersection {
                 Line::Vertical(x) => (x, self.center_of_rotation.x, self.offset.x, -self.offset.y),
                 Line::Horizontal(y) => (y, self.center_of_rotation.y, self.offset.y, self.offset.x),
             };
-
-            // Already intersecting
-            if (center_pos + offset_parallel).approx_eq(target) {
-                return Some(0.);
-            }
-
-            // pos(t) = center + offset*cos(ωt) + perp_offset*sin(ωt)
-            // Solve: pos(t) = target
-            // center + offset*cos(ωt) + perp_offset*sin(ωt) = target
-            // offset*cos(ωt) + perp_offset*sin(ωt) = target - center
-            
-            let separation = target - center_pos;
-            
-            let radius = self.offset.length();
-            if radius.less_mag(separation) { return None }
-            
-            // Using the fact that offset = r*cos(θ) and perp_offset = r*sin(θ)
-            // where r is radius and θ is initial angle
-            // We can solve for the intersection time using atan2
-            let initial_angle = offset_perp.atan2(offset_parallel);
-            let target_angle = (separation / radius).acos();
-
-            let t = (target_angle - initial_angle).normalize_angle() / self.angular_velocity;
-            (t.greater(0.) && t.less_eq(max_time)).then_some(t)
+            unimplemented!()
         }
 
     }
