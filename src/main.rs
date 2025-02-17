@@ -126,7 +126,7 @@ async fn main() {
 
         let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
-            entities.draw_all(false, true);
+            entities.draw_all(true, true);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
             

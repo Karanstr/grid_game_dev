@@ -262,8 +262,8 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
                 Motion::new(
-                    object.position + object.velocity * cur_corner.ticks_into_projection,
-                    cur_corner.offset,
+                    hitting_location.position,
+                    cur_corner.offset + object.position + object.velocity * cur_corner.ticks_into_projection - hitting_location.position,
                     object.velocity,
                     object.angular_velocity
                 ),
