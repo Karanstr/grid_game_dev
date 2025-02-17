@@ -85,7 +85,7 @@ mod intersection {
 
             // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
             let radius = self.offset.length();
-            let min_time_needed = ((target_offset.abs() - radius) / velocity.abs()).max(0.);
+            let min_time_needed = ((target_offset.abs() - radius) / velocity).max(0.);
             if min_time_needed.greater(max_time) { return None }
             
             let rotation_period = 2. * PI / self.angular_velocity.abs();
@@ -98,20 +98,12 @@ mod intersection {
                 Line::Vertical(x) => (x, self.center_of_rotation.x, self.velocity.x, self.offset.x),
                 Line::Horizontal(y) => (y, self.center_of_rotation.y, self.velocity.y, self.offset.y),
             };
-
             let point = center + offset;
             let t = (target - point) / velocity;
             (t.greater(0.) && t.less_eq(max_time)).then_some(t)
         }
 
-        fn solve_pure_rotation(self, line: Line, max_time: f32) -> Option<f32> {
-            let (target, center_pos, offset_parallel, offset_perp) = match line {
-                Line::Vertical(x) => (x, self.center_of_rotation.x, self.offset.x, -self.offset.y),
-                Line::Horizontal(y) => (y, self.center_of_rotation.y, self.offset.y, self.offset.x),
-            };
-            unimplemented!()
-        }
-
+        // fn solve_pure_rotation(self, line: Line, max_time: f32) -> Option<f32> { todo!() }
     }
 
     #[test]

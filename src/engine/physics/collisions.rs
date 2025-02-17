@@ -170,9 +170,9 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
             if let Some(obj) = entity_to_collision_object(entity, other) { 
                 objects.push(obj); 
             }
-            if let Some(obj) = entity_to_collision_object(other, entity) { 
-                objects.push(obj); 
-            }
+            // if let Some(obj) = entity_to_collision_object(other, entity) { 
+            //     objects.push(obj); 
+            // }
         }
     }
     objects
@@ -240,7 +240,7 @@ pub async fn n_body_collisions(static_thing: ID) {
 
 // Eventually make this work with islands, solving each island by itself
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
-    let itt_cut = 30;
+    let itt_max = 30;
     let entities = ENTITIES.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
@@ -248,15 +248,15 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
             cur_corner.itt_counter += 1;
             CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
-                r: (cur_corner.itt_counter as f32) / itt_cut as f32,
-                g: (cur_corner.itt_counter as f32) / itt_cut as f32,
-                b: (cur_corner.itt_counter as f32) / itt_cut as f32,
+                r: (cur_corner.itt_counter as f32) / itt_max as f32,
+                g: (cur_corner.itt_counter as f32) / itt_max as f32,
+                b: (cur_corner.itt_counter as f32) / itt_max as f32,
                 a: 1.,
             });
-            if cur_corner.itt_counter >= itt_cut {
-                if cur_corner.itt_counter == itt_cut { macroquad::window::next_frame().await }
+            if cur_corner.itt_counter >= itt_max {
+                if cur_corner.itt_counter == itt_max { macroquad::window::next_frame().await }
                 dbg!("Too many iterations"); 
-                // continue 
+                // continue
             }
             if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
@@ -367,7 +367,7 @@ fn next_intersection(
         _ => ticks.min_element(),
     };
     
-    (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit) 
+    (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
 // Add culling for when no rotation?
@@ -377,7 +377,6 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
     let rel_angular = (owner.angular_velocity - hitting.angular_velocity).snap_zero();
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
-    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
@@ -402,6 +401,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             collision_points.push(Reverse(Particle::new(offset, corner_type)));
         }
     }
+    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     Some(CollisionObject::new(
         rotated_owner_pos,
         rel_velocity,

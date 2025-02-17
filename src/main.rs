@@ -57,7 +57,7 @@ fn init_deadlock_detection() {
 }
 
 const SPEED: f32 = 0.01;
-const ROTATION_SPEED: f32 = PI/256.;
+const ROTATION_SPEED: f32 = PI/512.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -97,7 +97,7 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
-    
+    dbg!(angular_to_tangential_velocity(-0.5, Vec2::new(1., -1.)));
     // Load entities 
     {
         let mut entity_pool = ENTITIES.write();
@@ -126,7 +126,7 @@ async fn main() {
 
         let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
-            entities.draw_all(true, true);
+            entities.draw_all(false, true);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
             

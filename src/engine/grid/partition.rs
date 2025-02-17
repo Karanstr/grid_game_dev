@@ -3,7 +3,7 @@ use macroquad::math::UVec2;
 use crate::globals::GRAPH;
 //Value loosely tuned to prevent both phasing and catching on corners
 //Used to sample area around a point to determine what cell(s) it's in
-pub const LIM_OFFSET: f32 = 2. / 0xFFF as f32;
+pub const LIM_OFFSET: f32 = 2. / 0xFFFF as f32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ZorderPath {

@@ -1,7 +1,6 @@
 use super::*;
-pub const FP_EPSILON: f32 = 0.000_001;
-// pub const FP_EPSILON: f32 = f32::EPSILON;
-// pub const ROTATIONAL_EPSILON: f32 = FP_EPSILON;
+// pub const FP_EPSILON: f32 = 0.000_001;
+pub const FP_EPSILON: f32 = f32::EPSILON;
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Aabb {
@@ -17,10 +16,10 @@ impl Aabb {
     pub fn radius(&self) -> Vec2 { self.radius }
 
     pub fn intersects(&self, other:Self) -> BVec2 {
-        (other.center - self.center).abs().less_eq(self.radius + other.radius)
+        (other.center - self.center).less_eq_mag(self.radius + other.radius)
     }
     pub fn contains(&self, point:Vec2) -> BVec2 {
-        (point - self.center).abs().less_eq(self.radius)
+        (point - self.center).less_eq_mag(self.radius)
     }
     
     pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }
@@ -150,31 +149,6 @@ impl FloatUtils for Vec2 {
     fn zero_signum(self) -> Self::SignumType { IVec2::new(self.x.zero_signum(), self.y.zero_signum()) }
 }
 
-// Decide whether we need a different epsilon for angles
-// pub trait AngleUtils {
-    // fn angle_approx_eq(self, b:Self) -> bool;
-    // fn angle_mod(self, by:Self) -> Self;
-    // fn normalize_angle(self) -> Self;
-// }
-// impl AngleUtils for f32 {
-//     fn angle_approx_eq(self, b:Self) -> bool { (self - b).abs() < ROTATIONAL_EPSILON }
-    // fn angle_mod(self, by:Self) -> Self { 
-    //     let r = self % by;
-    //     if r.angle_approx_eq(by) { 0. } else if r.less(0.) { r + by } else { r }
-    // }
-    // /// Normalizes an angle to be within the range [0, 2π)
-    // ///
-    // /// This method takes any floating point value representing an angle in radians
-    // /// and returns an equivalent angle within the standard range of [0, 2π).
-    // ///
-    // /// # Returns
-    // /// * A normalized angle in radians between 0 (inclusive) and 2π (exclusive)
-    // fn normalize_angle(self) -> Self {
-    //     const TWO_PI: f32 = 2.0 * std::f32::consts::PI;
-    //     self.rem_euclid(TWO_PI)
-    // }
-// }
-
 pub trait BVecUtils {
     fn as_vec2(self) -> Vec2;
 }
@@ -198,7 +172,7 @@ pub fn angular_to_tangential_velocity(angular_velocity: f32, offset: Vec2) -> Ve
     // the tangential velocity components are:
     // vx = -ω * y
     // vy = ω * x
-    // where ω is the angular velocity
+
     Vec2::new(
         -angular_velocity * offset.y,
         angular_velocity * offset.x
