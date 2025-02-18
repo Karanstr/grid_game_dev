@@ -17,6 +17,7 @@ pub struct CollisionObject {
 
 #[derive(Debug, Clone, new)]
 pub struct Particle {
+    // Make offset radius and acquire cartesian coordinates from corner_type
     pub offset : Vec2,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
@@ -262,8 +263,8 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
                 Motion::new(
-                    hitting_location.position,
-                    cur_corner.offset + object.position + object.velocity * cur_corner.ticks_into_projection - hitting_location.position,
+                    object.position + object.velocity * cur_corner.ticks_into_projection,
+                    cur_corner.offset,
                     object.velocity,
                     object.angular_velocity
                 ),
@@ -395,8 +396,9 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
                 CornerType::Top(_) => PURPLE,
                 CornerType::Bottom(_) => WHITE,
                 CornerType::Left(_) => GRAY,
-                CornerType::Right(_) => DARKGRAY,
+                CornerType::Right(_) => YELLOW,
             };
+            camera.outline_point(hitting.location.position, (offset + rotated_owner_pos - hitting.location.position).length(), 0.03, DARKPURPLE);
             camera.draw_point(rotated_owner_pos + offset, 0.1, color);
             collision_points.push(Reverse(Particle::new(offset, corner_type)));
         }

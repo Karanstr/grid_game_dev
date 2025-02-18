@@ -1,5 +1,5 @@
 use super::*;
-// pub const FP_EPSILON: f32 = 0.000_001;
+// pub const FP_EPSILON: f32 = 0.001;
 pub const FP_EPSILON: f32 = f32::EPSILON;
 
 #[derive(Debug, Clone, Copy, new)]

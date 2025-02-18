@@ -126,7 +126,7 @@ async fn main() {
 
         let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
-            entities.draw_all(true, true);
+            entities.draw_all(vars.render_rotated, vars.render_debug);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
             
@@ -170,6 +170,8 @@ pub struct InputData {
     pub target_id : ID,
     pub edit_color : usize,
     pub edit_height : u32,
+    pub render_debug : bool,
+    pub render_rotated: bool,
     pub file_paths : [String; 2],
 }
 impl Default for InputData {
@@ -178,6 +180,8 @@ impl Default for InputData {
             target_id: 1,
             edit_color: 0,
             edit_height: 0,
+            render_debug: true,
+            render_rotated: true,
             file_paths: ["data/terrain.json".to_string(), "data/player.json".to_string()],
         }
     }
@@ -260,6 +264,12 @@ pub fn set_key_binds() -> InputHandler<InputData> {
     // Debug
     input.bind_key(KeyCode::P, InputTrigger::Pressed, |_data : &mut InputData| {
         dbg!(GRAPH.read().nodes.internal_memory());
+    });
+    input.bind_key(KeyCode::O, InputTrigger::Pressed, |data : &mut InputData| {
+        data.render_debug = !data.render_debug;
+    });
+    input.bind_key(KeyCode::I, InputTrigger::Pressed, |data : &mut InputData| {
+        data.render_rotated = !data.render_rotated;
     });
 
     input
