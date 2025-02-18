@@ -97,7 +97,7 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
-    dbg!(angular_to_tangential_velocity(-0.5, Vec2::new(1., -1.)));
+    
     // Load entities 
     {
         let mut entity_pool = ENTITIES.write();

@@ -3,11 +3,11 @@
     0.0,
     0.0
   ],
-  "rotation": 0.5,
+  "rotation": 0.0,
   "velocity": [
     0.0,
     0.0
   ],
   "angular_velocity": 0.0,
-  "graph": "{\"root\":{\"pointer\":6,\"height\":3},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]},{\"children\":[1,0,1,0]},{\"children\":[0,0,0,4]},{\"children\":[0,0,0,5]}]}"
+  "graph": "{\"root\":{\"pointer\":6,\"height\":3},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]},{\"children\":[1,0,0,0]},{\"children\":[4,0,0,0]},{\"children\":[0,0,0,5]}]}"
 }

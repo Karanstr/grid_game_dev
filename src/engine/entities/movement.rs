@@ -3,12 +3,12 @@ use super::*;
 #[allow(dead_code)]
 impl Entity {
     pub fn rel_rotate(&mut self, angle: f32) {
-        self.rotation += angle;
+        self.rotation = (self.rotation + angle).rem_euclid(PI * 2.);
         self.forward = Vec2::from_angle(self.rotation);
         self.recaclulate_corners();
     }
     pub fn set_rotation(&mut self, angle: f32) { 
-        self.rotation = angle;
+        self.rotation = angle.rem_euclid(PI * 2.);
         self.forward = Vec2::from_angle(self.rotation);
         self.recaclulate_corners();
     }

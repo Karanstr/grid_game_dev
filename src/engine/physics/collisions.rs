@@ -256,7 +256,7 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
             if cur_corner.itt_counter >= itt_max {
                 if cur_corner.itt_counter == itt_max { macroquad::window::next_frame().await }
                 dbg!("Too many iterations"); 
-                // continue
+                continue
             }
             if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
@@ -370,7 +370,6 @@ fn next_intersection(
     (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
-// Add culling for when no rotation?
 pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let align_to_hitting = Vec2::from_angle(-hitting.rotation);
@@ -386,6 +385,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             //Cull any corner which isn't exposed
             if corners.mask & (1 << i) == 0 { continue }
             let offset = (corners.points[i] - offset).rotate(point_rotation);
+            if offset.is_zero() && rel_velocity.is_zero() { continue }
             let corner_type = CornerType::from_index(i).rotate(owner.rotation - hitting.rotation);
             let color = match corner_type {
                 CornerType::TopLeft => LIME,
