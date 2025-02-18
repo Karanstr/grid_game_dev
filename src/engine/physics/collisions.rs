@@ -168,12 +168,12 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
-            if let Some(obj) = entity_to_collision_object(entity, other) { 
-                objects.push(obj); 
-            }
-            // if let Some(obj) = entity_to_collision_object(other, entity) { 
+            // if let Some(obj) = entity_to_collision_object(entity, other) { 
             //     objects.push(obj); 
             // }
+            if let Some(obj) = entity_to_collision_object(other, entity) { 
+                objects.push(obj); 
+            }
         }
     }
     objects
@@ -214,6 +214,11 @@ fn apply_normal_force(static_thing: ID, hit: Hit) {
             entity.angular_velocity = 0.;
         }
     }
+}
+
+pub fn just_move() {
+    tick_entities(1.);
+    apply_drag();
 }
 
 pub async fn n_body_collisions(static_thing: ID) {
@@ -340,6 +345,7 @@ fn next_intersection(
     tick_max: f32,
 ) -> Option<f32> {
     let point = motion.center_of_rotation + motion.offset;
+    CAMERA.read().draw_point(point, 0.1, RED);
     let point_velocity = motion.velocity + angular_to_tangential_velocity(
         motion.angular_velocity,
         motion.offset
@@ -389,6 +395,8 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             if offset.is_zero() && rel_velocity.is_zero() { continue }
             let corner_type = CornerType::from_index(i).rotate(owner.rotation - hitting.rotation);
             let color = match corner_type {
+                // CornerType::Left(_) => BLUE,
+                // _ => continue,
                 CornerType::TopLeft => LIME,
                 CornerType::TopRight => BLUE,
                 CornerType::BottomLeft => RED,
@@ -398,7 +406,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
                 CornerType::Left(_) => GRAY,
                 CornerType::Right(_) => YELLOW,
             };
-            camera.outline_point(hitting.location.position, (offset + rotated_owner_pos - hitting.location.position).length(), 0.03, DARKPURPLE);
+            // camera.outline_point(hitting.location.position, (offset + rotated_owner_pos - hitting.location.position).length(), 0.03, DARKPURPLE);
             camera.draw_point(rotated_owner_pos + offset, 0.1, color);
             collision_points.push(Reverse(Particle::new(offset, corner_type)));
         }

@@ -85,7 +85,7 @@ impl ZorderPath {
     }
 
     #[allow(dead_code)]
-    pub fn cells_intersecting_aabb(_aabb:Aabb, _max_depth: u32) -> Vec<(u32, u32)> {
+    pub fn cells_intersecting_aabb(_aabb:Aabb, _max_depth: u32) -> Vec<(Self)> {
         todo!()
     }
 
@@ -98,8 +98,12 @@ pub struct CellData {
 }
 impl CellData {
     pub fn bound_data(&self) -> (Vec2, u32) { (self.cell.as_vec2(), self.pointer.height) }
+    pub fn to_point(&self, location:Location, min_cell_length:Vec2) -> Vec2 {
+        let cell_top_left = self.cell.as_vec2() * cell_length(self.pointer.height, min_cell_length); 
+        let global_position = location.position - center_to_edge(location.pointer.height, min_cell_length);
+        cell_top_left + global_position + center_to_edge(self.pointer.height, min_cell_length)
+    }
 }
-
 
 pub fn cell_length(height:u32, min_cell_length:Vec2) -> Vec2 {
     min_cell_length * 2_f32.powi(height as i32 + 1)
@@ -108,6 +112,7 @@ pub fn cell_length(height:u32, min_cell_length:Vec2) -> Vec2 {
 pub fn center_to_edge(height:u32, min_cell_length:Vec2) -> Vec2 {
     cell_length(height, min_cell_length) / 2.
 }
+
 
 pub mod gate {
     use super::*;

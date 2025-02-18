@@ -2,7 +2,7 @@ mod engine;
 use imports::*;
 mod imports {
     use super::*;
-    pub use engine::physics::collisions::{n_body_collisions, Corners, corner_handling::*};
+    pub use engine::physics::collisions::{just_move, n_body_collisions, Corners, corner_handling::*};
     pub use engine::grid::dag::{ExternalPointer, Index};
     pub use macroquad::math::{Vec2, BVec2, IVec2, Mat2};
     pub use engine::grid::partition::*;
@@ -85,6 +85,7 @@ fn set_panic_hook() {
 }
 
 fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
+use macroquad::color::*;
 
 #[macroquad::main("Window")]
 async fn main() {
@@ -124,19 +125,24 @@ async fn main() {
     
     loop {
 
-        let old_pos = { // Drop entities after reading from it
+        let (old_pos, aabb, location) = { // Drop entities after reading from it
             let entities = ENTITIES.read();
             entities.draw_all(vars.render_rotated, vars.render_debug);
             let target = entities.get_entity(vars.target_id()).unwrap();
-            target.draw_outline(macroquad::color::DARKBLUE);
+            // target.draw_outline(macroquad::color::DARKBLUE);
+            let location = entities.get_entity((vars.target_id() + 1) % 2).unwrap().location;
             
             // We want to move the camera to where the target is drawn, not where the target is moved to.
-            target.location.position
+            (target.location.position, target.aabb(), location)
         };
+        CAMERA.read().outline_bounds(aabb, 0.3, macroquad::color::DARKBLUE);
+        
+        aabb.overlaps(location);
         
         input.handle(&mut vars);
         
-        n_body_collisions((vars.target_id() + 1) % 2).await;
+        just_move();
+        // n_body_collisions((vars.target_id() + 1) % 2).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
@@ -146,6 +152,28 @@ async fn main() {
     }
 
 }
+
+impl Aabb {
+    pub fn overlaps(&self, location:Location) {
+        let top_left = self.min();
+        let bottom_right = self.max();
+        let corners = [
+            top_left,
+            Vec2::new(bottom_right.x, top_left.y),
+            bottom_right,
+            Vec2::new(top_left.x, bottom_right.y),
+        ];
+        let cells = corners.iter()
+            .filter_map(|corner| gate::point_to_real_cells(location, *corner)[0]);
+        let points = cells.map(|cell| {
+            cell.to_point(location, Vec2::ONE)
+        });
+        for point in points {
+            CAMERA.read().draw_point(point, 0.2, Color::from_rgba(255, 0, 0, 150));
+        }
+    }
+}
+
 
 pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     let mut entities = ENTITIES.write();
@@ -212,14 +240,14 @@ pub fn set_key_binds() -> InputHandler<InputData> {
         let id = data.target_id();
         ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(SPEED, 0.));
     });
-    input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
-        let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
-    });
-    input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
-        let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
-    });
+    // input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
+    //     let id = data.target_id();
+    //     ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
+    // });
+    // input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
+    //     let id = data.target_id();
+    //     ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
+    // });
     input.bind_key(KeyCode::Space, InputTrigger::Down, |data : &mut InputData| {
         ENTITIES.write().get_mut_entity(data.target_id()).unwrap().stop();
     });
@@ -270,6 +298,14 @@ pub fn set_key_binds() -> InputHandler<InputData> {
     });
     input.bind_key(KeyCode::I, InputTrigger::Pressed, |data : &mut InputData| {
         data.render_rotated = !data.render_rotated;
+    });
+
+    // Camera Controls
+    input.bind_key(KeyCode::Equal, InputTrigger::Down, |_data : &mut InputData| {
+        CAMERA.write().change_zoom(1.02);
+    });
+    input.bind_key(KeyCode::Minus, InputTrigger::Down, |_data : &mut InputData| {
+        CAMERA.write().change_zoom(1./1.02);
     });
 
     input

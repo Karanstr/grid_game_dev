@@ -13,6 +13,13 @@ roots = "0.0.8"
 lazy_static = "1.4.0"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 
+[profile.dev]
+debug = 2  # Full debug info for your crate
+debug-assertions = true
+
+[profile.dev.package."*"]
+debug = 0  # No debug info for dependencies
+
 [profile.release]
 debug = 1
 opt-level = 3

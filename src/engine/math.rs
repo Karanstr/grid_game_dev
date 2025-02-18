@@ -9,6 +9,13 @@ pub struct Aabb {
 }
 impl Aabb {
 
+    pub fn from_bounds(top_left:Vec2, bottom_right:Vec2) -> Self {
+        Self {
+            center: (top_left + bottom_right) / 2.,
+            radius: (bottom_right - top_left) / 2.,
+        }
+    }
+
     pub fn min(&self) -> Vec2 { self.center - self.radius }
     pub fn max(&self) -> Vec2 { self.center + self.radius }
 
