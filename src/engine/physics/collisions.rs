@@ -346,9 +346,15 @@ fn next_intersection(
 ) -> Option<f32> {
     let point = motion.center_of_rotation + motion.offset;
     CAMERA.read().draw_point(point, 0.1, RED);
+    dbg!(motion, point);
     let point_velocity = motion.velocity + angular_to_tangential_velocity(
         motion.angular_velocity,
         motion.offset
+    );
+    CAMERA.read().draw_vec_line(
+        point, 
+        point + point_velocity*10.,
+        GREEN
     );
     let within_bounds = hitting_location.to_aabb().contains(point);
     
@@ -356,7 +362,7 @@ fn next_intersection(
     if hitting_wall(position_data, point_velocity, corner_type).is_some() { return Some(0.) };
 
     let boundary_corner = boundary_corner(hitting_location, position_data, motion)?;
-    let mut ticks  = Vec2::splat(f32::INFINITY);
+    let mut ticks  = Vec2::INFINITY;
     
     if let Some(tickx) = motion.first_intersection(
         Line::Vertical(boundary_corner.x), 
@@ -383,6 +389,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
     let rel_angular = (owner.angular_velocity - hitting.angular_velocity).snap_zero();
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
+    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
     camera.draw_point(rotated_owner_pos, 0.1, GREEN);
@@ -395,7 +402,7 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
             if offset.is_zero() && rel_velocity.is_zero() { continue }
             let corner_type = CornerType::from_index(i).rotate(owner.rotation - hitting.rotation);
             let color = match corner_type {
-                // CornerType::Left(_) => BLUE,
+                // CornerType::Top(_) => BLUE,
                 // _ => continue,
                 CornerType::TopLeft => LIME,
                 CornerType::TopRight => BLUE,
@@ -406,12 +413,10 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
                 CornerType::Left(_) => GRAY,
                 CornerType::Right(_) => YELLOW,
             };
-            // camera.outline_point(hitting.location.position, (offset + rotated_owner_pos - hitting.location.position).length(), 0.03, DARKPURPLE);
             camera.draw_point(rotated_owner_pos + offset, 0.1, color);
             collision_points.push(Reverse(Particle::new(offset, corner_type)));
         }
     }
-    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     Some(CollisionObject::new(
         rotated_owner_pos,
         rel_velocity,

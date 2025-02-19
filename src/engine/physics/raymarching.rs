@@ -40,7 +40,7 @@ mod intersection {
         Horizontal(f32), // y = value
     }
 
-    #[derive(Clone, Copy, new)]
+    #[derive(Debug, Clone, Copy, new)]
     pub struct Motion {
         pub center_of_rotation: Vec2,
         pub offset: Vec2,
@@ -85,7 +85,9 @@ mod intersection {
 
             // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
             let radius = self.offset.length();
-            let min_time_needed = ((target_offset.abs() - radius) / velocity).max(0.);
+            let min_time_needed = if radius.greater_eq_mag(target_offset) { 0. } else {
+                (target_offset.abs() - radius) / velocity
+            };
             if min_time_needed.greater(max_time) { return None }
             
             let rotation_period = 2. * PI / self.angular_velocity.abs();
@@ -109,12 +111,12 @@ mod intersection {
     #[test]
     fn _manual_test() {
         let motion = Motion {
-            center_of_rotation: Vec2::new(0.695020676, 0.),
-            velocity: Vec2::new(-0.00475104246, 0.),
-            offset: Vec2::new(-0.695016265, 0.130200937),
-            angular_velocity: 0.170000225,
+            center_of_rotation: Vec2::new(0.22151862, -1.44),
+            velocity: Vec2::new(0., -0.1),
+            offset: Vec2::new(0.43514454, -0.55735916),
+            angular_velocity: -0.1,
         };
-        dbg!(motion.first_intersection(Line::Horizontal(0.), 1.0));
+        dbg!(motion.first_intersection(Line::Horizontal(-2.), 1.0));
     }
 
 }

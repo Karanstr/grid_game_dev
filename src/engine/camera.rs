@@ -136,4 +136,8 @@ impl Camera {
             draw_line(point1.x, point1.y, point2.x, point2.y, 4., color);
         }
     }
+
+    // pub fn draw_text(&self, text:&str, pos:Vec2, color:Color) {
+    //     draw_text(text, pos.x, pos.y, 10., color);
+    // }
 }

@@ -185,4 +185,3 @@ pub fn angular_to_tangential_velocity(angular_velocity: f32, offset: Vec2) -> Ve
         angular_velocity * offset.x
     )
 }
-

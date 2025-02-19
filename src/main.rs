@@ -25,7 +25,7 @@ mod globals {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
         pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-            Aabb::new(Vec2::ZERO, Vec2::splat(8.)), 
+            Aabb::new(Vec2::ZERO, Vec2::splat(4.)), 
             0.9
         ));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
