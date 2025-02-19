@@ -1,13 +1,13 @@
 {
   "position": [
-    0.9361739,
-    1.5591929
+    0.22151862,
+    -1.44
   ],
-  "rotation": 0.0,
+  "rotation": 4.589868,
   "velocity": [
     0.0,
-    0.0
+    -0.1
   ],
-  "angular_velocity": 0.0,
+  "angular_velocity": -0.1,
   "graph": "{\"root\":{\"pointer\":3,\"height\":0},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]}]}"
 }

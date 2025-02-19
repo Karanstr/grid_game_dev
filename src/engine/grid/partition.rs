@@ -106,7 +106,7 @@ impl CellData {
 }
 
 pub fn cell_length(height:u32, min_cell_length:Vec2) -> Vec2 {
-    min_cell_length * 2_f32.powi(height as i32 + 1)
+    min_cell_length * 2_f32.powi(height as i32)
 }
 
 pub fn center_to_edge(height:u32, min_cell_length:Vec2) -> Vec2 {
