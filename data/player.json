@@ -9,5 +9,5 @@
     0.0
   ],
   "angular_velocity": 0.0,
-  "graph": "{\"root\":{\"pointer\":6,\"height\":2},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]},{\"children\":[3,3,0,0]},{\"children\":[0,0,3,3]},{\"children\":[5,5,4,4]}]}"
+  "graph": "{\"root\":{\"pointer\":3,\"height\":0},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]}]}"
 }

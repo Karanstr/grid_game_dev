@@ -125,24 +125,25 @@ async fn main() {
     
     loop {
 
-        let (old_pos, aabb, location) = { // Drop entities after reading from it
+        let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
             entities.draw_all(vars.render_rotated, vars.render_debug);
             let target = entities.get_entity(vars.target_id()).unwrap();
-            // target.draw_outline(macroquad::color::DARKBLUE);
-            let location = entities.get_entity((vars.target_id() + 1) % 2).unwrap().location;
-            
+            target.draw_outline(macroquad::color::DARKBLUE);
+            // let location = entities.get_entity((vars.target_id() + 1) % 2).unwrap().location;
+            // if let Some(aabb) = target.aabb() { 
+            //     aabb.overlaps(location);
+            //     CAMERA.read().outline_bounds(aabb, 0.3, macroquad::color::DARKBLUE);
+            // }
             // We want to move the camera to where the target is drawn, not where the target is moved to.
-            (target.location.position, target.aabb(), location)
+            target.location.position
         };
-        CAMERA.read().outline_bounds(aabb, 0.3, macroquad::color::DARKBLUE);
         
-        aabb.overlaps(location);
         
         input.handle(&mut vars);
         
-        just_move();
-        // n_body_collisions((vars.target_id() + 1) % 2).await;
+        // just_move();
+        n_body_collisions((vars.target_id() + 1) % 2).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
@@ -240,14 +241,14 @@ pub fn set_key_binds() -> InputHandler<InputData> {
         let id = data.target_id();
         ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(SPEED, 0.));
     });
-    // input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
-    //     let id = data.target_id();
-    //     ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
-    // });
-    // input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
-    //     let id = data.target_id();
-    //     ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
-    // });
+    input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
+        let id = data.target_id();
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
+    });
+    input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
+        let id = data.target_id();
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
+    });
     input.bind_key(KeyCode::Space, InputTrigger::Down, |data : &mut InputData| {
         ENTITIES.write().get_mut_entity(data.target_id()).unwrap().stop();
     });

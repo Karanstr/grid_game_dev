@@ -47,16 +47,16 @@ pub struct Entity {
 }
 impl Entity {
     pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer, self.location.min_cell_length) }
-    pub fn aabb(&self) -> Aabb {
-        let (mut top_left, mut bottom_right) = self.get_extreme_points();
+    pub fn aabb(&self) -> Option<Aabb> {
+        let (mut top_left, mut bottom_right) = self.get_extreme_points()?;
         top_left += -center_to_edge(self.location.pointer.height, self.location.min_cell_length) + self.location.position;
         bottom_right += -center_to_edge(self.location.pointer.height, self.location.min_cell_length) + self.location.position;
-        Aabb::from_bounds(top_left, bottom_right)
+        Some(Aabb::from_bounds(top_left, bottom_right))
     }
 
-    pub fn get_extreme_points(&self) -> (Vec2, Vec2) {
+    pub fn get_extreme_points(&self) -> Option<(Vec2, Vec2)> {
         if self.corners.is_empty() {
-            return (self.location.position, self.location.position);
+            return None;
         }
 
         let mut top_left = Vec2::NAN;
@@ -72,7 +72,7 @@ impl Entity {
                 bottom_right.x = bottom_right.x.max(pos.x);
                 bottom_right.y = bottom_right.y.max(pos.y);
             });
-            (top_left, bottom_right)
+            Some((top_left, bottom_right))
         }
 
 }
