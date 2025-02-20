@@ -61,7 +61,30 @@ impl Camera {
 }
 // Drawing methods
 impl Camera {
-    #[allow(dead_code)]
+
+    /*pub fn render_grid(&self, location:Location, rotation:Vec2, alpha:u8) {
+        let point_offset = center_to_edge(location.pointer.height, location.min_cell_length);
+        let points_list: Vec<([Vec2; 4], usize)> = self.corners.iter().map(|cell| {
+            ([
+                    (cell.points[0] - point_offset).rotate(rotation) + location.position,
+                    (cell.points[1] - point_offset).rotate(rotation) + location.position,
+                    (cell.points[2] - point_offset).rotate(rotation) + location.position,
+                    (cell.points[3] - point_offset).rotate(rotation) + location.position
+                ], *cell.index
+            )
+        }).collect();
+        for (points, index) in points_list {
+            let color = crate::globals::BLOCKS.color(index);
+            if color == BLANK { continue; }
+            self.draw_rectangle_from_corners(
+                &points,
+                Color::from_rgba((color.r * 255.) as u8, (color.g * 255.) as u8, (color.b * 255.) as u8, alpha),
+                render_dbg,
+            );
+        }
+
+    }*/
+
     pub fn draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {
         let pos = self.world_to_screen(position);
         let len = length * self.zoom();
@@ -85,7 +108,6 @@ impl Camera {
     }
 
 
-    #[allow(dead_code)]
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, color:Color) {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
@@ -137,7 +159,4 @@ impl Camera {
         }
     }
 
-    // pub fn draw_text(&self, text:&str, pos:Vec2, color:Color) {
-    //     draw_text(text, pos.x, pos.y, 10., color);
-    // }
 }

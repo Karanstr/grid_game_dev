@@ -77,6 +77,7 @@ impl Entity {
 
 }
 
+/*
 pub struct EntityBuilder {
     id: ID,
     location: Location,
@@ -123,3 +124,4 @@ impl EntityBuilder {
     }
 
 }
+    */

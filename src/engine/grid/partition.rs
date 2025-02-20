@@ -85,7 +85,7 @@ impl ZorderPath {
     }
 
     #[allow(dead_code)]
-    pub fn cells_intersecting_aabb(_aabb:Aabb, _max_depth: u32) -> Vec<(Self)> {
+    pub fn cells_intersecting_aabb(_aabb:Aabb, _max_depth: u32) -> Vec<Self> {
         todo!()
     }
 

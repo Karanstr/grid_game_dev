@@ -49,6 +49,13 @@ mod intersection {
     }
     impl Motion {
 
+        // Repeats f in solve_linear_and_rotation but returns x and y
+        pub fn at_tick(self, ticks: f32) -> Vec2 {
+            // https://www.desmos.com/calculator/8iqoshfwcg
+            let angle = Vec2::from_angle(ticks * self.angular_velocity);
+            self.center_of_rotation + ticks*self.velocity + self.offset.rotate(angle)
+        }
+
         pub fn first_intersection(self, line: Line, max_time: f32) -> Option<f32> {
             match (self.velocity.is_zero(), self.angular_velocity.is_zero()) {
                 (true, true) => None,

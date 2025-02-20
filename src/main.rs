@@ -25,7 +25,7 @@ mod globals {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
         pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-            Aabb::new(Vec2::ZERO, Vec2::splat(4.)), 
+            Aabb::new(Vec2::ZERO, Vec2::splat(2.)), 
             0.9
         ));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
@@ -57,7 +57,8 @@ fn init_deadlock_detection() {
 }
 
 const SPEED: f32 = 0.01;
-const ROTATION_SPEED: f32 = PI/512.;
+// const ROTATION_SPEED: f32 = PI/512.;
+const ROTATION_SPEED: f32 = PI/32.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -130,6 +131,7 @@ async fn main() {
             entities.draw_all(vars.render_rotated, vars.render_debug);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
+            // target.draw_at(Vec2::ZERO, vars.render_rotated, vars.render_debug, 100);
             // let location = entities.get_entity((vars.target_id() + 1) % 2).unwrap().location;
             // if let Some(aabb) = target.aabb() { 
             //     aabb.overlaps(location);
@@ -241,13 +243,13 @@ pub fn set_key_binds() -> InputHandler<InputData> {
         let id = data.target_id();
         ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(SPEED, 0.));
     });
-    input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
+    input.bind_key(KeyCode::Q, InputTrigger::Pressed, |data : &mut InputData| {
         let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity = -ROTATION_SPEED;
     });
-    input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
+    input.bind_key(KeyCode::E, InputTrigger::Pressed, |data : &mut InputData| {
         let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity = ROTATION_SPEED;
     });
     input.bind_key(KeyCode::Space, InputTrigger::Down, |data : &mut InputData| {
         ENTITIES.write().get_mut_entity(data.target_id()).unwrap().stop();

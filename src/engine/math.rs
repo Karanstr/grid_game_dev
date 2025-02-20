@@ -1,6 +1,7 @@
 use super::*;
 // pub const FP_EPSILON: f32 = 0.001;
 pub const FP_EPSILON: f32 = f32::EPSILON;
+// Reimplement angle epsilon for comparisons
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Aabb {

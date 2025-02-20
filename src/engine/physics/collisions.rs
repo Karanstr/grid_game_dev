@@ -17,13 +17,13 @@ pub struct CollisionObject {
 
 #[derive(Debug, Clone, new)]
 pub struct Particle {
-    // Make offset radius and acquire cartesian coordinates from corner_type
+    // Make offset radius and acquire cartesian coordinates from corner_type?
     pub offset : Vec2,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
     pub corner_type : CornerType,
-    #[new(value = "0")]
-    itt_counter : usize,
+    // #[new(value = "0")]
+    // itt_counter : usize,
 }
 impl PartialOrd for Particle {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
@@ -168,12 +168,12 @@ fn collect_collision_objects() -> Vec<CollisionObject> {
         let entity = &entities.entities[idx];
         for other_idx in idx + 1..entities.entities.len() {
             let other = &entities.entities[other_idx];
-            // if let Some(obj) = entity_to_collision_object(entity, other) { 
-            //     objects.push(obj); 
-            // }
-            if let Some(obj) = entity_to_collision_object(other, entity) { 
+            if let Some(obj) = entity_to_collision_object(entity, other) { 
                 objects.push(obj); 
             }
+            // if let Some(obj) = entity_to_collision_object(other, entity) { 
+            //     objects.push(obj); 
+            // }
         }
     }
     objects
@@ -183,7 +183,7 @@ fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
     for entity in &mut ENTITIES.write().entities { 
         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
-        entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
+        // entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
 
@@ -246,24 +246,11 @@ pub async fn n_body_collisions(static_thing: ID) {
 
 // Eventually make this work with islands, solving each island by itself
 async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
-    let itt_max = 30;
     let entities = ENTITIES.read();
     let mut ticks_to_action = tick_max;
     let mut action = None;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
-            cur_corner.itt_counter += 1;
-            CAMERA.read().outline_point(cur_corner.position(&object), 0.05, 0.01, Color {
-                r: (cur_corner.itt_counter as f32) / itt_max as f32,
-                g: (cur_corner.itt_counter as f32) / itt_max as f32,
-                b: (cur_corner.itt_counter as f32) / itt_max as f32,
-                a: 1.,
-            });
-            if cur_corner.itt_counter >= itt_max {
-                if cur_corner.itt_counter == itt_max { macroquad::window::next_frame().await }
-                dbg!("Too many iterations"); 
-                continue
-            }
             if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
             let hitting_location = entities.get_entity(object.hitting).unwrap().location;
             let Some(ticks_to_hit) = next_intersection(
@@ -276,7 +263,7 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 hitting_location,
                 cur_corner.corner_type,
                 ticks_to_action,
-            ) else { continue };
+            ).await else { continue };
             cur_corner.tick(ticks_to_hit, object.angular_velocity);
             let real_velocity = object.velocity + angular_to_tangential_velocity(
                 object.angular_velocity,
@@ -338,22 +325,20 @@ fn boundary_corner(
 }
 
 use super::raymarching::*;
-fn next_intersection(
+async fn next_intersection(
     motion: Motion,
     hitting_location: Location,
     corner_type: CornerType,
     tick_max: f32,
 ) -> Option<f32> {
     let point = motion.center_of_rotation + motion.offset;
-    CAMERA.read().draw_point(point, 0.1, RED);
-    dbg!(motion, point);
     let point_velocity = motion.velocity + angular_to_tangential_velocity(
         motion.angular_velocity,
         motion.offset
     );
     CAMERA.read().draw_vec_line(
         point, 
-        point + point_velocity*10.,
+        point + point_velocity,
         GREEN
     );
     let within_bounds = hitting_location.to_aabb().contains(point);
@@ -363,7 +348,6 @@ fn next_intersection(
 
     let boundary_corner = boundary_corner(hitting_location, position_data, motion)?;
     let mut ticks  = Vec2::INFINITY;
-    
     if let Some(tickx) = motion.first_intersection(
         Line::Vertical(boundary_corner.x), 
         tick_max
@@ -373,13 +357,13 @@ fn next_intersection(
         tick_max.min(ticks.x)
     ) { ticks.y = ticky }
 
-    let ticks_to_hit = match (within_bounds.x, within_bounds.y) {
-        (false, false) => ticks.max_element(),
-        (true, false) if ticks.x.is_zero() => ticks.y,
-        (false, true) if ticks.y.is_zero() => ticks.x,
+    let ticks_to_hit = match within_bounds {
+        BVec2::FALSE => ticks.max_element(),
+        BVec2 { x: true, y: false} if ticks.x.is_zero() => ticks.y,
+        BVec2 { x: false, y: true} if ticks.y.is_zero() => ticks.x,
         _ => ticks.min_element(),
     };
-    
+
     (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
@@ -389,11 +373,11 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
     let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
     let rel_angular = (owner.angular_velocity - hitting.angular_velocity).snap_zero();
     let rel_velocity = ((owner.velocity - hitting.velocity).rotate(align_to_hitting)).snap_zero();
-    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - hitting.location.position).rotate(align_to_hitting) + hitting.location.position;
     let camera = CAMERA.read();
-    camera.draw_point(rotated_owner_pos, 0.1, GREEN);
     let point_rotation = align_to_hitting.rotate(owner.forward);
+    owner.draw_at(rotated_owner_pos, point_rotation, false, 100);
+    camera.draw_point(rotated_owner_pos, 0.02, GREEN);
     for corners in owner.corners.iter() {
         for i in 0..4 {
             //Cull any corner which isn't exposed
@@ -413,10 +397,11 @@ pub fn entity_to_collision_object(owner:&Entity, hitting:&Entity) -> Option<Coll
                 CornerType::Left(_) => GRAY,
                 CornerType::Right(_) => YELLOW,
             };
-            camera.draw_point(rotated_owner_pos + offset, 0.1, color);
+            camera.draw_point(rotated_owner_pos + offset, 0.02, color);
             collision_points.push(Reverse(Particle::new(offset, corner_type)));
         }
     }
+    if rel_velocity.is_zero() && rel_angular.is_zero() { return None }
     Some(CollisionObject::new(
         rotated_owner_pos,
         rel_velocity,
