@@ -56,9 +56,8 @@ fn init_deadlock_detection() {
     });
 }
 
-const SPEED: f32 = 0.01;
-// const ROTATION_SPEED: f32 = PI/512.;
-const ROTATION_SPEED: f32 = PI/32.;
+const SPEED: f32 = 0.001;
+const ROTATION_SPEED: f32 = PI/512.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -243,13 +242,13 @@ pub fn set_key_binds() -> InputHandler<InputData> {
         let id = data.target_id();
         ENTITIES.write().get_mut_entity(id).unwrap().apply_abs_velocity(Vec2::new(SPEED, 0.));
     });
-    input.bind_key(KeyCode::Q, InputTrigger::Pressed, |data : &mut InputData| {
+    input.bind_key(KeyCode::Q, InputTrigger::Down, |data : &mut InputData| {
         let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity = -ROTATION_SPEED;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity -= ROTATION_SPEED;
     });
-    input.bind_key(KeyCode::E, InputTrigger::Pressed, |data : &mut InputData| {
+    input.bind_key(KeyCode::E, InputTrigger::Down, |data : &mut InputData| {
         let id = data.target_id();
-        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity = ROTATION_SPEED;
+        ENTITIES.write().get_mut_entity(id).unwrap().angular_velocity += ROTATION_SPEED;
     });
     input.bind_key(KeyCode::Space, InputTrigger::Down, |data : &mut InputData| {
         ENTITIES.write().get_mut_entity(data.target_id()).unwrap().stop();
