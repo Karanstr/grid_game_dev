@@ -52,6 +52,7 @@ mod intersection {
 
         pub fn project_to(self, ticks: f32) -> Vec2 {
             // https://www.desmos.com/calculator/l96dczj2s1
+            // https://www.desmos.com/calculator/ksoejyc4bb
             let rotation = Vec2::from_angle(ticks * self.owner_angular);
             let revolution = Vec2::from_angle(ticks * -self.target_angular);
             let orbit_point = self.offset_from_owner.rotate(rotation) + self.owner_center - self.target_center;
