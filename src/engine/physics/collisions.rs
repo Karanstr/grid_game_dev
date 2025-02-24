@@ -24,7 +24,7 @@ impl CollisionObject {
         self.linear_velocity
             + angular_to_tangential_velocity(self.owner_angular, offset)
             + angular_to_tangential_velocity(
-                self.target_angular,
+                -self.target_angular,
                 offset + self.projected_owner(ticks_into_projection) - self.target_location.position
             )
     }
