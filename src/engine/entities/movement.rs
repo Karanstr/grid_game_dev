@@ -1,4 +1,6 @@
-use super::*;
+use std::f32::consts::PI;
+use macroquad::math::Vec2;
+use super::{Entity, ExternalPointer};
 
 #[allow(dead_code)]
 impl Entity {

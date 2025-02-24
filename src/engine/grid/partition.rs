@@ -1,5 +1,7 @@
-use super::*;
-use macroquad::math::UVec2;
+use macroquad::math::{Vec2, IVec2, UVec2};
+use crate::engine::math::{Aabb, FloatUtils};
+use crate::engine::grid::dag::ExternalPointer;
+use crate::engine::entities::Location;
 use crate::globals::GRAPH;
 //Value loosely tuned to prevent both phasing and catching on corners
 //Used to sample area around a point to determine what cell(s) it's in
@@ -91,7 +93,7 @@ impl ZorderPath {
 
 }
 
-#[derive(Debug, Clone, Copy, new)]
+#[derive(Debug, Clone, Copy, derive_new::new)]
 pub struct CellData {
     pub pointer : ExternalPointer,
     pub cell : UVec2,

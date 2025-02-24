@@ -1,12 +1,11 @@
 use std::collections::{HashMap, VecDeque};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-pub use vec_mem_heap::Index;
 use vec_mem_heap::prelude::{NodeField, AccessError};
-use derive_new::new;
+pub use vec_mem_heap::Index;
 
 pub trait GraphNode : Node + std::fmt::Debug + Clone + std::hash::Hash + Eq {}
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, new)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, derive_new::new)]
 pub struct ExternalPointer {
     pub pointer : Index,
     pub height : u32

@@ -1,9 +1,11 @@
-use macroquad::shapes::{draw_circle, draw_circle_lines, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines};
-pub use macroquad::color::colors::*;
-pub use macroquad::color::Color;
-use macroquad::miniquad::window::screen_size;
+use macroquad::{
+    shapes::{draw_circle, draw_circle_lines, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines},
+    color::*,
+    miniquad::window::screen_size,
+};
+use macroquad::math::Vec2;
 use derive_new::new;
-use super::*;
+use crate::engine::math::Aabb;
 #[derive(new)]
 pub struct Camera { 
     position: Vec2,
@@ -30,10 +32,6 @@ impl Camera {
         self.radius /= zoom;
     }
 
-    pub fn show_view(&self) {
-        self.outline_bounds(Aabb::new(self.position, Vec2::splat(self.radius)), 0.05, WHITE);
-    }
-
     fn lerp_position(&mut self, position:Vec2, smoothing:f32) {
         self.position = self.position.lerp(position, smoothing);
     }
@@ -55,6 +53,10 @@ impl Camera {
 }
 // Drawing methods
 impl Camera {
+
+    pub fn show_view(&self) {
+        self.outline_bounds(Aabb::new(self.position, Vec2::splat(self.radius)), 0.05, WHITE);
+    }
 
     /*pub fn render_grid(&self, location:Location, rotation:Vec2, alpha:u8) {
         let point_offset = center_to_edge(location.pointer.height, location.min_cell_length);

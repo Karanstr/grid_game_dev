@@ -1,10 +1,15 @@
-use super::*;
-use serde::{Serialize, Deserialize};
 mod render;
 mod movement;
 mod serialization;
+use serde::{Serialize, Deserialize};
+use macroquad::math::Vec2;
+use crate::engine::grid::dag::ExternalPointer;
+use crate::engine::math::Aabb;
+use crate::engine::grid::partition::*;
+use crate::engine::physics::collisions::{Corners, corner_handling};
 
-#[derive(new)]
+
+#[derive(derive_new::new)]
 pub struct EntityPool {
     #[new(value = "Vec::new()")]
     pub entities: Vec<Entity>,
@@ -21,7 +26,7 @@ impl EntityPool {
     }
 }
 
-#[derive(Debug, Clone, Copy, new, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, derive_new::new, Serialize, Deserialize)]
 pub struct Location {
     pub position: Vec2,
     pub pointer: ExternalPointer,
@@ -46,7 +51,7 @@ pub struct Entity {
     pub corners : Vec<Corners>,
 }
 impl Entity {
-    pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer, self.location.min_cell_length) }
+    pub fn recaclulate_corners(&mut self) { self.corners = corner_handling::tree_corners(self.location.pointer, self.location.min_cell_length) }
     pub fn aabb(&self) -> Option<Aabb> {
         let (mut top_left, mut bottom_right) = self.get_extreme_points()?;
         top_left += -center_to_edge(self.location.pointer.height, self.location.min_cell_length) + self.location.position;

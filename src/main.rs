@@ -1,23 +1,9 @@
 mod engine;
-use imports::*;
-mod imports {
-    use super::*;
-    pub use engine::physics::collisions::{n_body_collisions, Corners, corner_handling::*};
-    pub use engine::grid::dag::{ExternalPointer, Index};
-    pub use macroquad::math::{Vec2, BVec2, IVec2};
-    pub use engine::grid::partition::*;
-    pub use engine::entities::*;
-    pub use macroquad::input::*;
-    pub use derive_new::new;
-    pub use engine::math::*;
-    pub use std::f32::consts::PI;
-}
 mod globals {
     use crate::engine::blocks::BlockPalette;
     use crate::engine::grid::dag::{SparseDirectedGraph, BasicNode};
     use crate::engine::camera::Camera;
     use macroquad::math::Vec2;
-    use crate::engine::math::Aabb;
     use crate::engine::entities::EntityPool;
     use lazy_static::lazy_static;
     use parking_lot::RwLock;
@@ -30,6 +16,16 @@ mod globals {
 }
 use globals::*;
 use engine::input::*;
+use macroquad::math::Vec2;
+use macroquad::prelude::{mouse_position, KeyCode, MouseButton};
+use std::f32::consts::PI;
+use engine::{
+    physics::collisions::n_body_collisions,
+    entities::{Entity, ID, Location},
+    math::Aabb,
+    grid::dag::{Index, ExternalPointer},
+    grid::partition::{gate, ZorderPath},
+};
 
 use std::time::Duration;
 use std::thread;
@@ -137,7 +133,6 @@ async fn main() {
         
         input.handle(&mut vars);
         
-        // just_move();
         n_body_collisions((vars.target_id() + 1) % 2).await;
         
         // We don't want to move the camera until after we've drawn all the collision debug.

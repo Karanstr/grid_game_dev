@@ -1,14 +1,11 @@
 use super::*;
 use crate::globals::*;
+use crate::engine::grid::dag::Index;
 impl EntityPool {
     pub fn draw_all(&self, rotate:bool, render_dbg:bool) {
         for entity in self.entities.iter() {
-            // Update this intersection code to account for zoom
-            // let location = &entity.location;
-            // if CAMERA.read().aabb.intersects(location.to_aabb()) == BVec2::TRUE {
-                entity.draw(rotate, render_dbg);
-                entity.draw_velocity_arrow(macroquad::color::DARKBLUE);
-            // }
+            entity.draw(rotate, render_dbg);
+            entity.draw_velocity_arrow(macroquad::color::DARKBLUE);
         }
     }
 
@@ -47,7 +44,7 @@ impl Entity {
     pub fn draw_outline(&self, color:macroquad::color::Color) {
         let point_offset = center_to_edge(self.location.pointer.height, self.location.min_cell_length);
         let square = ExternalPointer::new(Index(1), self.location.pointer.height);
-        let corners = tree_corners(square, self.location.min_cell_length)[0].points;
+        let corners = corner_handling::tree_corners(square, self.location.min_cell_length)[0].points;
         let points = [
             (corners[0] - point_offset).rotate(self.forward) + self.location.position,
             (corners[1] - point_offset).rotate(self.forward) + self.location.position,

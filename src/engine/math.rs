@@ -1,5 +1,5 @@
-use super::*;
-// pub const FP_EPSILON: f32 = 0.001;
+use derive_new::new;
+use macroquad::math::{Vec2, BVec2, IVec2};
 pub const FP_EPSILON: f32 = f32::EPSILON;
 // Reimplement angle epsilon for comparisons
 

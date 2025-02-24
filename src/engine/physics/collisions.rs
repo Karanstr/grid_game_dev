@@ -1,11 +1,15 @@
 use std::cmp::{Reverse, Ordering};
 use std::collections::BinaryHeap;
-
-use super::*;
-pub use macroquad::color::*;
+use macroquad::color::*;
 use crate::globals::*;
+use macroquad::math::{Vec2, BVec2, IVec2};
+use crate::engine::grid::{partition::*, dag::{Index, ExternalPointer}};
+use crate::engine::math::*;
+use crate::engine::entities::{Location, ID, Entity};
+use std::f32::consts::PI;
 
-#[derive(Debug, Clone, new)]
+
+#[derive(Debug, Clone, derive_new::new)]
 pub struct CollisionObject {
     pub target_location : Location,
     pub target_angular : f32,
@@ -29,7 +33,7 @@ impl CollisionObject {
             )
     }
 }
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, derive_new::new)]
 pub struct Particle {
     pub offset : Vec2,
     pub corner_type : CornerType,
@@ -391,7 +395,7 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
     ))
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, derive_new::new)]
 pub struct Corners {
     pub points : [Vec2; 4],
     pub index : Index,
