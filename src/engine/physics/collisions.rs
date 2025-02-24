@@ -32,6 +32,7 @@ impl CollisionObject {
 #[derive(Debug, Clone, new)]
 pub struct Particle {
     pub offset : Vec2,
+    pub corner_type : CornerType,
     #[new(value = "0.")]
     pub ticks_into_projection : f32,
 }
@@ -94,6 +95,16 @@ impl CornerType {
         })
     }
     
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::TopLeft,
+            1 => Self::TopRight,
+            2 => Self::BottomLeft,
+            3 => Self::BottomRight,
+            _ => unimplemented!("Not sure how to do that yet.."),
+        }
+    }
+
     pub fn from_rotation(rotation: f32) -> Self {
         match rotation.rem_euclid(PI * 2.) {
             rot if rot.approx_eq(PI / 4.) => Self::BottomRight,
@@ -243,19 +254,22 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 object.target_angular,
                 object.owner_angular,
             );
+            // Why aren't we just passing object?
             let Some(ticks_to_hit) = next_intersection(
                 motion,
                 object.instant_tangential_velocity(cur_corner.offset, cur_corner.ticks_into_projection),
                 object.target_location,
+                cur_corner.corner_type,
                 ticks_to_action,
             ).await else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             cur_corner.offset = motion.project_to(ticks_to_hit) - object.projected_owner(cur_corner.ticks_into_projection);
+            cur_corner.corner_type = cur_corner.corner_type.rotate(ticks_to_hit*(object.owner_angular-object.target_angular));
             let velocity = object.instant_tangential_velocity(cur_corner.offset, cur_corner.ticks_into_projection);
             if let Some(walls_hit) = hitting_wall(
                 gate::point_to_real_cells(object.target_location, motion.project_to(ticks_to_hit)),
                 velocity,
-                CornerType::from_rotation(cur_corner.offset.y.atan2(cur_corner.offset.x))
+                cur_corner.corner_type
             ) {
                 action = Some( Hit {
                     owner : object.owner,
@@ -313,6 +327,7 @@ async fn next_intersection(
     motion: Motion,
     itvel: Vec2,
     hitting_location: Location,
+    corner_type: CornerType,
     tick_max: f32,
 ) -> Option<f32> {
     let point = motion.project_to(0.);
@@ -321,7 +336,6 @@ async fn next_intersection(
     let within_bounds = hitting_location.to_aabb().contains(point);
 
     let position_data = gate::point_to_real_cells(hitting_location, point);
-    let corner_type = CornerType::from_rotation(motion.offset_from_owner.y.atan2(motion.offset_from_owner.x));
     if hitting_wall(position_data, itvel, corner_type).is_some() { 
         return Some(0.)
     };
@@ -361,7 +375,10 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
             if corners.mask & (1 << i) == 0 { continue }
             let offset = ((corners.points[i] - offset).rotate(owner.forward) + owner.location.position - target.location.position)
                 .rotate(align_target) + target.location.position - rotated_owner_pos;
-            collision_points.push(Reverse(Particle::new(offset)));
+            collision_points.push(Reverse(Particle::new(
+                offset,
+                CornerType::from_index(i).rotate(owner.rotation - target.rotation)
+            )));
         }
     }
     Some(CollisionObject::new(

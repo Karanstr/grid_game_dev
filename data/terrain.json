@@ -9,5 +9,5 @@
     0.0
   ],
   "angular_velocity": 0.0,
-  "graph": "{\"root\":{\"pointer\":12,\"height\":3},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]},{\"children\":[1,0,0,0]},{\"children\":[0,1,0,0]},{\"children\":[0,0,1,0]},{\"children\":[0,0,0,1]},{\"children\":[4,0,0,0]},{\"children\":[0,5,0,0]},{\"children\":[0,0,6,0]},{\"children\":[0,0,0,7]},{\"children\":[11,10,9,8]}]}"
+  "graph": "{\"root\":{\"pointer\":16,\"height\":3},\"nodes\":[{\"children\":[0,0,0,0]},{\"children\":[1,1,1,1]},{\"children\":[2,2,2,2]},{\"children\":[3,3,3,3]},{\"children\":[0,1,1,1]},{\"children\":[0,0,0,1]},{\"children\":[1,0,1,1]},{\"children\":[0,0,1,0]},{\"children\":[1,1,0,1]},{\"children\":[0,1,0,0]},{\"children\":[1,0,0,0]},{\"children\":[1,1,1,0]},{\"children\":[5,4,4,1]},{\"children\":[6,7,1,6]},{\"children\":[8,1,9,8]},{\"children\":[1,11,11,10]},{\"children\":[15,14,13,12]}]}"
 }
