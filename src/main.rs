@@ -24,10 +24,7 @@ mod globals {
     lazy_static! {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(
-            Aabb::new(Vec2::ZERO, Vec2::splat(2.)), 
-            0.9
-        ));
+        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 2.));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
     }
 }
@@ -123,7 +120,6 @@ async fn main() {
     let mut input = set_key_binds();
     
     loop {
-
         let old_pos = { // Drop entities after reading from it
             let entities = ENTITIES.read();
             entities.draw_all(vars.render_rotated, vars.render_debug);
@@ -147,7 +143,6 @@ async fn main() {
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
         CAMERA.write().update(old_pos, 0.4);
-        
         macroquad::window::next_frame().await
     }
 
