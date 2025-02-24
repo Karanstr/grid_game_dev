@@ -4,7 +4,6 @@ mod intersection {
     use derive_new::new;
     use roots::{find_root_brent, SimpleConvergency};
     use macroquad::math::Vec2;
-    use std::f32::consts::PI;
     use crate::engine::math::*;
 
     struct IterationTracker {
@@ -36,50 +35,37 @@ mod intersection {
 
     #[derive(Debug, Clone, Copy)]
     pub enum Line {
-        Vertical(f32),   // x = value
-        Horizontal(f32), // y = value
+        Vertical(f32),
+        Horizontal(f32),
     }
 
     #[derive(Debug, Clone, Copy, new)]
     pub struct Motion {
-        pub center_of_rotation: Vec2,
-        pub offset: Vec2,
+        pub target_center: Vec2,
+        pub owner_center: Vec2,
+        pub offset_from_owner: Vec2,
         pub velocity: Vec2,
-        pub rotational_velocity: f32,
-        // Center of revolution is origin
-        pub revolutionary_velocity: f32,
+        pub target_angular: f32,
+        pub owner_angular: f32,
     }
     impl Motion {
 
-        pub fn at_tick(self, ticks: f32) -> Vec2 {
-            // https://www.desmos.com/calculator/frrsklqt5y
-            let rotation = Vec2::from_angle(ticks * self.rotational_velocity);
-            let revolution = Vec2::from_angle(ticks * self.revolutionary_velocity);
-            let orbit_point = self.offset.rotate(rotation) + ticks*self.velocity;
-            (orbit_point + self.center_of_rotation).rotate(revolution)
+        pub fn project_to(self, ticks: f32) -> Vec2 {
+            // https://www.desmos.com/calculator/l96dczj2s1
+            let rotation = Vec2::from_angle(ticks * self.owner_angular);
+            let revolution = Vec2::from_angle(ticks * -self.target_angular);
+            let orbit_point = self.offset_from_owner.rotate(rotation) + self.owner_center - self.target_center;
+            (orbit_point + ticks * self.velocity).rotate(revolution) + self.target_center
         }
 
-        // pub fn first_intersection(self, line: Line, max_time: f32) -> Option<f32> {
-        //     // match (self.velocity.is_zero(), self.angular_velocity.is_zero()) {
-        //     //     (true, true) => None,
-        //     //     (false, true) => self.solve_pure_linear(line, max_time),
-        //     //     // (true, false) => self.solve_pure_rotation(line, max_time),
-        //     //     // (false, false) => self.solve_linear_and_rotation(line, max_time),
-        //     //     _ => self.solve_linear_and_rotation(line, max_time),
-        //     // }
-        //     self.solve_linear_and_rotation(line, max_time)
-            
-        // }
-
-        // fn solve_linear_and_rotation(self, line: Line, max_time: f32) -> Option<f32> {
-        fn solve_linear_and_rotation(self, vertical_line: f32, max_time: f32) -> Option<f32> {
+        pub fn solve_all(self, line: Line, max_time: f32) -> Option<f32> {
         
-            // let (target_offset, velocity, offset_parallel, offset_perp) = match line {
-            //     Line::Vertical(x) => (self.center_of_rotation.x - x, self.velocity.x, self.offset.x, -self.offset.y),
-            //     Line::Horizontal(y) => (self.center_of_rotation.y - y, self.velocity.y, self.offset.y, self.offset.x),
-            // };
+            let (target, min_time_needed, index) = match line {
+                Line::Vertical(x) => (x, 0., 0),
+                Line::Horizontal(y) => (y, 0., 1),
+            };
 
-            let f = |t: f32| vertical_line - self.at_tick(t).x;
+            let f = |t: f32| target - self.project_to(t)[index];
             
             let check_range = |t_start: f32, t_end: f32| -> Option<f32> {
                 let mut iter_tracker = IterationTracker::default();
@@ -90,46 +76,34 @@ mod intersection {
                 None
             };
 
-            // // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
-            // let radius = self.offset.length();
-            // let min_time_needed = if radius.greater_eq_mag(target_offset) { 0. } else {
-            //     (target_offset.abs() - radius) / velocity
-            // };
-            // if min_time_needed.greater(max_time) { return None }
-            
-            // let rotation_period = 2. * PI / self.angular_velocity.abs();
-            
-            // check_range(min_time_needed, (min_time_needed + rotation_period).min(max_time))
-
-            check_range(0., max_time)
-        }
-
-/*
-        fn solve_pure_linear(self, line: Line, max_time: f32) -> Option<f32> {
-            let (target, center, velocity, offset) = match line {
-                Line::Vertical(x) => (x, self.center_of_rotation.x, self.velocity.x, self.offset.x),
-                Line::Horizontal(y) => (y, self.center_of_rotation.y, self.velocity.y, self.offset.y),
+            /* Idk how to convert this correctly yet
+            // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
+            let radius = self.offset.length();
+            let min_time_needed = if radius.greater_eq_mag(target_offset) { 0. } else {
+                (target_offset.abs() - radius) / velocity
             };
-            let point = center + offset;
-            let t = (target - point) / velocity;
-            (t.greater(0.) && t.less_eq(max_time)).then_some(t)
+            if min_time_needed.greater(max_time) { return None }
+            
+            let rotation_period = 2. * PI / self.angular_velocity.abs();
+            
+            check_range(min_time_needed, (min_time_needed + rotation_period).min(max_time))
+            */
+            check_range(min_time_needed, max_time)
         }
 
-        fn solve_pure_rotation(self, line: Line, max_time: f32) -> Option<f32> { todo!() }
-        */
     }
 
     #[test]
     fn _manual_test() {
         let motion = Motion {
-            center_of_rotation: Vec2::new(0.4, 0.),
-            offset : Vec2::new(0.5, 0.5),
-            velocity: Vec2::new(0., -2.),
-            rotational_velocity: 0.2,
-            revolutionary_velocity: 0.3,
+            target_center: Vec2::new(1., 2.),
+            owner_center: Vec2::new(0., 2.),
+            offset_from_owner: Vec2::new(1., 1.),
+            velocity: Vec2::new(2., 0.),
+            target_angular: 0.1,
+            owner_angular: 1.,
         };
-        dbg!(motion.at_tick(1.0));
-        dbg!(motion.solve_linear_and_rotation(1., 1.));
+        dbg!(motion.project_to(1.0));
     }
 
 }

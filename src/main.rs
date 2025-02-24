@@ -2,9 +2,9 @@ mod engine;
 use imports::*;
 mod imports {
     use super::*;
-    pub use engine::physics::collisions::{just_move, n_body_collisions, Corners, corner_handling::*};
+    pub use engine::physics::collisions::{n_body_collisions, Corners, corner_handling::*};
     pub use engine::grid::dag::{ExternalPointer, Index};
-    pub use macroquad::math::{Vec2, BVec2, IVec2, Mat2};
+    pub use macroquad::math::{Vec2, BVec2, IVec2};
     pub use engine::grid::partition::*;
     pub use engine::entities::*;
     pub use macroquad::input::*;
@@ -56,7 +56,7 @@ fn init_deadlock_detection() {
     });
 }
 
-const SPEED: f32 = 0.001;
+const SPEED: f32 = 0.005;
 const ROTATION_SPEED: f32 = PI/512.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
@@ -98,7 +98,6 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
-    
     // Load entities 
     {
         let mut entity_pool = ENTITIES.write();
@@ -130,7 +129,6 @@ async fn main() {
             entities.draw_all(vars.render_rotated, vars.render_debug);
             let target = entities.get_entity(vars.target_id()).unwrap();
             target.draw_outline(macroquad::color::DARKBLUE);
-            // target.draw_at(Vec2::ZERO, vars.render_rotated, vars.render_debug, 100);
             // let location = entities.get_entity((vars.target_id() + 1) % 2).unwrap().location;
             // if let Some(aabb) = target.aabb() { 
             //     aabb.overlaps(location);
