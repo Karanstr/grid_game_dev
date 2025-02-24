@@ -174,12 +174,14 @@ impl Aabb {
     }
 }
 
-
 pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     let mut entities = ENTITIES.write();
     let entity = &mut entities.get_mut_entity(entity).unwrap();
     if new_cell.height > entity.location.pointer.height { return; }
-    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, world_point)[0] else { return };
+    
+    let rotated_point = (world_point - entity.location.position).rotate(Vec2::from_angle(-entity.rotation)) + entity.location.position;
+    
+    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, rotated_point)[0] else { return };
     let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
     let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) else {
         dbg!("Failed to set cell");

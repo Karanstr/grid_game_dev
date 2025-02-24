@@ -183,7 +183,6 @@ fn apply_drag() {
     const DRAG_MULTIPLIER: f32 = 0.95;
     for entity in &mut ENTITIES.write().entities { 
         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
-        // entity.angular_velocity = 0.0;
         entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
     }
 }
@@ -205,7 +204,6 @@ fn apply_normal_force(static_thing: ID, hit: Hit) {
         if id != static_thing {
             let entity = entities.get_mut_entity(id).unwrap();
             entity.velocity = (entity.velocity + world_impulse * multiplier).snap_zero();
-            // entity.velocity = Vec2::ZERO;
             entity.angular_velocity = 0.;
         }
     }

@@ -3,11 +3,12 @@ use crate::globals::*;
 impl EntityPool {
     pub fn draw_all(&self, rotate:bool, render_dbg:bool) {
         for entity in self.entities.iter() {
-            let location = &entity.location;
-            if CAMERA.read().aabb.intersects(location.to_aabb()) == BVec2::TRUE {
+            // Update this intersection code to account for zoom
+            // let location = &entity.location;
+            // if CAMERA.read().aabb.intersects(location.to_aabb()) == BVec2::TRUE {
                 entity.draw(rotate, render_dbg);
                 entity.draw_velocity_arrow(macroquad::color::DARKBLUE);
-            }
+            // }
         }
     }
 
