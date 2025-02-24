@@ -322,7 +322,6 @@ async fn next_intersection(
 
     let position_data = gate::point_to_real_cells(hitting_location, point);
     let corner_type = CornerType::from_rotation(motion.offset_from_owner.y.atan2(motion.offset_from_owner.x));
-    
     if hitting_wall(position_data, itvel, corner_type).is_some() { 
         return Some(0.)
     };
@@ -357,6 +356,7 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
     let rotated_owner_pos = (owner.location.position - target.location.position).rotate(align_target) + target.location.position;
     for corners in owner.corners.iter() {
         for i in 0..4 {
+            // if i != 2 { continue }
             // Cull any corner which isn't exposed
             if corners.mask & (1 << i) == 0 { continue }
             let offset = ((corners.points[i] - offset).rotate(owner.forward) + owner.location.position - target.location.position)
