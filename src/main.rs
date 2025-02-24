@@ -10,7 +10,7 @@ mod globals {
     lazy_static! {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 2.));
+        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 16.));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
     }
 }
@@ -137,7 +137,8 @@ async fn main() {
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
-        CAMERA.write().update(old_pos, 0.4);
+        // CAMERA.write().update(Some((old_pos, 0.4)));
+        CAMERA.write().update(None);
         macroquad::window::next_frame().await
     }
 

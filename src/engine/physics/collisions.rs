@@ -144,12 +144,12 @@ pub enum CheckZorders {
 }
 impl CheckZorders {
     pub fn from_velocity(velocity: Vec2) -> Self {
+        if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
         match velocity.zero_signum() {
             IVec2 { x: 0, y: -1 } => CheckZorders::Two([0, 1]),  // Up: check top cells
             IVec2 { x: 0, y: 1 } => CheckZorders::Two([2, 3]),   // Down: check bottom cells
             IVec2 { x: -1, y: 0 } => CheckZorders::Two([0, 2]), // Left: check left cells
             IVec2 { x: 1, y: 0 } => CheckZorders::Two([1, 3]),  // Right: check right cells
-            IVec2 { x: 0, y: 0 } => panic!("Ahhh! (Velocity is zero)"),
             _ => CheckZorders::One((velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)),
         }
     }
@@ -368,7 +368,7 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
     let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
     let align_target = Vec2::from_angle(-target.rotation);
     let rel_velocity = (owner.velocity - target.velocity).rotate(align_target).snap_zero();
-    if rel_velocity.is_zero() && owner.angular_velocity.is_zero() && target.angular_velocity.is_zero() { return None }
+    if rel_velocity.is_zero() && (owner.angular_velocity - target.angular_velocity).is_zero() { return None }
     let rotated_owner_pos = (owner.location.position - target.location.position).rotate(align_target) + target.location.position;
     for corners in owner.corners.iter() {
         for i in 0..4 {

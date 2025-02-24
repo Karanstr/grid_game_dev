@@ -30,9 +30,6 @@ impl Aabb {
         (point - self.center).less_eq_mag(self.radius)
     }
     
-    pub fn move_by(&mut self, displacement:Vec2) { self.center += displacement }
-    pub fn move_to(&mut self, position:Vec2) { self.center = position }
-    
     pub fn expand(&self, distance:Vec2) -> Self {
         Self {
             center: self.center + distance / 2.,

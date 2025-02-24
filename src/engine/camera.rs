@@ -15,8 +15,10 @@ pub struct Camera {
 }
 // State changes
 impl Camera {
-    pub fn update(&mut self, new_position:Vec2, smoothing:f32) {
-        self.lerp_position(new_position, smoothing);
+    pub fn update(&mut self, move_to:Option<(Vec2, f32)>) {
+        if let Some((new_position, smoothing)) = move_to {
+            self.lerp_position(new_position, smoothing);
+        }
         self.update_scale();
     }
 
