@@ -218,22 +218,24 @@ pub fn just_move() {
     apply_drag();
 }
 
-pub async fn n_body_collisions(static_thing: ID) {
+pub fn n_body_collisions(static_thing: ID) {
     let mut tick_max = 1.;
     let mut wedge_count = 0;
     loop {
         let objects = collect_collision_objects();
-        let Some(mut hit) = find_next_action(objects, tick_max).await else {
+        let mut actions = find_next_action(objects, tick_max);
+        let Some(mut hit) = actions.pop() else {
             tick_entities(tick_max); break
         };
+        dbg!(actions.len() + 1);
         if hit.ticks.is_zero() {
             wedge_count += 1;
             // if wedge_count == 2: Balance the velocity of the axis we double tap
-            // ^ Only relevant when we have elastic collisions
+            // ^ Only relevant when we have elastic collisions?
             if wedge_count == 3 { hit.walls = BVec2::TRUE }
         } else {
             wedge_count = 0;
-            tick_max = tick_max - hit.ticks;
+            tick_max -= hit.ticks;
             tick_entities(hit.ticks);
         }
         apply_normal_force(static_thing, hit);
@@ -242,12 +244,14 @@ pub async fn n_body_collisions(static_thing: ID) {
 }
 
 // Eventually make this work with islands, solving each island by itself
-async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<Hit> {
+fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
     let mut ticks_to_action = tick_max;
-    let mut action = None;
+    let mut action:Vec<Hit> = Vec::new();
+    let mut it_count = 0;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
-            if cur_corner.ticks_into_projection.greater_eq(ticks_to_action) { continue 'objectloop }
+            it_count += 1;
+            if cur_corner.ticks_into_projection.greater(ticks_to_action) { continue 'objectloop }
             let motion = Motion::new(
                 object.target_location.position,
                 object.projected_owner(cur_corner.ticks_into_projection),
@@ -256,6 +260,9 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 object.target_angular,
                 object.owner_angular,
             );
+            if it_count > 20 {
+                dbg!("stop");
+            }
             // Why aren't we just passing object?
             let Some(ticks_to_hit) = next_intersection(
                 motion,
@@ -263,7 +270,7 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 object.target_location,
                 cur_corner.corner_type,
                 ticks_to_action,
-            ).await else { continue };
+            ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             cur_corner.offset = motion.project_to(ticks_to_hit) - object.projected_owner(cur_corner.ticks_into_projection);
             cur_corner.corner_type = cur_corner.corner_type.rotate(ticks_to_hit*(object.owner_angular-object.target_angular));
@@ -273,7 +280,8 @@ async fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Option<
                 velocity,
                 cur_corner.corner_type
             ) {
-                action = Some( Hit {
+                if cur_corner.ticks_into_projection.less(ticks_to_action) { action.clear() }
+                action.push( Hit {
                     owner : object.owner,
                     target : object.target,
                     walls : walls_hit,
@@ -325,7 +333,7 @@ fn boundary_corner(
 }
 
 use super::raymarching::*;
-async fn next_intersection(
+fn next_intersection(
     motion: Motion,
     itvel: Vec2,
     hitting_location: Location,
@@ -344,11 +352,13 @@ async fn next_intersection(
 
     let boundary_corner = boundary_corner(hitting_location, position_data, itvel, motion)?;
     let mut ticks  = Vec2::INFINITY;
-    if let Some(tickx) = motion.solve_all(
+    if itvel.x.is_zero() && boundary_corner.x.approx_eq(point.x) {}
+    else if let Some(tickx) = motion.solve_all(
         Line::Vertical(boundary_corner.x),
         tick_max
     ) { ticks.x = tickx }
-    if let Some(ticky) = motion.solve_all(
+    if itvel.y.is_zero() && boundary_corner.y.approx_eq(point.y) {}
+    else if let Some(ticky) = motion.solve_all(
         Line::Horizontal(boundary_corner.y),
         tick_max.min(ticks.x)
     ) { ticks.y = ticky }

@@ -2,7 +2,7 @@ pub use intersection::*;
 
 mod intersection {
     use derive_new::new;
-    use roots::{find_root_brent, SimpleConvergency};
+    use roots::{find_root_brent, SearchError, SimpleConvergency};
     use macroquad::math::Vec2;
     use crate::engine::math::*;
 
@@ -52,7 +52,7 @@ mod intersection {
 
         pub fn project_to(self, ticks: f32) -> Vec2 {
             // https://www.desmos.com/calculator/l96dczj2s1 Calculations
-            // https://www.desmos.com/calculator/ksoejyc4bb Visualizations
+            // https://www.desmos.com/calculator/wtvezmljqb Visualizations (target center forced to be (0,0))
             let rotation = Vec2::from_angle(ticks * self.owner_angular);
             let revolution = Vec2::from_angle(ticks * -self.target_angular);
             let orbit_point = self.offset_from_owner.rotate(rotation) + self.owner_center - self.target_center;
@@ -61,23 +61,25 @@ mod intersection {
 
         pub fn solve_all(self, line: Line, max_time: f32) -> Option<f32> {
         
-            let (target, min_time_needed, index) = match line {
+            let (target, min_time_needed, x_or_y) = match line {
                 Line::Vertical(x) => (x, 0., 0),
                 Line::Horizontal(y) => (y, 0., 1),
             };
 
-            let f = |t: f32| target - self.project_to(t)[index];
-            
+            let f = |t: f32| target - self.project_to(t)[x_or_y];
             let check_range = |t_start: f32, t_end: f32| -> Option<f32> {
                 let mut iter_tracker = IterationTracker::default();
-                if let Ok(t) = find_root_brent(t_start, t_end, &f, &mut iter_tracker) {
-                    println!("Found in {} iterations", iter_tracker.iterations);
-                    return Some(t)
+                match find_root_brent(t_start, t_end, &f, &mut iter_tracker) {
+                    Ok(t) => Some(t),
+                    //     println!("Found in {} iterations", iter_tracker.iterations);
+                    //     Some(t)
+                    // },
+                    Err(SearchError::NoConvergency) => panic!("Increase iterations"),
+                    Err(_) => None
                 }
-                None
             };
 
-            /* Idk how to convert this correctly yet
+            /*
             // Calculate the minimum time needed to potentially reach the target based on linear motion and rotation radius
             let radius = self.offset.length();
             let min_time_needed = if radius.greater_eq_mag(target_offset) { 0. } else {

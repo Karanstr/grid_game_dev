@@ -10,7 +10,7 @@ mod globals {
     lazy_static! {
         pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
-        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 16.));
+        pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 4.));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
     }
 }
@@ -133,7 +133,7 @@ async fn main() {
         
         input.handle(&mut vars);
         
-        n_body_collisions((vars.target_id() + 1) % 2).await;
+        n_body_collisions((vars.target_id() + 1) % 2);
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
