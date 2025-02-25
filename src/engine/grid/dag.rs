@@ -132,11 +132,11 @@ impl<T: GraphNode> SparseDirectedGraph<T> {
         )?;
         let last_leaf = self.leaf_count as usize - 1;
         let old_nodes = bfs_nodes(self.nodes.internal_memory(), old_parent, last_leaf); 
-        let early_exit = if let Some(node) = early_node {
+        let early_exit = match early_node { Some(node) => {
             self.index_lookup.remove(&self.nodes.replace(old_parent, node.clone()).unwrap());
             self.index_lookup.insert(node, old_parent);
             true
-        } else { false };
+        } None => { false }};
         for index in bfs_nodes(self.nodes.internal_memory(), cur_pointer.pointer, last_leaf) {
             self.nodes.add_ref(index).unwrap()
         }
