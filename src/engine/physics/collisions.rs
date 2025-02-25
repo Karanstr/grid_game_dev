@@ -228,7 +228,6 @@ pub fn n_body_collisions(static_thing: ID) {
 }
 
 use super::raymarching::{Motion, Line};
-// Eventually make this work with islands, solving each island by itself
 fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
     let mut ticks_to_action = tick_max;
     let mut action:Vec<Hit> = Vec::new();
