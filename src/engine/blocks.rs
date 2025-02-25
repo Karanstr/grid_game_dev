@@ -39,6 +39,7 @@ impl Default for BlockPalette {
         )
     }
 }
+// This is an insane amount of redirection.
 impl BlockPalette {
     pub fn index_type(&self, index : usize) -> CollisionType {
         self.0[index].collision_type

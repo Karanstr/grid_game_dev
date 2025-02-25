@@ -8,7 +8,6 @@ use crate::engine::math::*;
 use crate::engine::entities::{Location, ID, Entity};
 use std::f32::consts::PI;
 
-
 #[derive(Debug, Clone, derive_new::new)]
 pub struct CollisionObject {
     pub target_location : Location,
@@ -33,6 +32,7 @@ impl CollisionObject {
             )
     }
 }
+
 #[derive(Debug, Clone, derive_new::new)]
 pub struct Particle {
     pub offset : Vec2,
@@ -56,6 +56,11 @@ impl PartialEq for Particle {
 }
 impl Eq for Particle {} 
 
+pub enum CheckZorders {
+    One(usize),
+    Two([usize; 2]),
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum CornerType {
     TopLeft,
@@ -68,23 +73,22 @@ pub enum CornerType {
     Left(f32),
 }
 impl CornerType {
-    // Replace this clamped logic with .less and .greater methods
     pub fn checks(&self, velocity:Vec2) -> CheckZorders {
-        if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
-        let clamped = velocity.zero_signum().max(IVec2::ZERO);
+        if velocity.is_zero() { panic!("AHHH (Velocity shouldn't be zero)"); }
+        let (x, y) = (velocity.x.greater(0.) as usize, velocity.y.greater(0.) as usize);
         if velocity.x.is_zero() {
             match self {
-                Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * clamped.y as usize, (2 * clamped.y as usize) | 1]),
-                Self::TopLeft | Self::BottomLeft | Self::Left(_) => CheckZorders::One((2 * clamped.y as usize) | 1),
-                Self::TopRight | Self::BottomRight | Self::Right(_) => CheckZorders::One(2 * clamped.y as usize),
+                Self::Top(_) | Self::Bottom(_) => CheckZorders::Two([2 * y, (2 * y) | 1]),
+                Self::TopLeft | Self::BottomLeft | Self::Left(_) => CheckZorders::One((2 * y) | 1),
+                Self::TopRight | Self::BottomRight | Self::Right(_) => CheckZorders::One(2 * y),
             }
         } else if velocity.y.is_zero() {
             match self {
-                Self::Left(_) | Self::Right(_) => CheckZorders::Two([2 | clamped.x as usize, clamped.x as usize]),
-                Self::TopLeft | Self::TopRight | Self::Top(_) => CheckZorders::One(2 | clamped.x as usize),
-                Self::BottomLeft | Self::BottomRight | Self::Bottom(_) => CheckZorders::One(clamped.x as usize),
+                Self::Left(_) | Self::Right(_) => CheckZorders::Two([2 | x, x]),
+                Self::TopLeft | Self::TopRight | Self::Top(_) => CheckZorders::One(2 | x),
+                Self::BottomLeft | Self::BottomRight | Self::Bottom(_) => CheckZorders::One(x),
             }
-        } else { CheckZorders::One(clamped.x as usize | (2 * clamped.y as usize)) }
+        } else { CheckZorders::One((2 * y) | x) }
     }
     pub fn hittable_walls(&self, velocity:Vec2) -> BVec2 {
         BVec2::from_array(match self {
@@ -135,31 +139,12 @@ impl CornerType {
         }
     }
     pub fn rotate(&self, rotation: f32) -> Self { Self::from_rotation(self.rotation() + rotation) }
-
-}
-
-pub enum CheckZorders {
-    One(usize),
-    Two([usize; 2]),
-}
-impl CheckZorders {
-    pub fn from_velocity(velocity: Vec2) -> Self {
-        if velocity.is_zero() { panic!("AHHH (Velocity isn't non_zero)"); }
-        match velocity.zero_signum() {
-            IVec2 { x: 0, y: -1 } => CheckZorders::Two([0, 1]),  // Up: check top cells
-            IVec2 { x: 0, y: 1 } => CheckZorders::Two([2, 3]),   // Down: check bottom cells
-            IVec2 { x: -1, y: 0 } => CheckZorders::Two([0, 2]), // Left: check left cells
-            IVec2 { x: 1, y: 0 } => CheckZorders::Two([1, 3]),  // Right: check right cells
-            _ => CheckZorders::One((velocity.y.greater(0.) as usize) * 2 + (velocity.x.greater(0.) as usize)),
-        }
-    }
 }
 
 #[derive(Debug)]
 struct Hit {
     pub owner : ID,
     pub target : ID,
-    // Relative Normal of the hit
     pub walls : BVec2,
     pub ticks : f32,
 }
@@ -243,6 +228,7 @@ pub fn n_body_collisions(static_thing: ID) {
     apply_drag();
 }
 
+use super::raymarching::{Motion, Line};
 // Eventually make this work with islands, solving each island by itself
 fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
     let mut ticks_to_action = tick_max;
@@ -294,82 +280,54 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
     action
 }
 
-// Selects the appropriate cell and height based on position data and indices
-fn select_cell_and_height(position_data: [Option<CellData>; 4], col_zorders: CheckZorders) -> Option<(Vec2, u32)> {
-    Some(match col_zorders {
-        CheckZorders::Two(indices) => {
-            match indices.into_iter().filter_map(|index| position_data[index]).map(|data| data.bound_data()).collect::<Vec<_>>().as_slice() {
-                [cell] => *cell,
-                [cell1, cell2] => if cell1.1 < cell2.1 { *cell1 } else { *cell2 },
-                _ => None?
-            }
-        },
-        CheckZorders::One(idx) => position_data[idx]?.bound_data()
-    })
-}
-
-fn boundary_corner(
-    hitting_location: Location,
-    position_data: [Option<CellData>; 4],
-    itvel: Vec2,
-    motion: Motion,
-) -> Option<Vec2> {
-    let hitting_aabb = hitting_location.to_aabb();
-    let top_left = hitting_aabb.min();
-    let point = motion.project_to(0.);
-    let point_velocity = itvel;
-    let (cell, height) = if hitting_aabb.contains(point) != BVec2::TRUE {
-        (hitting_aabb.exterior_will_intersect(point, point_velocity)?, hitting_location.pointer.height)
-    } else { 
-        select_cell_and_height(
-            position_data, 
-            CheckZorders::from_velocity(point_velocity)
-        )?
-    };
-
-    let quadrant = point_velocity.signum().max(Vec2::ZERO);
-    let cell_length = cell_length(height, hitting_location.min_cell_length);
-    Some(top_left + (cell + quadrant) * cell_length)
-}
-
-use super::raymarching::*;
 fn next_intersection(
     motion: Motion,
     itvel: Vec2,
     hitting_location: Location,
     corner_type: CornerType,
-    tick_max: f32,
+    mut tick_max: f32,
 ) -> Option<f32> {
     let point = motion.project_to(0.);
     CAMERA.read().draw_point(point, 0.02, RED);
+    let hitting_aabb = hitting_location.to_aabb();
+    let within_bounds = hitting_aabb.contains(point);
 
-    let within_bounds = hitting_location.to_aabb().contains(point);
+    let cells = gate::point_to_real_cells(hitting_location, point);
+    if hitting_wall(cells, itvel, corner_type).is_some() { return Some(0.) }
+    let index = 2 * (itvel.y.greater(0.) as usize) | (itvel.x.greater(0.) as usize);
+    let grid_top_left = hitting_aabb.min();
+    let (top_left, bottom_right) = if let Some(cell) = cells[index] {
+        let cell_length = cell_length(cell.pointer.height, hitting_location.min_cell_length);
+        (grid_top_left + cell.cell.as_vec2() * cell_length, grid_top_left + (cell.cell + 1).as_vec2() * cell_length)
+    } else { ( grid_top_left, hitting_aabb.max()) };
 
-    let position_data = gate::point_to_real_cells(hitting_location, point);
-    if hitting_wall(position_data, itvel, corner_type).is_some() { 
-        return Some(0.)
-    };
-
-    let boundary_corner = boundary_corner(hitting_location, position_data, itvel, motion)?;
-    let mut ticks  = Vec2::INFINITY;
-    if itvel.x.is_zero() && boundary_corner.x.approx_eq(point.x) {}
-    else if let Some(tickx) = motion.solve_all(
-        Line::Vertical(boundary_corner.x),
-        tick_max
-    ) { ticks.x = tickx }
-    if itvel.y.is_zero() && boundary_corner.y.approx_eq(point.y) {}
-    else if let Some(ticky) = motion.solve_all(
-        Line::Horizontal(boundary_corner.y),
-        tick_max.min(ticks.x)
-    ) { ticks.y = ticky }
+    let mut ticks = Vec2::INFINITY;
+    // Check x-axis intersections (vertical lines)
+    for x in [top_left.x, bottom_right.x] {
+        if !point.x.approx_eq(x) {
+            if let Some(tick) = motion.solve_all(Line::Vertical(x), tick_max) {
+                ticks.x = tick.min(ticks.x);
+                tick_max = tick_max.min(tick);
+            }
+        }
+    }
+    
+    // Check y-axis intersections (horizontal lines)
+    for y in [top_left.y, bottom_right.y] {
+        if !point.y.approx_eq(y) {
+            if let Some(tick) = motion.solve_all(Line::Horizontal(y), tick_max) {
+                ticks.y = tick.min(ticks.y);
+                tick_max = tick_max.min(tick);
+            }
+        }
+    }
 
     let ticks_to_hit = match within_bounds {
-        BVec2::FALSE => ticks.max_element(),
-        BVec2 { x: true, y: false} if ticks.x.is_zero() => ticks.y,
-        BVec2 { x: false, y: true} if ticks.y.is_zero() => ticks.x,
-        _ => ticks.min_element(),
+        BVec2::FALSE => ticks.max_element(),    // Outside Grid: Skip overextended Wall
+        BVec2 { x: true, y: false} => ticks.y,  // Horizontally Aligned: Find Vertical Wall
+        BVec2 { x: false, y: true} => ticks.x,  // Vertically Aligned: Find Horizontal Wall
+        _ => ticks.min_element(),               // Inside Grid: Find Next Wall
     };
-
     (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
@@ -475,13 +433,13 @@ pub mod corner_handling {
     
 }
 
-// Inside block?
+// Consider which parts of this method are still relevant
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
     let mut hit_walls = corner_type.hittable_walls(velocity);
     // Velocity Check 
     {
         let hit = match corner_type.checks(velocity) {
-            CheckZorders::One(index) => BLOCKS.is_solid_cell(position_data[index]),
+            CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
             CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
         };
         if !velocity.x.is_zero() { hit_walls.x &= hit }

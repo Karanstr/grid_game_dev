@@ -149,7 +149,7 @@ pub mod gate {
         surrounding
     }
     
-    //Only works if cell is at height 0
+    /// Only works if cell is at height 0
     pub fn find_real_cell(start:ExternalPointer, cell:UVec2) -> CellData {
         let path = ZorderPath::from_cell(cell, start.height);
         let pointer = GRAPH.read().read(start, &path.steps()).unwrap();
