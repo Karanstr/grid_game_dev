@@ -137,8 +137,7 @@ async fn main() {
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
-        // CAMERA.write().update(Some((old_pos, 0.4)));
-        CAMERA.write().update(None);
+        CAMERA.write().update(Some((old_pos, 0.4)));
         macroquad::window::next_frame().await
     }
 

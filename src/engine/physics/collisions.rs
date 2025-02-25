@@ -109,7 +109,7 @@ impl CornerType {
             1 => Self::TopRight,
             2 => Self::BottomLeft,
             3 => Self::BottomRight,
-            _ => unimplemented!("Not sure how to do that yet.."),
+            _ => unimplemented!("Not sure how to do that.."),
         }
     }
 
@@ -149,7 +149,7 @@ struct Hit {
     pub ticks : f32,
 }
 
-// Eventually turn this into an island identifier/generator
+// Eventually turn this into an island generator
 fn collect_collision_objects() -> Vec<CollisionObject> {
     let mut objects = Vec::new();
     let entities = ENTITIES.read();
@@ -212,7 +212,6 @@ pub fn n_body_collisions(static_thing: ID) {
         let Some(mut hit) = actions.pop() else {
             tick_entities(tick_max); break
         };
-        dbg!(actions.len() + 1);
         if hit.ticks.is_zero() {
             wedge_count += 1;
             // if wedge_count == 2: Balance the velocity of the axis we double tap
@@ -233,10 +232,8 @@ use super::raymarching::{Motion, Line};
 fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
     let mut ticks_to_action = tick_max;
     let mut action:Vec<Hit> = Vec::new();
-    let mut it_count = 0;
     'objectloop : for mut object in objects {
         while let Some(Reverse(mut cur_corner)) = object.particles.pop() {
-            it_count += 1;
             if cur_corner.ticks_into_projection.greater(ticks_to_action) { continue 'objectloop }
             let motion = Motion::new(
                 object.target_location.position,
@@ -246,9 +243,6 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
                 object.target_angular,
                 object.owner_angular,
             );
-            if it_count > 20 {
-                dbg!("stop");
-            }
             // Why aren't we just passing object?
             let Some(ticks_to_hit) = next_intersection(
                 motion,
@@ -311,7 +305,6 @@ fn next_intersection(
             }
         }
     }
-    
     // Check y-axis intersections (horizontal lines)
     for y in [top_left.y, bottom_right.y] {
         if !point.y.approx_eq(y) {
@@ -321,13 +314,7 @@ fn next_intersection(
             }
         }
     }
-
-    let ticks_to_hit = match within_bounds {
-        BVec2::FALSE => ticks.max_element(),    // Outside Grid: Skip overextended Wall
-        BVec2 { x: true, y: false} => ticks.y,  // Horizontally Aligned: Find Vertical Wall
-        BVec2 { x: false, y: true} => ticks.x,  // Vertically Aligned: Find Horizontal Wall
-        _ => ticks.min_element(),               // Inside Grid: Find Next Wall
-    };
+    let ticks_to_hit = if within_bounds == BVec2::FALSE { ticks.max_element() } else { ticks.min_element() };
     (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
@@ -340,7 +327,6 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
     let rotated_owner_pos = (owner.location.position - target.location.position).rotate(align_target) + target.location.position;
     for corners in owner.corners.iter() {
         for i in 0..4 {
-            // if i != 2 { continue }
             // Cull any corner which isn't exposed
             if corners.mask & (1 << i) == 0 { continue }
             let offset = ((corners.points[i] - offset).rotate(owner.forward) + owner.location.position - target.location.position)
@@ -373,36 +359,29 @@ pub struct Corners {
 pub mod corner_handling {
     use super::*;
 
-    //Figure out if this can be improved?
-    fn cell_corner_mask(start:ExternalPointer, zorder:ZorderPath) -> u8 {
-            let mut exposed_mask = 0b1111;
-            let checks = [
-                (IVec2::new(-1, 0), 0b01), //Top Left 0
-                (IVec2::new(0, -1), 0b10),
-                (IVec2::new(-1, -1), 0b11),
-                (IVec2::new(1, 0), 0b00), //Top Right 1
-                (IVec2::new(0, -1), 0b11),
-                (IVec2::new(1, -1), 0b10),
-                (IVec2::new(-1, 0), 0b11), //Bottom Left 2
-                (IVec2::new(0, 1), 0b00),
-                (IVec2::new(-1, 1), 0b01),
-                (IVec2::new(1, 0), 0b10), //Bottom Right 3
-                (IVec2::new(0, 1), 0b01),
-                (IVec2::new(1, 1), 0b00),
-            ];
-            for i in 0 .. 4 {
-                for j in 0 .. 3 {
-                    let (offset, direction) = checks[i*3 + j];
-                    let Some(mut check_zorder) = zorder.move_cartesianly(offset) else { continue };
-                    for _ in 0 .. start.height - check_zorder.depth {
-                        check_zorder = check_zorder.step_down(direction)
-                    }
-                    let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
-                    if BLOCKS.is_solid_index(*pointer.pointer) { exposed_mask -= 1 << i; break }
+    fn cell_corner_mask(start: ExternalPointer, zorder: ZorderPath) -> u8 {
+        const CORNER_CHECKS: [([(IVec2, u8); 3], u8); 4] = [
+            // Format: ([(offset, step_direction), ...], corner_mask_bit)
+            ([(IVec2::new(-1, 0), 0b01), (IVec2::new(0, -1), 0b10), (IVec2::new(-1, -1), 0b11)], 0b0001), // Top Left
+            ([(IVec2::new(1, 0), 0b00), (IVec2::new(0, -1), 0b11), (IVec2::new(1, -1), 0b10)], 0b0010),  // Top Right
+            ([(IVec2::new(-1, 0), 0b11), (IVec2::new(0, 1), 0b00), (IVec2::new(-1, 1), 0b01)], 0b0100),  // Bottom Left
+            ([(IVec2::new(1, 0), 0b10), (IVec2::new(0, 1), 0b01), (IVec2::new(1, 1), 0b00)], 0b1000),    // Bottom Right
+        ];
+
+        let mut exposed_mask = 0b0000;
+        'corner: for (checks, mask) in CORNER_CHECKS {
+            for (offset, direction) in checks {
+                let Some(mut check_zorder) = zorder.move_cartesianly(offset) else { continue };
+                for _ in 0 .. start.height - check_zorder.depth {
+                    check_zorder = check_zorder.step_down(direction as u32)
                 }
+                let pointer = GRAPH.read().read(start, &check_zorder.steps()).unwrap();
+                if BLOCKS.is_solid_index(*pointer.pointer) { continue 'corner }
             }
-            exposed_mask
+            exposed_mask |= mask;
         }
+        exposed_mask
+    }
 
     //The top left corner of the root is (0, 0)
     fn cell_corners(cell:CellData, min_cell_length:Vec2) -> [Vec2; 4] {
@@ -433,10 +412,9 @@ pub mod corner_handling {
     
 }
 
-// Consider which parts of this method are still relevant
 fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
     let mut hit_walls = corner_type.hittable_walls(velocity);
-    // Velocity Check 
+    // Velocity Check
     {
         let hit = match corner_type.checks(velocity) {
             CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
@@ -445,8 +423,8 @@ fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:
         if !velocity.x.is_zero() { hit_walls.x &= hit }
         if !velocity.y.is_zero() { hit_walls.y &= hit }
     };
-    'slide_check: {
-        if hit_walls != BVec2::TRUE { break 'slide_check } 
+    // Slide Check
+    if hit_walls == BVec2::TRUE {
         let idxs = match velocity.zero_signum() {
             IVec2{x: -1, y: -1} => [2, 1],
             IVec2{x: -1, y: 1} => [0, 3],
