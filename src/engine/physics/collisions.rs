@@ -219,7 +219,7 @@ pub fn n_body_collisions(static_thing: ID) {
     apply_drag();
 }
 
-pub fn just_move() {
+pub fn _just_move() {
     tick_entities(1.);
     apply_drag();
 }
@@ -275,42 +275,30 @@ fn next_intersection(
     itvel: Vec2,
     hitting_location: Location,
     corner_type: CornerType,
-    mut tick_max: f32,
+    tick_max: f32,
 ) -> Option<f32> {
     let point = motion.project_to(0.);
     CAMERA.read().draw_point(point, 0.02, RED);
-    let hitting_aabb = hitting_location.to_aabb();
-    let within_bounds = hitting_aabb.contains(point);
+    let radius = center_to_edge(hitting_location.pointer.height, hitting_location.min_cell_length);
 
     let cells = gate::point_to_real_cells(hitting_location, point);
     if hitting_wall(cells, itvel, corner_type).is_some() { return Some(0.) }
     let index = 2 * (itvel.y.greater(0.) as usize) | (itvel.x.greater(0.) as usize);
-    let grid_top_left = hitting_aabb.min();
+    let grid_top_left = hitting_location.position - radius;
     let (top_left, bottom_right) = if let Some(cell) = cells[index] {
         let cell_length = cell_length(cell.pointer.height, hitting_location.min_cell_length);
         (grid_top_left + cell.cell.as_vec2() * cell_length, grid_top_left + (cell.cell + 1).as_vec2() * cell_length)
-    } else { ( grid_top_left, hitting_aabb.max()) };
+    } else { ( grid_top_left, hitting_location.position + radius) };
 
-    let mut ticks = Vec2::INFINITY;
-    // Check x-axis intersections (vertical lines)
-    for x in [top_left.x, bottom_right.x] {
-        if !point.x.approx_eq(x) {
-            if let Some(tick) = motion.solve_all(Line::Vertical(x), tick_max) {
-                ticks.x = tick.min(ticks.x);
-                tick_max = tick_max.min(tick);
-            }
+    let mut ticks_to_hit = f32::INFINITY;
+    for bound in [top_left, bottom_right] {
+        for i in 0 .. 2 {
+            if point[i].approx_eq(bound[i]) { continue };
+            let line = if i == 0 { Line::Vertical(bound[i]) } else { Line::Horizontal(bound[i]) };
+            let Some(tick) = motion.solve_all(line, tick_max.min(ticks_to_hit)) else { continue };
+            ticks_to_hit = ticks_to_hit.min(tick);
         }
     }
-    // Check y-axis intersections (horizontal lines)
-    for y in [top_left.y, bottom_right.y] {
-        if !point.y.approx_eq(y) {
-            if let Some(tick) = motion.solve_all(Line::Horizontal(y), tick_max) {
-                ticks.y = tick.min(ticks.y);
-                tick_max = tick_max.min(tick);
-            }
-        }
-    }
-    let ticks_to_hit = if within_bounds == BVec2::FALSE { ticks.max_element() } else { ticks.min_element() };
     (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
 }
 
