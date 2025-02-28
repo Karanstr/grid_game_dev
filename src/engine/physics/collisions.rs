@@ -1,5 +1,5 @@
 use std::cmp::{Reverse, Ordering};
-use std::collections::BinaryHeap;
+use std::collections::{HashMap, BinaryHeap};
 use macroquad::color::*;
 use crate::globals::*;
 use macroquad::math::{Vec2, BVec2, IVec2};
@@ -146,7 +146,6 @@ struct Hit {
     pub owner : ID,
     pub target : ID,
     pub walls : BVec2,
-    pub ticks : f32,
 }
 
 // Eventually turn this into an island generator
@@ -183,19 +182,41 @@ fn tick_entities(delta_tick: f32) {
     }
 }
 
-fn apply_normal_force(static_thing: ID, hit: Hit) {
-    let mut entities = ENTITIES.write();
-    let target = entities.get_entity(hit.target).unwrap();
-    let rel_velocity = entities.get_entity(hit.owner).unwrap().velocity - target.velocity;
-    let world_impulse = (rel_velocity.rotate(Vec2::from_angle(-target.rotation)) * hit.walls.as_vec2()).rotate(target.forward);
-    let objects = [(hit.owner, -1.0), (hit.target, 1.0)];
-    for (id, multiplier) in objects {
-        if id != static_thing {
-            let entity = entities.get_mut_entity(id).unwrap();
-            entity.velocity = (entity.velocity + world_impulse * multiplier).snap_zero();
-            entity.angular_velocity = 0.;
+pub fn n_body_collisions(static_thing: ID) {
+    let mut tick_max = 1.;
+    loop {
+        let objects = collect_collision_objects();
+        let (actions, ticks_at_hit) = find_next_action(objects, tick_max);
+        
+        if actions.is_empty() {
+            tick_entities(tick_max);
+            break;
+        } else {
+            tick_max -= ticks_at_hit;
+            tick_entities(ticks_at_hit);
+        }
+        
+        let mut combined_hits = HashMap::new();
+        for hit in &actions {
+            *combined_hits.entry((hit.owner, hit.target)).or_insert(hit.walls) |= hit.walls;
+        }
+        let mut entities = ENTITIES.write();
+        for ((owner_id, target_id), walls) in &combined_hits {
+            let target = entities.get_entity(*target_id).unwrap();
+            let rel_velocity = entities.get_entity(*owner_id).unwrap().velocity - target.velocity;
+            let world_impulse = (rel_velocity.rotate(Vec2::from_angle(-target.rotation)) * walls.as_vec2()).rotate(target.forward);
+            
+            let changes = [(owner_id, -1.), (target_id, 1.)];
+            for (entity_id, multiplier) in changes {
+                if *entity_id != static_thing {
+                    let entity = entities.get_mut_entity(*entity_id).unwrap();
+                    entity.velocity = (entity.velocity + world_impulse * multiplier).snap_zero();
+                    entity.angular_velocity = 0.;
+                }
+            }
         }
     }
+    apply_drag();
 }
 
 pub fn just_move() {
@@ -203,32 +224,9 @@ pub fn just_move() {
     apply_drag();
 }
 
-pub fn n_body_collisions(static_thing: ID) {
-    let mut tick_max = 1.;
-    let mut wedge_count = 0;
-    loop {
-        let objects = collect_collision_objects();
-        let mut actions = find_next_action(objects, tick_max);
-        let Some(mut hit) = actions.pop() else {
-            tick_entities(tick_max); break
-        };
-        if hit.ticks.is_zero() {
-            wedge_count += 1;
-            // if wedge_count == 2: Balance the velocity of the axis we double tap
-            // ^ Only relevant when we have elastic collisions?
-            if wedge_count == 3 { hit.walls = BVec2::TRUE }
-        } else {
-            wedge_count = 0;
-            tick_max -= hit.ticks;
-            tick_entities(hit.ticks);
-        }
-        apply_normal_force(static_thing, hit);
-    }
-    apply_drag();
-}
-
+// Eventually extract this detection logic into our collision detection system (once we write it)
 use super::raymarching::{Motion, Line};
-fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
+fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> (Vec<Hit>, f32) {
     let mut ticks_to_action = tick_max;
     let mut action:Vec<Hit> = Vec::new();
     'objectloop : for mut object in objects {
@@ -264,13 +262,12 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> Vec<Hit> {
                     owner : object.owner,
                     target : object.target,
                     walls : walls_hit,
-                    ticks : cur_corner.ticks_into_projection
                 } );
                 ticks_to_action = cur_corner.ticks_into_projection;
             } else { object.particles.push(Reverse(cur_corner)) }
         }
     }
-    action
+    (action, ticks_to_action)
 }
 
 fn next_intersection(
@@ -348,6 +345,7 @@ pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<Colli
     ))
 }
 
+// Extract corners into our collision detection system (once we write it)
 #[derive(Debug, Clone, derive_new::new)]
 pub struct Corners {
     pub points : [Vec2; 4],
