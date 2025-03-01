@@ -8,7 +8,6 @@ pub struct Aabb {
     radius: Vec2
 }
 impl Aabb {
-
     pub fn from_bounds(top_left:Vec2, bottom_right:Vec2) -> Self {
         Self {
             center: (top_left + bottom_right) / 2.,
@@ -62,6 +61,12 @@ impl Aabb {
         
         Some(walls_will_hit)
     }
+}
+
+impl crate::engine::camera::Camera {
+    pub fn outline_bounds(&self, bounds:Aabb, line_width:f32, color:macroquad::color::Color) {
+        self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
+    } 
 }
 
 pub trait FloatUtils {

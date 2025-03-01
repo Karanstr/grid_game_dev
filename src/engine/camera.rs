@@ -4,40 +4,32 @@ use macroquad::{
     miniquad::window::screen_size,
 };
 use macroquad::math::Vec2;
-use derive_new::new;
-use crate::engine::math::Aabb;
-#[derive(new)]
 pub struct Camera { 
     position: Vec2,
     radius: f32,
-    #[new(value = "1.")]
     scale: f32,
 }
 // State changes
 impl Camera {
+    pub fn new(position: Vec2, radius: f32) -> Self {
+        Self {
+            position,
+            radius,
+            scale: (Vec2::from(screen_size())).min_element() / (2. * radius),
+        }
+    }
+    
+    /// Moves the camera and fixes resolution to new screen size (I think)
     pub fn update(&mut self, move_to:Option<(Vec2, f32)>) {
         if let Some((new_position, smoothing)) = move_to {
-            self.lerp_position(new_position, smoothing);
+            self.position = self.position.lerp(new_position, smoothing);
         }
-        self.update_scale();
-    }
-
-    pub fn update_scale(&mut self) {
         self.scale = (Vec2::from(screen_size())).min_element() / (2. * self.radius);
-    }
-
-    pub fn move_to(&mut self, new_position:Vec2, smoothing:f32) {
-        self.lerp_position(new_position, smoothing);
     }
 
     pub fn change_zoom(&mut self, zoom:f32) {
         self.radius /= zoom;
     }
-
-    fn lerp_position(&mut self, position:Vec2, smoothing:f32) {
-        self.position = self.position.lerp(position, smoothing);
-    }
- 
 }
 // Conversions between screen and world spaces
 impl Camera {
@@ -55,33 +47,6 @@ impl Camera {
 }
 // Drawing methods
 impl Camera {
-
-    pub fn show_view(&self) {
-        self.outline_bounds(Aabb::new(self.position, Vec2::splat(self.radius)), 0.05, WHITE);
-    }
-
-    /*pub fn render_grid(&self, location:Location, rotation:Vec2, alpha:u8) {
-        let point_offset = center_to_edge(location.pointer.height, location.min_cell_length);
-        let points_list: Vec<([Vec2; 4], usize)> = self.corners.iter().map(|cell| {
-            ([
-                    (cell.points[0] - point_offset).rotate(rotation) + location.position,
-                    (cell.points[1] - point_offset).rotate(rotation) + location.position,
-                    (cell.points[2] - point_offset).rotate(rotation) + location.position,
-                    (cell.points[3] - point_offset).rotate(rotation) + location.position
-                ], *cell.index
-            )
-        }).collect();
-        for (points, index) in points_list {
-            let color = crate::globals::BLOCKS.color(index);
-            if color == BLANK { continue; }
-            self.draw_rectangle_from_corners(
-                &points,
-                Color::from_rgba((color.r * 255.) as u8, (color.g * 255.) as u8, (color.b * 255.) as u8, alpha),
-                render_dbg,
-            );
-        }
-
-    }*/
 
     pub fn draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {
         let pos = self.world_to_screen(position);
@@ -105,16 +70,11 @@ impl Camera {
         draw_circle_lines(pos.x, pos.y, radius*self.scale, thickness*self.scale, color);
     }
 
-
     pub fn draw_vec_line(&self, point1:Vec2, point2:Vec2, color:Color) {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
         draw_line(p1.x, p1.y, p2.x, p2.y, 2., color);
     }
-
-    pub fn outline_bounds(&self, bounds:Aabb, line_width:f32, color:Color) {
-        self.outline_vec_rectangle(bounds.min(), bounds.max() - bounds.min(), line_width, color);
-    } 
 
     pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, render_dbg:bool) {
         let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
