@@ -204,9 +204,8 @@ pub fn n_body_collisions(static_thing: ID) {
         for ((owner_id, target_id), walls) in &combined_hits {
             let target = entities.get_entity(*target_id).unwrap();
             let rel_velocity = entities.get_entity(*owner_id).unwrap().velocity - target.velocity;
-            let world_impulse = (rel_velocity.rotate(Vec2::from_angle(-target.rotation)) * walls.as_vec2()).rotate(target.forward);
-            
-            let changes = [(owner_id, -1.), (target_id, 1.)];
+            let world_impulse = (-rel_velocity.rotate(Vec2::from_angle(-target.rotation)) * walls.as_vec2()).rotate(target.forward);
+            let changes = [(owner_id, 1.), (target_id, -1.)];
             for (entity_id, multiplier) in changes {
                 if *entity_id != static_thing {
                     let entity = entities.get_mut_entity(*entity_id).unwrap();
