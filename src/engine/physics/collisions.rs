@@ -96,10 +96,10 @@ impl CornerType {
             Self::TopRight => [velocity.x.greater(0.), velocity.y.less(0.)],
             Self::BottomLeft => [velocity.x.less(0.), velocity.y.greater(0.)],
             Self::BottomRight => [velocity.x.greater(0.), velocity.y.greater(0.)],
-            Self::Top(_) => [!velocity.x.is_zero(), velocity.y.less(0.)],
-            Self::Bottom(_) => [!velocity.x.is_zero(), velocity.y.greater(0.)],
-            Self::Left(_) => [velocity.x.less(0.), !velocity.y.is_zero()],
-            Self::Right(_) => [velocity.x.greater(0.), !velocity.y.is_zero()],
+            Self::Top(_) => [false, velocity.y.less(0.)],
+            Self::Bottom(_) => [false, velocity.y.greater(0.)],
+            Self::Left(_) => [velocity.x.less(0.), false],
+            Self::Right(_) => [velocity.x.greater(0.), false],
         })
     }
     
@@ -250,11 +250,10 @@ fn find_next_action(objects:Vec<CollisionObject>, tick_max:f32) -> (Vec<Hit>, f3
             ) else { continue };
             cur_corner.ticks_into_projection += ticks_to_hit;
             cur_corner.offset = motion.project_to(ticks_to_hit) - object.projected_owner(cur_corner.ticks_into_projection);
-            cur_corner.corner_type = cur_corner.corner_type.rotate(ticks_to_hit*(object.owner_angular-object.target_angular));
-            let velocity = object.instant_tangential_velocity(cur_corner.offset, cur_corner.ticks_into_projection);
+            cur_corner.corner_type = cur_corner.corner_type.rotate(ticks_to_hit * (object.owner_angular - object.target_angular));
             if let Some(walls_hit) = hitting_wall(
                 gate::point_to_real_cells(object.target_location, motion.project_to(ticks_to_hit)),
-                velocity,
+                object.instant_tangential_velocity(cur_corner.offset, cur_corner.ticks_into_projection),
                 cur_corner.corner_type
             ) {
                 if cur_corner.ticks_into_projection.less(ticks_to_action) { action.clear() }
@@ -397,32 +396,29 @@ pub mod corner_handling {
     
 }
 
-fn hitting_wall(position_data:[Option<CellData>; 4], velocity:Vec2, corner_type:CornerType) -> Option<BVec2> {
-    let mut hit_walls = corner_type.hittable_walls(velocity);
-    // Velocity Check
-    {
-        let hit = match corner_type.checks(velocity) {
-            CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
-            CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
-        };
-        if !velocity.x.is_zero() { hit_walls.x &= hit }
-        if !velocity.y.is_zero() { hit_walls.y &= hit }
-    };
-    // Slide Check
+fn hitting_wall(position_data:[Option<CellData>; 4], itvel:Vec2, corner_type:CornerType) -> Option<BVec2> {
+    let mut hit_walls = corner_type.hittable_walls(itvel);
+    // If we're inside air cells, we should override the wall check.
+    hit_walls &= BVec2::splat(match corner_type.checks(itvel) {
+        CheckZorders::One(idx) => BLOCKS.is_solid_cell(position_data[idx]),
+        CheckZorders::Two([idx1, idx2]) => BLOCKS.is_solid_cell(position_data[idx1]) | BLOCKS.is_solid_cell(position_data[idx2]),
+    });
+    // If we're on a wall, check if we should be sliding or stopping.
     if hit_walls == BVec2::TRUE {
-        let idxs = match velocity.zero_signum() {
-            IVec2{x: -1, y: -1} => [2, 1],
-            IVec2{x: -1, y: 1} => [0, 3],
-            IVec2{x: 1, y: -1} => [3, 0],
-            IVec2{x: 1, y: 1} => [1, 2],
+        let idxs = match itvel.signum() {
+            Vec2{x: -1., y: -1.} => [2, 1],
+            Vec2{x: -1., y: 1.} => [0, 3],
+            Vec2{x: 1., y: -1.} => [3, 0],
+            Vec2{x: 1., y: 1.} => [1, 2],
             _ => unreachable!(),
         };
         let slide = BVec2::new(
             BLOCKS.is_solid_cell(position_data[idxs[0]]),
             BLOCKS.is_solid_cell(position_data[idxs[1]])
         );
-
+        // If we're on a corner (both air), we should still stop
         if slide != BVec2::FALSE { hit_walls &= slide }
     };
+    // None represents no walls nicer than BVec::FALSE does imo
     (hit_walls != BVec2::FALSE).then_some(hit_walls)
 }

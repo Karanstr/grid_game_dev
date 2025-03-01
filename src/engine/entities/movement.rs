@@ -5,9 +5,7 @@ use super::{Entity, ExternalPointer};
 #[allow(dead_code)]
 impl Entity {
     pub fn rel_rotate(&mut self, angle: f32) {
-        self.rotation = (self.rotation + angle).rem_euclid(PI * 2.);
-        self.forward = Vec2::from_angle(self.rotation);
-        self.recaclulate_corners();
+        self.set_rotation(self.rotation + angle);
     }
     pub fn set_rotation(&mut self, angle: f32) { 
         self.rotation = angle.rem_euclid(PI * 2.);

@@ -1,7 +1,6 @@
 use derive_new::new;
 use macroquad::math::{Vec2, BVec2, IVec2};
 pub const FP_EPSILON: f32 = f32::EPSILON;
-// Reimplement angle epsilon for comparisons
 
 #[derive(Debug, Clone, Copy, new)]
 pub struct Aabb {
@@ -79,7 +78,7 @@ pub trait FloatUtils {
     fn less_mag(self, b:Self) -> Self::ComponentTruth;
     fn less_eq_mag(self, b:Self) -> Self::ComponentTruth;
     type SignumType;
-    fn zero_signum(self) -> Self::SignumType;
+    // fn zero_signum(self) -> Self::SignumType;
 }
 impl FloatUtils for f32 {
     fn approx_eq(self, b:Self) -> bool { (self - b).abs() < FP_EPSILON }
@@ -95,7 +94,7 @@ impl FloatUtils for f32 {
     fn less_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() < 0. }
     fn less_eq_mag(self, b:Self) -> Self::ComponentTruth { (self.abs() - b.abs()).snap_zero() <= 0. }
     type SignumType = i32;
-    fn zero_signum(self) -> Self::SignumType { if self.is_zero() { 0 } else { self.signum() as i32 } }
+    // fn zero_signum(self) -> Self::SignumType { if self.is_zero() { 0 } else { self.signum() as i32 } }
 }
 impl FloatUtils for Vec2 {
     fn approx_eq(self, b:Self) -> bool { self.x.approx_eq(b.x) && self.y.approx_eq(b.y) }
@@ -151,7 +150,7 @@ impl FloatUtils for Vec2 {
         )
     }
     type SignumType = IVec2;
-    fn zero_signum(self) -> Self::SignumType { IVec2::new(self.x.zero_signum(), self.y.zero_signum()) }
+    // fn zero_signum(self) -> Self::SignumType { IVec2::new(self.x.zero_signum(), self.y.zero_signum()) }
 }
 
 pub trait BVecUtils {
