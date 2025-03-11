@@ -3,10 +3,13 @@
 # Exit on any error
 set -e
 
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 echo "Cleaning previous build and coverage data..."
 cargo clean
-rm -rf ../coverage
-mkdir -p ../coverage
+rm -rf "$SCRIPT_DIR/coverage"
+mkdir -p "$SCRIPT_DIR/coverage"
 
 echo "Building with coverage instrumentation..."
 RUSTFLAGS="-C instrument-coverage" cargo build
@@ -35,20 +38,20 @@ fi
 
 # Move profraw files to coverage directory
 echo "Moving coverage data files..."
-mv default*.profraw ../coverage/
+mv default*.profraw "$SCRIPT_DIR/coverage/"
 
 # Merge coverage data
 echo "Merging coverage data..."
-$LLVM_PROFDATA merge -sparse ../coverage/*.profraw -o ../coverage/grid_game.profdata
+$LLVM_PROFDATA merge -sparse "$SCRIPT_DIR/coverage"/*.profraw -o "$SCRIPT_DIR/coverage/grid_game.profdata"
 
 echo -e "\n=== Coverage Summary ===\n"
 $LLVM_COV report target/debug/Grid-Game \
-    --instr-profile=../coverage/grid_game.profdata \
+    --instr-profile="$SCRIPT_DIR/coverage/grid_game.profdata" \
     src/engine/systems/collisions.rs
 
 echo -e "\n=== Detailed Coverage Report ===\n"
 $LLVM_COV show target/debug/Grid-Game \
-    --instr-profile=../coverage/grid_game.profdata \
+    --instr-profile="$SCRIPT_DIR/coverage/grid_game.profdata" \
     --show-instantiations \
     --show-line-counts-or-regions \
     --use-color \

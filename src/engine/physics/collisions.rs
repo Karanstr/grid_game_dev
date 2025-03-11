@@ -289,17 +289,22 @@ fn next_intersection(
     } else { ( grid_top_left, hitting_location.position + radius) };
 
     let mut ticks_to_hit = f32::INFINITY;
-    for bound in [top_left, bottom_right] {
-        for i in 0 .. 2 {
-            if point[i].approx_eq(bound[i]) { continue };
-            let line = if i == 0 { Line::Vertical(bound[i]) } else { Line::Horizontal(bound[i]) };
-            let Some(tick) = motion.solve_all(line, tick_max.min(ticks_to_hit)) else { continue };
-            ticks_to_hit = ticks_to_hit.min(tick);
-        }
+    for line in [
+        Line::new(top_left, top_left.with_x(bottom_right.x)),
+        Line::new(top_left, top_left.with_y(bottom_right.y)),
+        Line::new(bottom_right, bottom_right.with_x(top_left.x)),
+        Line::new(bottom_right, bottom_right.with_y(top_left.y)),
+    ] {
+        if line.distance_to_point(point).is_zero() { continue };
+        if let Some(tick) = motion.solve(line, tick_max.min(ticks_to_hit)) { 
+            ticks_to_hit = ticks_to_hit.min(tick)
+        };
     }
-    (ticks_to_hit.less_eq(tick_max)).then_some(ticks_to_hit)
+
+    ticks_to_hit.less_eq(tick_max).then_some(ticks_to_hit)
 }
 
+// Consider just performing diagonal line intersections once we generalize this to work with any perimeter shape
 pub fn entity_to_collision_object(owner:&Entity, target:&Entity) -> Option<CollisionObject> {
     let mut collision_points = BinaryHeap::new();
     let offset = center_to_edge(owner.location.pointer.height, owner.location.min_cell_length);
