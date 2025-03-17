@@ -15,11 +15,11 @@ mod globals {
     }
 }
 use globals::*;
-use engine::input::*;
 use macroquad::math::Vec2;
 use macroquad::prelude::{mouse_position, KeyCode, MouseButton};
 use std::f32::consts::PI;
 use engine::{
+    input::*,
     physics::collisions::n_body_collisions,
     entities::{Entity, ID, Location},
     math::Aabb,

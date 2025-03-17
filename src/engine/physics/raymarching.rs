@@ -2,8 +2,11 @@ use roots::{find_root_brent, SearchError, SimpleConvergency};
 use macroquad::math::Vec2;
 use crate::engine::math::*;
 
+#[derive(derive_new::new)]
 struct IterationTracker {
+    #[new(value = "SimpleConvergency { eps: FP_EPSILON, max_iter: 10 }")]
     convergency: SimpleConvergency<f32>,
+    #[new(value = "0")]
     iterations: usize,
 }
 impl roots::Convergency<f32> for IterationTracker {
@@ -20,17 +23,7 @@ impl roots::Convergency<f32> for IterationTracker {
         self.convergency.is_iteration_limit_reached(iter)
     }
 }
-impl Default for IterationTracker {
-    fn default() -> Self {
-        Self {
-            convergency: SimpleConvergency { eps: FP_EPSILON, max_iter: 10 },
-            iterations: 0,
-        }
-    }
-}
 
-// If we decide to revert this remember we can split line into vertical and horizontal logic
-#[derive(Debug)]
 pub struct Line {
     start: Vec2,
     end: Vec2,
@@ -54,7 +47,7 @@ impl Line {
         Self { start, end, a, b, c, norm }
     }
     
-    pub fn distance_to_point(&self, point: Vec2) -> f32 {
+    pub fn distance_to(&self, point: Vec2) -> f32 {
         (self.a * point.x + self.b * point.y + self.c) / self.norm
     }
     
@@ -84,9 +77,9 @@ impl Motion {
     }
 
     pub fn solve(self, line: Line, max_time: f32) -> Option<f32> {
-        let mut iter_tracker = IterationTracker::default();
+        let mut iter_tracker = IterationTracker::new();
         match find_root_brent(0., max_time,
-            |t: f32| line.distance_to_point(self.project_to(t)),
+            |t: f32| line.distance_to(self.project_to(t)),
             &mut iter_tracker
         ) {
             Ok(t) => {

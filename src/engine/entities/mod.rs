@@ -1,12 +1,13 @@
 mod render;
 mod movement;
 mod serialization;
+mod corner;
 use serde::{Serialize, Deserialize};
 use macroquad::math::Vec2;
 use crate::engine::grid::dag::ExternalPointer;
 use crate::engine::math::Aabb;
 use crate::engine::grid::partition::*;
-use crate::engine::physics::collisions::{Corners, corner_handling};
+use corner::*;
 
 
 #[derive(derive_new::new)]
@@ -51,7 +52,8 @@ pub struct Entity {
     pub corners : Vec<Corners>,
 }
 impl Entity {
-    pub fn recaclulate_corners(&mut self) { self.corners = corner_handling::tree_corners(self.location.pointer, self.location.min_cell_length) }
+    pub fn recaclulate_corners(&mut self) { self.corners = tree_corners(self.location.pointer, self.location.min_cell_length) }
+    
     pub fn aabb(&self) -> Option<Aabb> {
         let (mut top_left, mut bottom_right) = self.get_extreme_points()?;
         top_left += -center_to_edge(self.location.pointer.height, self.location.min_cell_length) + self.location.position;

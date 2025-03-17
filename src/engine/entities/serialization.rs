@@ -1,5 +1,5 @@
 
-use super::{Entity, EntityPool, Vec2, Location, ID, corner_handling};
+use super::{Entity, EntityPool, Vec2, Location, ID, tree_corners};
 use serde::{Serialize, Deserialize};
 use crate::globals::GRAPH;
 
@@ -31,7 +31,7 @@ impl Entity {
             forward: Vec2::from_angle(storer.rotation),
             velocity: storer.velocity,
             angular_velocity: storer.angular_velocity,
-            corners: corner_handling::tree_corners(location.pointer, location.min_cell_length),
+            corners: tree_corners(location.pointer, location.min_cell_length),
         }
     }
 }
