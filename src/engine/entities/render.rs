@@ -1,6 +1,6 @@
 use super::*;
 use crate::globals::*;
-use crate::engine::grid::dag::Index;
+
 impl EntityPool {
     pub fn draw_all(&self, rotate:bool, render_dbg:bool) {
         for entity in self.entities.iter() {
@@ -29,7 +29,7 @@ impl Entity {
                     (cell.points[1] - point_offset).rotate(rotation) + self.location.position,
                     (cell.points[2] - point_offset).rotate(rotation) + self.location.position,
                     (cell.points[3] - point_offset).rotate(rotation) + self.location.position
-                ], *cell.index
+                ], cell.index as usize
             )
         }).collect();
         for (points, index) in points_list {
@@ -43,7 +43,7 @@ impl Entity {
     
     pub fn draw_outline(&self, color:macroquad::color::Color) {
         let point_offset = center_to_edge(self.location.pointer.height, self.location.min_cell_length);
-        let square = ExternalPointer::new(Index(1), self.location.pointer.height);
+        let square = ExternalPointer::new(1, self.location.pointer.height);
         let corners = corner_handling::tree_corners(square, self.location.min_cell_length)[0].points;
         let points = [
             (corners[0] - point_offset).rotate(self.forward) + self.location.position,

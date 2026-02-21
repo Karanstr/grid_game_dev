@@ -1,14 +1,15 @@
 mod engine;
 mod globals {
     use crate::engine::blocks::BlockPalette;
-    use crate::engine::grid::dag::{SparseDirectedGraph, BasicNode};
+    use crate::engine::grid::*;
     use crate::engine::camera::Camera;
-    use macroquad::math::Vec2;
+    use glam::Vec2;
     use crate::engine::entities::EntityPool;
     use lazy_static::lazy_static;
     use parking_lot::RwLock;
     lazy_static! {
-        pub static ref GRAPH: RwLock<SparseDirectedGraph<BasicNode>> = RwLock::new(SparseDirectedGraph::<BasicNode>::new(4));
+        // We need to manually set the four leaves of the graph
+        pub static ref GRAPH: RwLock<SparseDirectedGraph<2, BasicNode2d>> = RwLock::new(SparseDirectedGraph::new());
         pub static ref ENTITIES: RwLock<EntityPool> = RwLock::new(EntityPool::new());
         pub static ref CAMERA: RwLock<Camera> = RwLock::new(Camera::new(Vec2::ZERO, 4.));
         pub static ref BLOCKS: BlockPalette = BlockPalette::default();
@@ -16,15 +17,13 @@ mod globals {
 }
 use globals::*;
 use engine::input::*;
-use macroquad::math::Vec2;
+use glam::{UVec2, Vec2};
 use macroquad::prelude::{mouse_position, KeyCode, MouseButton};
 use std::f32::consts::PI;
 use engine::{
-    physics::collisions::n_body_collisions,
-    entities::{Entity, ID, Location},
+    entities::ID,
     math::Aabb,
-    grid::dag::{Index, ExternalPointer},
-    grid::partition::{gate, ZorderPath},
+    grid::*,
 };
 
 use std::time::Duration;
@@ -78,7 +77,9 @@ fn set_panic_hook() {
 }
 
 fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
-use macroquad::color::*;
+
+use crate::engine::entities::Location;
+use crate::engine::physics::collisions::just_move;
 
 #[macroquad::main("Window")]
 async fn main() {
@@ -91,25 +92,39 @@ async fn main() {
     #[cfg(not(debug_assertions))]
     println!("Release mode");
     macroquad::window::request_new_screen_size(1024., 1024.);
+    {
+        let mut graph = GRAPH.write();
+        graph.add_leaf();
+        graph.add_leaf();
+        graph.add_leaf();
+        graph.add_leaf();
+    }
     // Load entities 
     {
         let mut entity_pool = ENTITIES.write();
-        let terrain_string = if cfg!(target_arch = "wasm32") { 
-            String::from_utf8(include_bytes!("../data/terrain.json").as_ref().to_vec()).unwrap_or_default()
-        } else {
-            std::fs::read_to_string("data/terrain.json").unwrap_or_default()
-        };
-        entity_pool.add_to_pool(
-            Entity::load(terrain_string, 0)
+        entity_pool.create_entity(
+            Location::new(
+                Vec2::ZERO,
+                ExternalPointer::new(0, 3)
+            ), 
+            0.
         );
-        let player_string = if cfg!(target_arch = "wasm32") { 
-            String::from_utf8(include_bytes!("../data/player.json").as_ref().to_vec()).unwrap_or_default()
-        } else {
-            std::fs::read_to_string("data/player.json").unwrap_or_default()
-        };
-        entity_pool.add_to_pool(
-            Entity::load(player_string, 1)
-        );
+    //     let terrain_string = if cfg!(target_arch = "wasm32") { 
+    //         String::from_utf8(include_bytes!("../data/terrain.json").as_ref().to_vec()).unwrap_or_default()
+    //     } else {
+    //         std::fs::read_to_string("data/terrain.json").unwrap_or_default()
+    //     };
+    //     entity_pool.add_to_pool(
+    //         Entity::load(terrain_string, 0)
+    //     );
+    //     let player_string = if cfg!(target_arch = "wasm32") { 
+    //         String::from_utf8(include_bytes!("../data/player.json").as_ref().to_vec()).unwrap_or_default()
+    //     } else {
+    //         std::fs::read_to_string("data/player.json").unwrap_or_default()
+    //     };
+    //     entity_pool.add_to_pool(
+    //         Entity::load(player_string, 1)
+    //     );
     }
     
     let mut vars = InputData::default();
@@ -133,7 +148,8 @@ async fn main() {
         
         input.handle(&mut vars);
         
-        n_body_collisions((vars.target_id() + 1) % 2);
+        // n_body_collisions((vars.target_id() + 1) % 2);
+        just_move();
         
         // We don't want to move the camera until after we've drawn all the collision debug.
         // This ensures everything lines up with the current frame.
@@ -144,24 +160,24 @@ async fn main() {
 }
 
 impl Aabb {
-    pub fn overlaps(&self, location:Location) {
-        let top_left = self.min();
-        let bottom_right = self.max();
-        let corners = [
-            top_left,
-            Vec2::new(bottom_right.x, top_left.y),
-            bottom_right,
-            Vec2::new(top_left.x, bottom_right.y),
-        ];
-        let cells = corners.iter()
-            .filter_map(|corner| gate::point_to_real_cells(location, *corner)[0]);
-        let points = cells.map(|cell| {
-            cell.to_point(location, Vec2::ONE)
-        });
-        for point in points {
-            CAMERA.read().draw_point(point, 0.2, Color::from_rgba(255, 0, 0, 150));
-        }
-    }
+    // pub fn overlaps(&self, location:Location) {
+    //     let top_left = self.min();
+    //     let bottom_right = self.max();
+    //     let corners = [
+    //         top_left,
+    //         Vec2::new(bottom_right.x, top_left.y),
+    //         bottom_right,
+    //         Vec2::new(top_left.x, bottom_right.y),
+    //     ];
+    //     let cells = corners.iter()
+    //         .filter_map(|corner| gate::point_to_real_cells(location, *corner)[0]);
+    //     let points = cells.map(|cell| {
+    //         cell.to_point(location, Vec2::ONE)
+    //     });
+    //     for point in points {
+    //         CAMERA.read().draw_point(point, 0.2, Color::from_rgba(255, 0, 0, 150));
+    //     }
+    // }
 }
 
 pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
@@ -171,13 +187,10 @@ pub fn set_grid_cell(entity:ID, world_point:Vec2, new_cell:ExternalPointer) {
     
     let rotated_point = (world_point - entity.location.position).rotate(Vec2::from_angle(-entity.rotation)) + entity.location.position;
     
-    let Some(cell) = gate::point_to_cells(entity.location, new_cell.height, rotated_point)[0] else { return };
-    let path = ZorderPath::from_cell(cell, entity.location.pointer.height - new_cell.height);
-    let Ok(root) = GRAPH.write().set_node(entity.location.pointer, &path.steps(), new_cell.pointer) else {
-        dbg!("Failed to set cell");
-        return;
-    };
-    entity.set_root(root);
+    let Some(cell) = point_to_cell(entity.location, new_cell.height, rotated_point) else { return };
+    let path = Zorder2d::path_from_cell(UVec2::new(cell.x, cell.y).into(), entity.location.pointer.height - new_cell.height).unwrap();
+    let root = GRAPH.write().set_node(entity.location.pointer.pointer, &path, new_cell.pointer);
+    entity.set_root(ExternalPointer::new(root, entity.location.pointer.height));
 }
 
 pub trait DataAccess {
@@ -197,7 +210,7 @@ pub struct InputData {
 impl Default for InputData {
     fn default() -> Self {
         Self {
-            target_id: 1,
+            target_id: 0,
             edit_color: 0,
             edit_height: 0,
             render_debug: true,
@@ -257,33 +270,33 @@ pub fn set_key_binds() -> InputHandler<InputData> {
         set_grid_cell(
             data.target_id,
             CAMERA.read().screen_to_world(mouse_pos()),
-            ExternalPointer::new(Index(data.edit_color), data.edit_height)
+            ExternalPointer::new(data.edit_color as u32, data.edit_height)
         );
     });
-    input.bind_key(KeyCode::F, InputTrigger::Pressed, |data : &mut InputData| {
-        ENTITIES.write().get_mut_entity(data.target_id).unwrap().stop();
-        data.target_id = (data.target_id + 1) % 2;
-    });
+    // input.bind_key(KeyCode::F, InputTrigger::Pressed, |data : &mut InputData| {
+    //     ENTITIES.write().get_mut_entity(data.target_id).unwrap().stop();
+    //     data.target_id = (data.target_id + 1) % 2;
+    // });
     
     // Save/Load
-    if !cfg!(target_arch = "wasm32") {
-        input.bind_key(KeyCode::K, InputTrigger::Pressed, |data : &mut InputData| {
-            let save_data = ENTITIES.read().save_entity(data.target_id);
-            std::fs::write(&data.file_paths[data.target_id as usize], save_data).unwrap();
-        });
-        input.bind_key(KeyCode::L, InputTrigger::Pressed, |data : &mut InputData| {
-            let mut entities = ENTITIES.write();
-            let Ok(save_data) = std::fs::read_to_string(&data.file_paths[data.target_id as usize]) else {
-                dbg!("No save data found");
-                return;
-            };
-            *entities.get_mut_entity(data.target_id).unwrap() = Entity::load(save_data, data.target_id)
-        });
-    }
+    // if !cfg!(target_arch = "wasm32") {
+    //     input.bind_key(KeyCode::K, InputTrigger::Pressed, |data : &mut InputData| {
+    //         let save_data = ENTITIES.read().save_entity(data.target_id);
+    //         std::fs::write(&data.file_paths[data.target_id as usize], save_data).unwrap();
+    //     });
+    //     input.bind_key(KeyCode::L, InputTrigger::Pressed, |data : &mut InputData| {
+    //         let mut entities = ENTITIES.write();
+    //         let Ok(save_data) = std::fs::read_to_string(&data.file_paths[data.target_id as usize]) else {
+    //             dbg!("No save data found");
+    //             return;
+    //         };
+    //         *entities.get_mut_entity(data.target_id).unwrap() = Entity::load(save_data, data.target_id)
+    //     });
+    // }
 
     // Debug
     input.bind_key(KeyCode::P, InputTrigger::Pressed, |_data : &mut InputData| {
-        dbg!(GRAPH.read().nodes.internal_memory());
+        dbg!(GRAPH.read().nodes.safe_data());
     });
     input.bind_key(KeyCode::O, InputTrigger::Pressed, |data : &mut InputData| {
         data.render_debug = !data.render_debug;

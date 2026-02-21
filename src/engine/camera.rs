@@ -2,8 +2,9 @@ use macroquad::{
     shapes::{draw_circle, draw_circle_lines, draw_line, draw_rectangle, draw_rectangle_lines, draw_triangle, draw_triangle_lines},
     color::*,
     miniquad::window::screen_size,
+    math::Vec2 as MVec2,
 };
-use macroquad::math::Vec2;
+use glam::Vec2;
 pub struct Camera { 
     position: Vec2,
     radius: f32,
@@ -48,7 +49,7 @@ impl Camera {
 // Drawing methods
 impl Camera {
 
-    pub fn draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {
+    pub fn _draw_vec_rectangle(&self, position:Vec2, length:Vec2, color:Color) {
         let pos = self.world_to_screen(position);
         let len = length * self.scale;
         draw_rectangle(pos.x, pos.y, len.x, len.y, color);
@@ -60,12 +61,12 @@ impl Camera {
         draw_rectangle_lines(pos.x, pos.y, len.x, len.y, line_width*self.scale, color);
     }
     
-    pub fn draw_point(&self, position:Vec2, radius:f32, color:Color) {
+    pub fn _draw_point(&self, position:Vec2, radius:f32, color:Color) {
         let pos = self.world_to_screen(position);
         draw_circle(pos.x, pos.y, radius*self.scale, color);
     }
 
-    pub fn outline_point(&self, position:Vec2, radius:f32, thickness:f32, color:Color) {
+    pub fn _outline_point(&self, position:Vec2, radius:f32, thickness:f32, color:Color) {
         let pos = self.world_to_screen(position);
         draw_circle_lines(pos.x, pos.y, radius*self.scale, thickness*self.scale, color);
     }
@@ -77,7 +78,10 @@ impl Camera {
     }
 
     pub fn draw_rectangle_from_corners(&self, corners:&[Vec2], color: Color, render_dbg:bool) {
-        let corners:Vec<Vec2> = corners.iter().map(|point| self.world_to_screen(*point)).collect();
+        let corners: Vec<MVec2> = corners.iter().map(|point| {
+            let corner = self.world_to_screen(*point);
+            MVec2::new(corner.x, corner.y)
+        }).collect();
         draw_triangle(
             corners[0],
             corners[1],

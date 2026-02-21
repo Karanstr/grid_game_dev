@@ -1,5 +1,6 @@
+#![allow(dead_code)]
 use derive_new::new;
-use macroquad::math::{Vec2, BVec2, IVec2};
+use glam::{Vec2, BVec2, IVec2};
 pub const FP_EPSILON: f32 = f32::EPSILON;
 
 #[derive(Debug, Clone, Copy, new)]
@@ -27,7 +28,7 @@ impl Aabb {
     pub fn contains(&self, point:Vec2) -> BVec2 {
         (point - self.center).less_eq_mag(self.radius)
     }
-    
+
     pub fn expand(&self, distance:Vec2) -> Self {
         Self {
             center: self.center + distance / 2.,
@@ -58,7 +59,7 @@ impl Aabb {
         } else if point.y.greater_eq(bottom_right.y) {
             if velocity.y.less(0.) { walls_will_hit.y = 1. } else { return None }
         }
-        
+
         Some(walls_will_hit)
     }
 }
@@ -166,24 +167,4 @@ impl BVecUtils for BVec2 {
         if self.x { 1. } else { 0. }, 
         if self.y { 1. } else { 0. }) 
     }
-}
-
-/// Converts angular velocity to tangential velocity for a point offset from the center of rotation.
-/// 
-/// # Arguments
-/// * `angular_velocity` - Angular velocity in radians per second
-/// * `offset` - Vector from the center of rotation to the point (x, y components)
-/// 
-/// # Returns
-/// A Vec2 representing the tangential velocity (x, y components)
-pub fn angular_to_tangential_velocity(angular_velocity: f32, offset: Vec2) -> Vec2 {
-    // For a point at position (x, y) relative to center of rotation,
-    // the tangential velocity components are:
-    // vx = -ω * y
-    // vy = ω * x
-
-    Vec2::new(
-        -angular_velocity * offset.y,
-        angular_velocity * offset.x
-    )
 }
