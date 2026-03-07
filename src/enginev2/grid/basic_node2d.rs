@@ -1,4 +1,4 @@
-use super::{Index, GraphNode, Node, Step};
+use super::graph::{Index, GraphNode, Node, Step};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -71,4 +71,5 @@ impl Node<2> for BasicNode2d {
 
 }
 impl GraphNode<2> for BasicNode2d {}
+
 

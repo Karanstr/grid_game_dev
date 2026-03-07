@@ -1,6 +1,3 @@
-mod render;
-mod movement;
-// mod serialization;
 use serde::{Serialize, Deserialize};
 use glam::Vec2;
 // use crate::engine::math::Aabb;

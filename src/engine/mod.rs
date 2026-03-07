@@ -1,7 +1,5 @@
-pub mod entities;
-pub mod grid;
-pub mod physics;
+// pub mod entities;
+// pub mod physics;
+// pub mod partition;
 pub mod blocks;
 pub mod camera;
-pub mod input;
-pub mod math;
