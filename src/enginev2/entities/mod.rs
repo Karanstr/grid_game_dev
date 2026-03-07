@@ -1,11 +1,23 @@
-use crate::{engine::camera::Camera, enginev2::physics::Physics};
+use crate::enginev2::{camera::Camera, physics::Physics};
+use lilypads::Pond;
 
-pub struct EntityPool;
+pub struct EntityPool {
+    entities: Pond<Entity>,
+    graph: crate::GRAPH
+}
 impl EntityPool {
+
+    pub fn new(graph: crate::GRAPH) -> Self {
+        Self {
+            entities: Pond::new(),
+            graph,
+        }
+    }
+
     pub fn draw_all(&self, physics: &Physics, camera: &Camera) {
-        // for entity in self.entities.iter() {
-            // entity.draw(phsyics, camera);
-        // }
+        for (_, entity) in self.entities.iter() {
+            entity.draw(physics, camera);
+        }
     }
 }
 
@@ -16,6 +28,7 @@ impl Entity {
         // let rb = phsyics.get_rb;
         // let rotation = rb.rotation;
         // let position = rb.position;
+        // Should be able to use Pose and basically do this for free?
         // let points_list: Vec<([Vec2; 4], usize)> = self.corners.iter().map(|cell| {
             // ([
              // (cell.points[0] - point_offset).rotate(rotation) + position,
@@ -29,7 +42,6 @@ impl Entity {
         //     camera.draw_rectangle_from_corners(
         //         &points,
         //         RED, // BLOCKS.color(index),
-        //         true
         //     );
         // }
     }

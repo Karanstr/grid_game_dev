@@ -1,41 +1,32 @@
-mod engine;
 mod enginev2;
-
 use enginev2::input::*;
 use enginev2::physics::*;
 use enginev2::entities::*;
+use enginev2::camera::Camera;
+use enginev2::grid::*;
+
 use glam::Vec2;
-use macroquad::input::MouseButton;
-use macroquad::prelude::{mouse_position, KeyCode};
+use macroquad::input::{MouseButton, KeyCode};
 use parking_lot::RwLock;
 use std::f32::consts::PI;
 use std::sync::Arc;
-use enginev2::grid::*;
 
 const SPEED: f32 = 0.005;
 const ROTATION_SPEED: f32 = PI/512.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
-fn mouse_pos() -> Vec2 { Vec2::from(mouse_position()) }
-
-// Figure out why BlockPalette is stupid
-use crate::engine::blocks::BlockPalette;
-use crate::engine::camera::Camera;
+pub type GRAPH = Arc<RwLock< SparseDirectedGraph<2, BasicNode2d>>>;
 
 struct App {
     input: Input,
     events: Vec<Event>,
 
-    graph: Arc<RwLock< SparseDirectedGraph<2, BasicNode2d> >>,
-
     entities: EntityPool,
     physics: Physics,
-    
+
     camera: Camera,
 
-    // I don't know where to put this
-    blocks: BlockPalette,
 }
 impl App {
     fn intialize() -> Self {
@@ -50,17 +41,17 @@ impl App {
         let mut input = Input::new();
         set_key_binds(&mut input);
 
-        // Either load entities here or just intialize state and have a different function for loading?
+        // Either load entities here or just intialize state and load at the start of run? 
+        // The semantics are lost on me atm
 
         Self {
             input,
             events: Vec::new(),
 
-            graph: wrapped_graph,
-            entities: EntityPool,
-            physics: Physics::new(),
+            entities: EntityPool::new(wrapped_graph.clone()),
+            physics: Physics::new(wrapped_graph.clone()),
+
             camera: Camera::new(Vec2::ZERO, 4.),
-            blocks: BlockPalette::default()
         }
     }
 
@@ -71,50 +62,31 @@ impl App {
                 input,
                 events,
 
-                graph,
-                
                 entities,
                 physics,
                 
                 camera,
-                
-                blocks,
             } = self;
-            
-            entities.draw_all(physics, camera);
-            // let target = entities.get_entity(player).unwrap();
-            // let old_pos = target.position(&physics);
-            
-            
-            input.collect(events);
 
-            handle_events(events, &mut graph.write(), entities, physics, camera);
+            camera.check_resize()
+
+            input.collect(events);
+            handle_events(events, entities, physics, camera);
             
             physics.tick();
+
+            entities.draw_all(physics, camera);
             
-            // We don't want to move the camera until after we've drawn all the collision debug.
-            // This ensures everything lines up with the current frame.
-            // camera.update(Some((old_pos, 0.4)));
             macroquad::window::next_frame().await
         }
     }
 
 }
 
-fn handle_events(
-    events: &mut Vec<Event>,
-    graph: &mut SparseDirectedGraph<2, BasicNode2d>,
-    entities: &mut EntityPool,
-    physics: &mut Physics,
-    camera: &mut Camera,
-) {
-    for event in events.drain(..) {
-        dbg!(event);
-        match event {
-            _ => println!("{:?} is unimplemented!!", event)
-        }
-
-    }
+fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &mut Physics, camera: &mut Camera) {
+    for event in events.drain(..) { match event {
+        _ => println!("{:?} is unimplemented!!", event)
+    } }
 }
 
 pub fn set_key_binds(input: &mut Input) {
@@ -137,10 +109,6 @@ pub fn set_key_binds(input: &mut Input) {
 
 #[macroquad::main("")]
 async fn main() {
-    if !cfg!(target_arch = "wasm32") {
-        // set_panic_hook();
-        // init_deadlock_detection();
-    }
     #[cfg(debug_assertions)]
     println!("Debug mode");
     #[cfg(not(debug_assertions))]

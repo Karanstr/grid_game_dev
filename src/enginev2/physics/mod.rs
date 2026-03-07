@@ -1,6 +1,7 @@
-use rapier2d::prelude::*;
 mod query;
 mod voxels;
+
+use rapier2d::prelude::*;
 
 // Physics before entities
 pub struct Physics {
@@ -12,12 +13,13 @@ pub struct Physics {
     colliders: ColliderSet,
 }
 impl Physics {
-    pub fn new() -> Self {
+    pub fn new(graph: crate::GRAPH) -> Self {
+        let dispatcher = query::VoxelDispatcher::new(graph);
         Self {
             pipeline: PhysicsPipeline::default(),
             islands: IslandManager::default(),
             broadphase: BroadPhaseBvh::default(),
-            narrowphase: NarrowPhase::with_query_dispatcher(query::VoxelDispatcher),
+            narrowphase: NarrowPhase::with_query_dispatcher(dispatcher),
             rigid_bodies: RigidBodySet::default(),
             colliders: ColliderSet::default(),
         }

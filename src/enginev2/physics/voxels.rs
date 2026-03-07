@@ -10,6 +10,8 @@ use rapier2d::{
     }
 };
 
+// Rectify relationship with ExternalPointer
+// Figure out what we actually need to know about this shape
 pub struct Voxels {
     pub head: u32,
     pub height: u32,

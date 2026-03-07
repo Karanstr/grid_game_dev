@@ -1,11 +1,9 @@
 use rapier2d::{
     math::Vector,
     parry::query::{
-        ClosestPoints, Contact, ContactManifold, ContactManifoldsWorkspace, PersistentQueryDispatcher, QueryDispatcher, Unsupported
+        Contact, ContactManifold, ContactManifoldsWorkspace, PersistentQueryDispatcher, QueryDispatcher, Unsupported
     },
-    prelude::{
-        Pose, Shape, TypedShape
-    }
+    prelude::{ Pose, Shape, TypedShape }
 };
 use super::voxels::Voxels;
 
@@ -15,12 +13,23 @@ pub fn downcast<T: Shape>(shape: &dyn Shape) -> Option<&T> {
     } else { None }
 }
 
-pub struct VoxelDispatcher;
+pub struct VoxelDispatcher {
+    graph: crate::GRAPH
+}
+impl VoxelDispatcher {
+
+    pub fn new(graph: crate::GRAPH) -> Self {
+        Self {
+            graph
+        }
+    }
+
+}
+
 impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactData>
-    for VoxelDispatcher
-where
-    ManifoldData: Default + Clone,
-    ContactData: Default + Copy,
+for VoxelDispatcher where
+ManifoldData: Default + Clone,
+ContactData: Default + Copy
 {
     fn contact_manifolds(
         &self,
@@ -29,16 +38,14 @@ where
         shape2: &dyn Shape,
         prediction: f32,
         manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>,
-        _w: &mut Option<ContactManifoldsWorkspace>,
+        _w: &mut Option<ContactManifoldsWorkspace>
     ) -> Result<(), Unsupported> {
         if let Some(shape1) = downcast::<Voxels>(shape1) &&
-           let Some(shape2) = downcast::<Voxels>(shape2)
+            let Some(shape2) = downcast::<Voxels>(shape2)
         {
             contact_manifold_voxel_voxel(&self, pos12, shape1, shape2, prediction, manifolds);
 
-        } else {
-            return Err(Unsupported)
-        }
+        } else { return Err(Unsupported) }
         Ok(())
     }
 
@@ -58,6 +65,12 @@ fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
 
 }
 
+
+
+
+
+
+
 // ~~~ USELESS ~~~
 impl QueryDispatcher for VoxelDispatcher {
 
@@ -74,7 +87,7 @@ impl QueryDispatcher for VoxelDispatcher {
         unimplemented!()
     }
 
-    fn closest_points( &self, _a: &Pose, _b: &dyn Shape, _c: &dyn Shape, _d: f32) -> Result<ClosestPoints, Unsupported> {
+    fn closest_points( &self, _a: &Pose, _b: &dyn Shape, _c: &dyn Shape, _d: f32) -> Result<rapier2d::parry::query::ClosestPoints, Unsupported> {
         unimplemented!()
     }
 
@@ -89,49 +102,49 @@ impl QueryDispatcher for VoxelDispatcher {
 }
 
 
-    // fn contact_manifolds(
-    //     &self,
-    //     pos12: &Pose,
-    //     shape1: &dyn Shape,
-    //     shape2: &dyn Shape,
-    //     prediction: f32,
-    //     manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>,
-    //     _w: &mut Option<ContactManifoldsWorkspace>,
-    // ) -> Result<(), Unsupported> {
-    //
-    //     manifolds.clear();
-    //     let Some(circle1) = downcast::<MyCircle>(shape1) else { return Err(Unsupported) };
-    //     let Some(circle2) = downcast::<MyCircle>(shape2) else { return Err(Unsupported) };
-    //
-    //     let contact = {
-    //         let dist = pos12.translation.length() - circle2.0 - circle1.0;
-    //
-    //         let normal1 = if dist == 0. { Vector::X } else {
-    //             pos12.translation.normalize()
-    //         };
-    //         let normal2 = -(pos12.rotation.inverse() * normal1);
-    //
-    //         let point1 = normal1 * circle1.0;
-    //         let point2 = normal2 * circle2.0;
-    //
-    //         if dist < prediction {
-    //             Some( Contact::new(point1, point2, normal1, normal2, dist) )
-    //         } else { None }
-    //     };
-    //
-    //     if let Some(contact) = contact {
-    //         let mut manifold = ContactManifold::new();
-    //         manifold.local_n1 = contact.normal1;
-    //         manifold.local_n2 = contact.normal2;
-    //         manifold.points.push( TrackedContact::new(
-    //                 contact.point1,
-    //                 contact.point2,
-    //                 PackedFeatureId::face(0),
-    //                 PackedFeatureId::face(0),
-    //                 contact.dist
-    //         ));
-    //         manifolds.push(manifold);
-    //     }
-    //
-    //     Ok(())   
-    // }
+// fn contact_manifolds(
+//     &self,
+//     pos12: &Pose,
+//     shape1: &dyn Shape,
+//     shape2: &dyn Shape,
+//     prediction: f32,
+//     manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>,
+//     _w: &mut Option<ContactManifoldsWorkspace>,
+// ) -> Result<(), Unsupported> {
+//
+//     manifolds.clear();
+//     let Some(circle1) = downcast::<MyCircle>(shape1) else { return Err(Unsupported) };
+//     let Some(circle2) = downcast::<MyCircle>(shape2) else { return Err(Unsupported) };
+//
+//     let contact = {
+//         let dist = pos12.translation.length() - circle2.0 - circle1.0;
+//
+//         let normal1 = if dist == 0. { Vector::X } else {
+//             pos12.translation.normalize()
+//         };
+//         let normal2 = -(pos12.rotation.inverse() * normal1);
+//
+//         let point1 = normal1 * circle1.0;
+//         let point2 = normal2 * circle2.0;
+//
+//         if dist < prediction {
+//             Some( Contact::new(point1, point2, normal1, normal2, dist) )
+//         } else { None }
+//     };
+//
+//     if let Some(contact) = contact {
+//         let mut manifold = ContactManifold::new();
+//         manifold.local_n1 = contact.normal1;
+//         manifold.local_n2 = contact.normal2;
+//         manifold.points.push( TrackedContact::new(
+//                 contact.point1,
+//                 contact.point2,
+//                 PackedFeatureId::face(0),
+//                 PackedFeatureId::face(0),
+//                 contact.dist
+//         ));
+//         manifolds.push(manifold);
+//     }
+//
+//     Ok(())   
+// }

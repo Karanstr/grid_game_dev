@@ -43,23 +43,3 @@ pub mod corner_handling {
 
 
 }
-
-// fn apply_drag() {
-//     const DRAG_MULTIPLIER: f32 = 0.95;
-//     for entity in &mut ENTITIES.write().entities { 
-//         entity.velocity = (entity.velocity * DRAG_MULTIPLIER).snap_zero();
-//         entity.angular_velocity = (entity.angular_velocity * DRAG_MULTIPLIER).snap_zero();
-//     }
-// }
-
-// fn tick_entities(delta_tick: f32) {
-//     for entity in &mut ENTITIES.write().entities {
-//         entity.location.position += (entity.velocity * delta_tick).snap_zero();
-//         entity.rel_rotate((entity.angular_velocity * delta_tick).snap_zero());
-//     }
-// }
-// pub fn just_move() {
-//     tick_entities(1.);
-//     apply_drag();
-// }
-
