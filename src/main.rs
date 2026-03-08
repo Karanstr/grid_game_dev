@@ -1,9 +1,12 @@
-mod enginev2;
-use enginev2::input::*;
-use enginev2::physics::*;
-use enginev2::entities::*;
-use enginev2::camera::Camera;
-use enginev2::grid::*;
+mod engine;
+use engine::{
+    input::*,
+    physics::*,
+    entities::*,
+    camera::Camera,
+    grid::*,
+    event::Event
+};
 
 use glam::Vec2;
 use macroquad::input::{MouseButton, KeyCode};

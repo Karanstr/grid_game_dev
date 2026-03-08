@@ -1,4 +1,4 @@
-mod query;
+mod dispatcher;
 mod voxel_shape;
 
 use rapier2d::prelude::*;
@@ -22,7 +22,7 @@ impl Default for Physics {
             pipeline: PhysicsPipeline::default(),
             islands: IslandManager::default(),
             broad_phase: BroadPhaseBvh::default(),
-            narrow_phase: NarrowPhase::with_query_dispatcher(query::VoxelDispatcher),
+            narrow_phase: NarrowPhase::with_query_dispatcher(dispatcher::VoxelDispatcher),
         }
     }
 }

@@ -3,7 +3,7 @@ use rapier2d::{
     math::Vector,
     prelude::{PointQuery, RayCast, Shape, Aabb}
 };
-use crate::enginev2::grid::DagPointer;
+use crate::engine::grid::DagPointer;
 
 pub struct Voxels {
     pub graph: crate::GRAPH,
