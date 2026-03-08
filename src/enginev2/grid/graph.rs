@@ -156,7 +156,7 @@ pub trait Step<const D: usize>: std::fmt::Debug + Clone + Copy {
   // const COUNT: usize;
 
   fn all() -> &'static [Self];
-  
+
   /// Subcell is a 1xD matrix representing which subcell the step will take us into.
   /// For a 2d ZORDER when Top Left is [0, 0], this means [0, 1] is Bottom Left, [1, 0] is Top
   /// Right, and [1, 1] is Bottom Right

@@ -5,7 +5,7 @@ use rapier2d::{
     },
     prelude::{ Pose, Shape, TypedShape }
 };
-use super::voxels::Voxels;
+use super::Voxels;
 
 pub fn downcast<T: Shape>(shape: &dyn Shape) -> Option<&T> {
     if let TypedShape::Custom(shape1) = shape.as_typed_shape() {
@@ -13,23 +13,11 @@ pub fn downcast<T: Shape>(shape: &dyn Shape) -> Option<&T> {
     } else { None }
 }
 
-pub struct VoxelDispatcher {
-    graph: crate::GRAPH
-}
-impl VoxelDispatcher {
-
-    pub fn new(graph: crate::GRAPH) -> Self {
-        Self {
-            graph
-        }
-    }
-
-}
-
+pub struct VoxelDispatcher;
 impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactData>
-for VoxelDispatcher where
-ManifoldData: Default + Clone,
-ContactData: Default + Copy
+    for VoxelDispatcher where
+    ManifoldData: Default + Clone,
+    ContactData: Default + Copy
 {
     fn contact_manifolds(
         &self,
@@ -41,11 +29,12 @@ ContactData: Default + Copy
         _w: &mut Option<ContactManifoldsWorkspace>
     ) -> Result<(), Unsupported> {
         if let Some(shape1) = downcast::<Voxels>(shape1) &&
-            let Some(shape2) = downcast::<Voxels>(shape2)
+           let Some(shape2) = downcast::<Voxels>(shape2)
         {
             contact_manifold_voxel_voxel(&self, pos12, shape1, shape2, prediction, manifolds);
 
         } else { return Err(Unsupported) }
+
         Ok(())
     }
 
@@ -146,5 +135,5 @@ impl QueryDispatcher for VoxelDispatcher {
 //         manifolds.push(manifold);
 //     }
 //
-//     Ok(())   
+//     Ok(())
 // }

@@ -9,7 +9,6 @@ pub enum Zorder2d {
   BottomRight,
 }
 impl Step<2> for Zorder2d {
-  // const COUNT: usize = 4;
   fn all() -> &'static [Zorder2d] {
     &[
       Self::TopLeft,

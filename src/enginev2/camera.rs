@@ -99,7 +99,7 @@ impl Camera {
             color
         );
         draw_triangle(
-            corners[1],
+            corners[0],
             corners[2],
             corners[3],
             color
@@ -114,7 +114,7 @@ impl Camera {
                 WHITE
             );
             draw_triangle_lines(
-                corners[1],
+                corners[0],
                 corners[2],
                 corners[3],
                 2.,

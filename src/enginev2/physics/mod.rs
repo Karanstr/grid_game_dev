@@ -1,37 +1,40 @@
 mod query;
-mod voxels;
+mod voxel_shape;
 
 use rapier2d::prelude::*;
+pub use voxel_shape::Voxels;
 
-// Physics before entities
 pub struct Physics {
+    pub rigid_bodies: RigidBodySet,
+    pub colliders: ColliderSet,
+    
     pipeline: PhysicsPipeline,
     islands: IslandManager,
-    broadphase: BroadPhaseBvh,
-    narrowphase: NarrowPhase,
-    rigid_bodies: RigidBodySet,
-    colliders: ColliderSet,
+    broad_phase: BroadPhaseBvh,
+    narrow_phase: NarrowPhase,
 }
-impl Physics {
-    pub fn new(graph: crate::GRAPH) -> Self {
-        let dispatcher = query::VoxelDispatcher::new(graph);
+impl Default for Physics {
+    fn default() -> Self {
         Self {
-            pipeline: PhysicsPipeline::default(),
-            islands: IslandManager::default(),
-            broadphase: BroadPhaseBvh::default(),
-            narrowphase: NarrowPhase::with_query_dispatcher(dispatcher),
             rigid_bodies: RigidBodySet::default(),
             colliders: ColliderSet::default(),
+
+            pipeline: PhysicsPipeline::default(),
+            islands: IslandManager::default(),
+            broad_phase: BroadPhaseBvh::default(),
+            narrow_phase: NarrowPhase::with_query_dispatcher(query::VoxelDispatcher),
         }
     }
+}
+impl Physics {
 
     pub fn tick(&mut self) {
         self.pipeline.step(
             Vector::new(0., 100.),
             &IntegrationParameters::default(),
             &mut self.islands,
-            &mut self.broadphase,
-            &mut self.narrowphase,
+            &mut self.broad_phase,
+            &mut self.narrow_phase,
             &mut self.rigid_bodies,
             &mut self.colliders,
             &mut ImpulseJointSet::default(),

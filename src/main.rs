@@ -38,25 +38,44 @@ impl App {
         graph.add_leaf();
         let wrapped_graph = Arc::new(RwLock::new(graph));
             
-        let mut input = Input::new();
-        set_key_binds(&mut input);
+        let mut entities = EntityPool::new(wrapped_graph);
+        let mut physics = Physics::default();
+        let head = {
+            let mut graph = entities.graph.write();
+            let mut head = graph.get_root(1);
+            let path = Zorder2d::path_from_cell([0, 0], 0).unwrap();
+            head = graph.set_node(head, &path, 2);
+            let path = Zorder2d::path_from_cell([0, 0], 1).unwrap();
+            head = graph.set_node(head, &path, 3);
+            let path = Zorder2d::path_from_cell([0, 0], 2).unwrap();
+            head = graph.set_node(head, &path, 1);
+            let path = Zorder2d::path_from_cell([0, 0], 3).unwrap();
+            head = graph.set_node(head, &path, 0);
 
-        // Either load entities here or just intialize state and load at the start of run? 
-        // The semantics are lost on me atm
+            head
+        };
+
+        entities.add(DagPointer::new(head, 3), Vec2::ZERO, &mut physics);
+
+
+        let mut input = Input::new();
+        // set_key_binds(&mut input);
+
+        // Initial loading here, likely by passing a serialized_state in
 
         Self {
             input,
             events: Vec::new(),
 
-            entities: EntityPool::new(wrapped_graph.clone()),
-            physics: Physics::new(wrapped_graph.clone()),
+            entities,
+            physics,
 
             camera: Camera::new(Vec2::ZERO, 4.),
         }
     }
 
     async fn run(&mut self) {
-        
+
         loop {
             let App {
                 input,
@@ -68,7 +87,7 @@ impl App {
                 camera,
             } = self;
 
-            camera.check_resize()
+            camera.update_screensize();
 
             input.collect(events);
             handle_events(events, entities, physics, camera);
