@@ -11,8 +11,8 @@ use parking_lot::RwLock;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-const SPEED: f32 = 0.005;
-const ROTATION_SPEED: f32 = PI/512.;
+const SPEED: f32 = 0.1;
+const ROTATION_SPEED: f32 = PI/128.;
 const MAX_COLOR: usize = 4;
 const MAX_HEIGHT: u32 = 4;
 
@@ -42,11 +42,11 @@ impl App {
         let mut physics = Physics::default();
         let head = {
             let mut graph = entities.graph.write();
-            let mut head = graph.get_root(1);
+            let mut head = graph.get_root(0);
             let path = Zorder2d::path_from_cell([0, 0], 0).unwrap();
-            head = graph.set_node(head, &path, 2);
-            let path = Zorder2d::path_from_cell([0, 0], 1).unwrap();
             head = graph.set_node(head, &path, 3);
+            let path = Zorder2d::path_from_cell([0, 0], 1).unwrap();
+            head = graph.set_node(head, &path, 2);
             let path = Zorder2d::path_from_cell([0, 0], 2).unwrap();
             head = graph.set_node(head, &path, 1);
             let path = Zorder2d::path_from_cell([0, 0], 3).unwrap();
@@ -59,7 +59,7 @@ impl App {
 
 
         let mut input = Input::new();
-        // set_key_binds(&mut input);
+        set_key_binds(&mut input);
 
         // Initial loading here, likely by passing a serialized_state in
 
@@ -75,7 +75,6 @@ impl App {
     }
 
     async fn run(&mut self) {
-
         loop {
             let App {
                 input,
@@ -104,26 +103,47 @@ impl App {
 
 fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &mut Physics, camera: &mut Camera) {
     for event in events.drain(..) { match event {
+        Event::Clockwise => {
+            entities.get(0).unwrap().rotate_by(ROTATION_SPEED, physics);
+        }
+        Event::CounterClockwise => {
+            entities.get(0).unwrap().rotate_by(-ROTATION_SPEED, physics);
+        }
+        Event::Forward => {
+            entities.get(0).unwrap().move_wrt_rotation(Vec2::X * SPEED, physics);
+        }
+        Event::Backward => {
+            entities.get(0).unwrap().move_wrt_rotation(Vec2::NEG_X * SPEED, physics);
+        }
+        Event::Right => {
+            entities.get(0).unwrap().move_wrt_rotation(Vec2::Y * SPEED, physics);
+        }
+        Event::Left => {
+            entities.get(0).unwrap().move_wrt_rotation(Vec2::NEG_Y * SPEED, physics);
+        }
+        Event::Zoom(zoom) => {
+            camera.zoom_by(zoom);
+        }
         _ => println!("{:?} is unimplemented!!", event)
     } }
 }
 
 pub fn set_key_binds(input: &mut Input) {
-    input.bind(InputType::Keyboard(KeyCode::W), InputTrigger::Down, Event::Up);
-    input.bind(InputType::Keyboard(KeyCode::S), InputTrigger::Down, Event::Down);
-    input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::Left);
-    input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Right);
-    input.bind(InputType::Keyboard(KeyCode::Q), InputTrigger::Down, Event::CounterClockwise);
-    input.bind(InputType::Keyboard(KeyCode::E), InputTrigger::Down, Event::Clockwise);
-    input.bind(InputType::Keyboard(KeyCode::Space), InputTrigger::Pressed, Event::Stop);
+    input.bind(InputType::Keyboard(KeyCode::W), InputTrigger::Down, Event::Forward);
+    input.bind(InputType::Keyboard(KeyCode::S), InputTrigger::Down, Event::Backward);
+    // input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::Left);
+    // input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Right);
+    input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::CounterClockwise);
+    input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Clockwise);
+    // input.bind(InputType::Keyboard(KeyCode::Space), InputTrigger::Pressed, Event::Stop);
 
-    input.bind(InputType::Keyboard(KeyCode::V), InputTrigger::Pressed, Event::SwitchColor);
-    input.bind(InputType::Keyboard(KeyCode::B), InputTrigger::Pressed, Event::SwitchSize);
+    // input.bind(InputType::Keyboard(KeyCode::V), InputTrigger::Pressed, Event::SwitchColor);
+    // input.bind(InputType::Keyboard(KeyCode::B), InputTrigger::Pressed, Event::SwitchSize);
 
     input.bind(InputType::Keyboard(KeyCode::Equal), InputTrigger::Down, Event::Zoom(1.02));
     input.bind(InputType::Keyboard(KeyCode::Minus), InputTrigger::Down, Event::Zoom(1./1.02));
 
-    input.bind(InputType::Mouse(MouseButton::Left), InputTrigger::Down, Event::PlaceBlockAtMouse);
+    // input.bind(InputType::Mouse(MouseButton::Left), InputTrigger::Down, Event::PlaceBlockAtMouse);
 }
 
 #[macroquad::main("")]

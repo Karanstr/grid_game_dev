@@ -26,6 +26,7 @@ impl Default for Physics {
         }
     }
 }
+
 impl Physics {
 
     pub fn tick(&mut self) {

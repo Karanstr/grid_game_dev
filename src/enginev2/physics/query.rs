@@ -3,15 +3,9 @@ use rapier2d::{
     parry::query::{
         Contact, ContactManifold, ContactManifoldsWorkspace, PersistentQueryDispatcher, QueryDispatcher, Unsupported
     },
-    prelude::{ Pose, Shape, TypedShape }
+    prelude::{ Pose, Shape }
 };
 use super::Voxels;
-
-pub fn downcast<T: Shape>(shape: &dyn Shape) -> Option<&T> {
-    if let TypedShape::Custom(shape1) = shape.as_typed_shape() {
-        shape1.downcast_ref()
-    } else { None }
-}
 
 pub struct VoxelDispatcher;
 impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactData>
@@ -19,6 +13,8 @@ impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactD
     ManifoldData: Default + Clone,
     ContactData: Default + Copy
 {
+
+
     fn contact_manifolds(
         &self,
         pos12: &Pose,
@@ -28,8 +24,10 @@ impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactD
         manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>,
         _w: &mut Option<ContactManifoldsWorkspace>
     ) -> Result<(), Unsupported> {
-        if let Some(shape1) = downcast::<Voxels>(shape1) &&
-           let Some(shape2) = downcast::<Voxels>(shape2)
+
+        if 
+            let Some(shape1) = shape1.downcast_ref::<Voxels>() &&
+            let Some(shape2) = shape2.downcast_ref::<Voxels>()
         {
             contact_manifold_voxel_voxel(&self, pos12, shape1, shape2, prediction, manifolds);
 
@@ -38,9 +36,10 @@ impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactD
         Ok(())
     }
 
+
+
     // ~~~ USELESS ~~~
     fn contact_manifold_convex_convex(&self, _a: &Pose, _b: &dyn Shape, _c: &dyn Shape, _d: Option<&dyn rapier2d::parry::query::details::NormalConstraints>, _e: Option<&dyn rapier2d::parry::query::details::NormalConstraints>, _f: f32, _g: &mut ContactManifold<ManifoldData, ContactData>) -> Result<(), Unsupported> { Err(Unsupported) }
-
 }
 
 fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
@@ -53,11 +52,6 @@ fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
 ) {
 
 }
-
-
-
-
-
 
 
 // ~~~ USELESS ~~~

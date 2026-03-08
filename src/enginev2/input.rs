@@ -2,8 +2,8 @@ use macroquad::input::*;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Event {
-    Up,
-    Down,
+    Forward,
+    Backward,
     Left,
     Right,
     Clockwise,
