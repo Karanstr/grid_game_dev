@@ -1,4 +1,4 @@
-use glam::UVec2;
+use glam::{IVec2, UVec2};
 use crate::engine::grid::*;
 
 
@@ -27,7 +27,7 @@ impl super::Voxels {
                 // This is stupid and deceptive, doing this nonsense *inside* of the loop.
                 // The current alternative is stupider though..
                 if child_idx == idx as u32 {
-                    leaves.extend(identify_faces(&graph, self.geometry.head, &zorder));
+                    leaves.extend(identify_faces(&graph, self.geometry.head, &zorder, &Directions::all()));
                     // Prevents other iterations of the children to run, because the parent is a leaf..
                     continue 'search
                 }
@@ -45,149 +45,112 @@ impl super::Voxels {
     }
 }
 
+// At some point cache the descent so when we recurse we don't perform a full tree descension again..
 fn identify_faces(
     graph: &SparseDirectedGraph<2, BasicNode2d>,
     head: u32,
     path: &Vec<Zorder2d>,
+    faces_to_check: &[Directions],
 ) -> Vec<(Faces, Vec<Zorder2d>)> {
-    let center = UVec2::from_array(Zorder2d::path_to_cell(path));
-    let mut results = Vec::new();
+    let mut results: Vec<(Faces, Vec<Zorder2d>)> = Vec::new();
+    let mut exposed = Faces::none();
+    let mut splits = Faces::none();
+    
+    let max_bound = 2i32.pow(path.len() as u32);
+    let center = UVec2::from_array(Zorder2d::path_to_cell(path)).as_ivec2();
 
-    let mut faces = Faces::new();
-
-    // Checking [2, 3]
-    // Splits [0, 1]
-    if let Some(north_cell) = center.checked_sub(UVec2::Y) {
-        let north_path = Zorder2d::path_from_cell(
-            north_cell.to_array(),
+    for direction in faces_to_check {
+        let idx = *direction as usize;
+        let check_cell = center + direction.step();
+        if check_cell.min_element() < 0 || check_cell.max_element() >= max_bound { 
+            exposed.0[idx] = true;
+            continue;
+        }
+    
+        let check_path = Zorder2d::path_from_cell(
+            check_cell.as_uvec2().to_array(),
             path.len() as u32
         ).unwrap();
-        let result = graph.descend(head, &north_path);
-        if result == 0 {
-            // If block is air, do nothing as faces intializes assuming all is true.
-        } else if result < 4 {
-            // If block is a leaf (Hack until I write attributes)
-            faces.north = false;
-        } else {
-            // If block isn't a leaf
-            faces.north = false;
-            let mut left_new_path = path.clone();
-            left_new_path.push(Zorder2d::new([0, 0]).unwrap());
-            results.extend(identify_faces(graph, head, &left_new_path));
-            
-            let mut right_new_path = path.clone();
-            right_new_path.push(Zorder2d::new([1, 0]).unwrap());
-            results.extend(identify_faces(graph, head, &right_new_path));
-        }
-
+        let result = graph.descend(head, &check_path);
+        if result == 0 { exposed.0[idx] = true; } else if result >= 4 { splits.0[idx] = true; }
     }
 
-    // Checking [0, 1]
-    // Splits [2, 3]
-    let south_cell = center + UVec2::Y;
-    if south_cell.max_element() < 2u32.pow(path.len() as u32)  {
-
-        let south_path = Zorder2d::path_from_cell(
-            south_cell.to_array(),
-            path.len() as u32
-        ).unwrap();
-        let result = graph.descend(head, &south_path);
-        if result == 0 {
-            // If block is air, do nothing as faces intializes assuming all is true.
-        } else if result < 4 {
-            // If block is a leaf (Hack until I write attributes)
-            faces.south = false;
-        } else {
-            // If block isn't a leaf
-            faces.south = false;
-            let mut left_new_path = path.clone();
-            left_new_path.push(Zorder2d::new([0, 1]).unwrap());
-            results.extend(identify_faces(graph, head, &left_new_path));
-            
-            let mut right_new_path = path.clone();
-            right_new_path.push(Zorder2d::new([1, 1]).unwrap());
-            results.extend(identify_faces(graph, head, &right_new_path));
-        }
+    // Perform splits without duplication
+    let mut child_path = path.clone();
+    if splits.north() || splits.west() {
+        child_path.push(Zorder2d::TopLeft);
+        let directions: &[Directions] = 
+            if splits.north() && splits.west() { &[Directions::North, Directions::West] }
+            else if splits.north() { &[Directions::North] }
+            else { &[Directions::West] }
+        ;
+        results.extend(identify_faces(graph, head, &child_path, directions));
+        child_path.pop();
+    }
+    if splits.north() || splits.east() {
+        child_path.push(Zorder2d::TopRight);
+        let directions: &[Directions] = 
+            if splits.north() && splits.east() { &[Directions::North, Directions::East] }
+            else if splits.north() { &[Directions::North] }
+            else { &[Directions::East] }
+        ;
+        results.extend(identify_faces(graph, head, &child_path, directions));
+        child_path.pop();
+    }
+    if splits.south() || splits.west() {
+        child_path.push(Zorder2d::BottomLeft);
+        let directions: &[Directions] = 
+            if splits.south() && splits.west() { &[Directions::South, Directions::West] }
+            else if splits.south() { &[Directions::South] }
+            else { &[Directions::West] }
+        ;
+        results.extend(identify_faces(graph, head, &child_path, directions));
+        child_path.pop();
+    }
+    if splits.south() || splits.east() {
+        child_path.push(Zorder2d::BottomRight);
+        let directions: &[Directions] =
+            if splits.south() && splits.east() { &[Directions::South, Directions::East] }
+            else if splits.south() { &[Directions::South] }
+            else { &[Directions::East] }
+        ;
+        results.extend(identify_faces(graph, head, &child_path, directions));
+        child_path.pop();
     }
 
-    // Checking [1, 3]
-    // Splits [0, 2]
-    if let Some(west_cell) = center.checked_sub(UVec2::X) {
-        let west_path = Zorder2d::path_from_cell(
-            west_cell.to_array(),
-            path.len() as u32
-        ).unwrap();
-        let result = graph.descend(head, &west_path);
-        if result == 0 {
-            // If block is air, do nothing as faces intializes assuming all is true.
-        } else if result < 4 {
-            // If block is a leaf (Hack until I write attributes)
-            faces.west = false;
-        } else {
-            // If block isn't a leaf
-            faces.west = false;
-            let mut left_new_path = path.clone();
-            left_new_path.push(Zorder2d::new([0, 0]).unwrap());
-            results.extend(identify_faces(graph, head, &left_new_path));
-            
-            let mut right_new_path = path.clone();
-            right_new_path.push(Zorder2d::new([0, 1]).unwrap());
-            results.extend(identify_faces(graph, head, &right_new_path));
-        }
-
-    }
-
-    // Checking [0, 2]
-    // Splits [1, 3]
-    let east_cell = center + UVec2::X;
-    if east_cell.max_element() < 2u32.pow(path.len() as u32)  {
-
-        let east_path = Zorder2d::path_from_cell(
-            east_cell.to_array(),
-            path.len() as u32
-        ).unwrap();
-        let result = graph.descend(head, &east_path);
-        if result == 0 {
-            // If block is air, do nothing as faces intializes assuming all is true.
-        } else if result < 4 {
-            // If block is a leaf (Hack until I write attributes)
-            faces.east = false;
-        } else {
-            // If block isn't a leaf
-            faces.east = false;
-            let mut left_new_path = path.clone();
-            left_new_path.push(Zorder2d::new([1, 0]).unwrap());
-            results.extend(identify_faces(graph, head, &left_new_path));
-            
-            let mut right_new_path = path.clone();
-            right_new_path.push(Zorder2d::new([1, 1]).unwrap());
-            results.extend(identify_faces(graph, head, &right_new_path));
-        }
-    }
-
-    if faces.has_exposed_face() {
-        results.insert(0, (faces, path.clone()));
-    }
+    if exposed.has_some() { results.insert(0, (exposed, path.clone()));}
     results
 }
 
-struct Faces {
-    north: bool,
-    east: bool,
-    south: bool,
-    west: bool
-}
+// [North, South, East, West]
+struct Faces([bool; 4]);
 impl Faces {
-    fn new() -> Self {
-        Self {
-            north: true,
-            east: true,
-            south: true,
-            west: true,
-        }
+    fn none() -> Self { Self([false; 4]) }
+    fn north(&self) -> bool { self.0[0] }
+    fn south(&self) -> bool { self.0[1] }
+    fn east(&self) -> bool { self.0[2] }
+    fn west(&self) -> bool { self.0[3] }
+    fn has_some(&self) -> bool { self.0[0] || self.0[1] || self.0[2] || self.0[3] }
+}
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum Directions {
+    North,
+    South,
+    East,
+    West,
+}
+impl Directions {
+    fn all() -> [Self; 4] {
+        [Self::North, Self::South, Self::East, Self::West]
     }
-    fn has_exposed_face(&self) -> bool {
-        self.north || self.east || self.south || self.west
+    fn step(&self) -> IVec2 {
+        match self {
+            Self::North => IVec2::new(0, -1),
+            Self::South => IVec2::new(0, 1),
+            Self::East  => IVec2::new(1, 0), 
+            Self::West  => IVec2::new(-1, 0), 
+        }
     }
 }
 

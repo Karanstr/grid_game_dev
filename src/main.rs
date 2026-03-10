@@ -52,6 +52,8 @@ impl App {
             let max = length - 1;
             let path = Zorder2d::path_from_cell([0, 0], height).unwrap();
             head = graph.set_node(head, &path, 0);
+            let path = Zorder2d::path_from_cell([1, 0], height).unwrap();
+            head = graph.set_node(head, &path, 0);
             let path = Zorder2d::path_from_cell([max, 0], height).unwrap();
             head = graph.set_node(head, &path, 0);
             let path = Zorder2d::path_from_cell([0, max], height).unwrap();
