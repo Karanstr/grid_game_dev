@@ -1,0 +1,40 @@
+Acquiring the length of a height: Physics--VoxelShape, Entities--Entity--Render
+
+
+Descend both trees, performing binary searches into the faces lists to determine if the currently focused node has any faces
+Then perform a linear sweep through the faces lists and eliminate any 
+
+// Step one, Dual Tree BVH Descent
+
+stack.push((tree1.root(), tree2.root()))
+
+while let Some((node1, node2)) = stack.pop():
+
+    // expand aabb by prediction distance for speculative contacts
+    if !node1.aabb().intersects(node2.aabb().transform_by(pos12).expand(prediction)):
+        continue
+
+    match (node1.state, node2.state):
+
+        (Empty, _) | (_, Empty):
+            continue
+
+        (Full, Full):
+            candidate_pairs.push((node1, node2))
+
+        (Mixed, Mixed):
+            // descend larger node — surface area heuristic
+            if node1.depth >= node2.depth:
+                for child in node1.children:
+                    stack.push((child, node2))
+            else:
+                for child in node2.children:
+                    stack.push((node1, child))
+
+        (Full, Mixed):
+            for child in node2.children:
+                stack.push((node1, child))
+
+        (Mixed, Full):
+            for child in node1.children:
+                stack.push((child, node2))

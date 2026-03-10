@@ -11,6 +11,7 @@ use engine::{
 use glam::Vec2;
 use macroquad::input::{MouseButton, KeyCode};
 use parking_lot::RwLock;
+use rapier2d::math::Pose2;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
@@ -45,20 +46,27 @@ impl App {
         let mut physics = Physics::default();
         let head = {
             let mut graph = entities.graph.write();
-            let mut head = graph.get_root(0);
-            let path = Zorder2d::path_from_cell([0, 0], 0).unwrap();
-            head = graph.set_node(head, &path, 3);
-            let path = Zorder2d::path_from_cell([0, 0], 1).unwrap();
-            head = graph.set_node(head, &path, 2);
-            let path = Zorder2d::path_from_cell([0, 0], 2).unwrap();
-            head = graph.set_node(head, &path, 1);
-            let path = Zorder2d::path_from_cell([0, 0], 3).unwrap();
+            let mut head = graph.get_root(1);
+            let height = 3;
+            let length = 2u32.pow(height);
+            let max = length - 1;
+            let path = Zorder2d::path_from_cell([0, 0], height).unwrap();
+            head = graph.set_node(head, &path, 0);
+            let path = Zorder2d::path_from_cell([max, 0], height).unwrap();
+            head = graph.set_node(head, &path, 0);
+            let path = Zorder2d::path_from_cell([0, max], height).unwrap();
+            head = graph.set_node(head, &path, 0);
+            let path = Zorder2d::path_from_cell([max, max], height).unwrap();
             head = graph.set_node(head, &path, 0);
 
             head
         };
 
-        entities.add(DagPointer::new(head, 3), Vec2::ZERO, &mut physics);
+        entities.add(
+            DagPointer::new(head, 3),
+            Pose2::new(Vec2::ZERO, 0.),
+            &mut physics
+        );
 
 
         let mut input = Input::new();
@@ -118,12 +126,6 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
         Event::Backward => {
             entities.get(0).unwrap().move_wrt_rotation(Vec2::NEG_X * SPEED, physics);
         }
-        Event::Right => {
-            entities.get(0).unwrap().move_wrt_rotation(Vec2::Y * SPEED, physics);
-        }
-        Event::Left => {
-            entities.get(0).unwrap().move_wrt_rotation(Vec2::NEG_Y * SPEED, physics);
-        }
         Event::Zoom(zoom) => {
             camera.zoom_by(zoom);
         }
@@ -134,8 +136,6 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
 pub fn set_key_binds(input: &mut Input) {
     input.bind(InputType::Keyboard(KeyCode::W), InputTrigger::Down, Event::Forward);
     input.bind(InputType::Keyboard(KeyCode::S), InputTrigger::Down, Event::Backward);
-    // input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::Left);
-    // input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Right);
     input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::CounterClockwise);
     input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Clockwise);
     // input.bind(InputType::Keyboard(KeyCode::Space), InputTrigger::Pressed, Event::Stop);

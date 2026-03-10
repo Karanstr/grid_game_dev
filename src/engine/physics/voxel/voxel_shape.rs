@@ -1,24 +1,11 @@
 use std::f32::consts::FRAC_1_SQRT_2;
 use rapier2d::{
     math::Vector,
-    prelude::{PointQuery, RayCast, Shape, Aabb}
+    prelude::{Aabb, PointQuery, RayCast, Shape}
 };
-use crate::engine::grid::DagPointer;
+use crate::engine::grid::{DagPointer, Zorder2d};
 
-pub struct Voxels {
-    pub graph: crate::GRAPH,
-    pub geometry: DagPointer,
-}
-impl Voxels {
-    pub fn new(geometry: DagPointer, graph: crate::GRAPH) -> Self {
-        Self {
-            graph,
-            geometry,
-        }
-    }
-}
-
-impl Shape for Voxels {
+impl Shape for super::Voxels {
     
     fn compute_local_aabb(&self) -> Aabb {
         let half_extents = Vector::splat(2u32.pow(self.geometry.height) as f32 / 2.);
@@ -52,7 +39,7 @@ impl Shape for Voxels {
 
 }
 
-impl PointQuery for Voxels { 
+impl PointQuery for super::Voxels { 
     
     fn project_local_point(&self, _: rapier2d::prelude::Vector, _: bool) -> rapier2d::parry::query::PointProjection {
         unimplemented!()
@@ -64,7 +51,7 @@ impl PointQuery for Voxels {
 
 }
 
-impl RayCast for Voxels {
+impl RayCast for super::Voxels {
     fn cast_local_ray_and_get_normal(&self, _: &rapier2d::parry::query::Ray, _: f32, _: bool) -> Option<rapier2d::parry::query::RayIntersection> {
         unimplemented!()
     }

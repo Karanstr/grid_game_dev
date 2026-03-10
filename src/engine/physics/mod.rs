@@ -1,8 +1,8 @@
 mod dispatcher;
-mod voxel_shape;
+mod voxel;
 
+pub use voxel::Voxels;
 use rapier2d::prelude::*;
-pub use voxel_shape::Voxels;
 
 pub struct Physics {
     pub rigid_bodies: RigidBodySet,
@@ -28,7 +28,6 @@ impl Default for Physics {
 }
 
 impl Physics {
-
     pub fn tick(&mut self) {
         self.pipeline.step(
             Vector::new(0., 100.),

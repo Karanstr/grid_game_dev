@@ -2,8 +2,6 @@
 pub enum Event {
     Forward,
     Backward,
-    Left,
-    Right,
     Clockwise,
     CounterClockwise,
     Stop,

@@ -152,6 +152,32 @@ pub fn bfs_nodes<const D: usize, N: Node<D> >(nodes: &Vec<N>, head: Index) -> Ve
   bfs_indexes
 }
 
+pub fn dfs_leaves<N: Node<2>>(
+    nodes: &Vec<N>,
+    head: Index,
+) -> Vec<(u32, Vec<N::Children>)> {
+
+    let mut stack = vec![(head as usize, Vec::new())];
+    let mut leaves = Vec::new();
+
+    'search: while let Some((idx, zorder)) = stack.pop() {
+        let cur_node = nodes[idx];
+        for child in N::Children::all().iter().rev() {
+            let child_idx = cur_node.get(*child);
+            // This is kinda cheating but it's ok
+            if child_idx == idx as u32 {
+                leaves.push((idx as u32, zorder));
+                continue 'search
+            }
+            let mut child_zorder = zorder.clone();
+            child_zorder.push(*child);
+            stack.push((child_idx as usize, child_zorder));
+        }
+    }
+    
+    leaves
+}
+
 pub trait Step<const D: usize>: std::fmt::Debug + Clone + Copy {
   // const COUNT: usize;
 
