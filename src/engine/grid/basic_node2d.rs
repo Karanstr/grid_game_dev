@@ -25,7 +25,7 @@ impl Step<2> for Zorder2d {
 
 #[derive(Debug, Clone)]
 pub struct Cell {
-    pub cell: [u32; 2],
+    cell: [u32; 2],
     length: usize,
 }
 impl Cell {
@@ -35,6 +35,7 @@ impl Cell {
             length,
         }
     }
+    pub fn cell(&self) -> [u32; 2] { self.cell }
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -99,6 +100,7 @@ impl PackedCell {
             length,
         }
     }
+    pub fn packed(&self) -> u64 { self.packed }
 }
 impl Default for PackedCell {
     fn default() -> Self {
@@ -121,22 +123,23 @@ impl Path<2, Zorder2d> for PackedCell {
         }
     }
     fn push_internal(&mut self, step: Self::InternalStep) {
-        self.packed = (self.packed << 2) | (step & 0b11);
+        let shift = 62 - self.length * 2;  // start at 62
+        self.packed |= (step & 0b11) << shift;
         self.length += 1;
     }
     fn pop_internal(&mut self) -> Option<Self::InternalStep> {
         if self.length == 0 { return None }
-        let result = self.packed & 0b11;
-        self.packed >>= 2;
         self.length -= 1;
+        let shift = 62 - self.length * 2;
+        let result = (self.packed >> shift) & 0b11;
+        self.packed &= !(0b11 << shift);
         Some(result)
     }
 
     fn len(&self) -> usize { self.length }
     fn step_at(&self, n: usize) -> Option<Zorder2d> {
         if self.length <= n { return None }
-        // oldest step is at the highest bits
-        let shift = (self.length - 1 - n) * 2;
+        let shift = 62 - n * 2;
         let step = (self.packed >> shift) & 0b11;
         Some(Self::from_internal(step))
     }

@@ -23,7 +23,7 @@ fn render_leaves(
     camera: &Camera,
 ) {
     for (idx, path) in leaves {
-        let coords = path.cell;
+        let coords = path.cell();
         let cell_size = Voxels::length(height - path.len() as u32);
         let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
         let world_corners: [Vec2; 4] = [
@@ -53,7 +53,7 @@ fn render_faces(
     camera: &Camera,
 ) {
     for (faces, path) in leaves {
-        let coords = path.cell;
+        let coords = path.cell();
         let cell_size = Voxels::length(height - path.len() as u32);
         let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
         let world_corners: [Vec2; 4] = [

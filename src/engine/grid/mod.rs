@@ -6,7 +6,7 @@ pub use basic_node2d::*;
 
 pub mod dim2 {
     pub use super::graph::*;
-    pub type Graph2D<Node: GraphNode<2>> = SparseDirectedGraph<2, Node>;
+    pub type Graph2D<Node> = SparseDirectedGraph<2, Node>;
     pub use super::basic_node2d::*;
     pub use super::DagPointer;
 }

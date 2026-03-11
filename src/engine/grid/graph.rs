@@ -222,7 +222,7 @@ pub trait Path<const DIM: usize, S: Step<DIM>>: Default + Clone {
   fn convert<P: Path<DIM, S> + Default>(&self) -> P {
       let mut result = P::default();
       for i in 0 .. self.len() {
-          result.push_step(self.step_at(i).unwrap());
+        result.push_step(self.step_at(i).unwrap());
       }
       result
   }
