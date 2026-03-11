@@ -3,17 +3,16 @@ use rapier2d::{
     math::Vector,
     prelude::{Aabb, PointQuery, RayCast, Shape}
 };
-use crate::engine::grid::{DagPointer, Zorder2d};
 
 impl Shape for super::Voxels {
     
     fn compute_local_aabb(&self) -> Aabb {
-        let half_extents = Vector::splat(2u32.pow(self.geometry.height) as f32 / 2.);
+        let half_extents = Vector::splat(Self::length(self.geometry.height) / 2.);
         Aabb::from_half_extents(Vector::ZERO, half_extents)
     }
 
     fn compute_local_bounding_sphere(&self) -> rapier2d::parry::bounding_volume::BoundingSphere {
-        let side_length = 2u32.pow(self.geometry.height) as f32;
+        let side_length = Self::length(self.geometry.height);
         rapier2d::parry::bounding_volume::BoundingSphere::new(Vector::ZERO, side_length / FRAC_1_SQRT_2)
     }
 

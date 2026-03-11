@@ -24,6 +24,10 @@ impl EntityPool {
         self.entities.get(idx)
     }
 
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut Entity> {
+        self.entities.get_mut(idx)
+    }
+
     pub fn add(&mut self, geometry: DagPointer, position: Pose2, physics: &mut Physics) -> usize {
         let collider = ColliderBuilder::new(SharedShape::new(
                 Voxels::new(self.graph.clone())

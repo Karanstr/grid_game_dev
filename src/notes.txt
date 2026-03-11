@@ -1,6 +1,3 @@
-Acquiring the length of a height: Physics--VoxelShape, Entities--Entity--Render
-
-
 Descend both trees, performing binary searches into the faces lists to determine if the currently focused node has any faces
 Then perform a linear sweep through the faces lists and eliminate any 
 

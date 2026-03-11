@@ -7,7 +7,7 @@ pub use crate::engine::{grid::{DagPointer, Zorder2d}, physics::voxel::voxel_face
 
 pub struct Voxels {
     pub geometry: DagPointer,
-    graph: crate::GRAPH,
+    pub graph: crate::GRAPH,
 
     pub faces: Vec<(Faces, Vec<Zorder2d>)>,
 }
@@ -19,5 +19,9 @@ impl Voxels {
 
             faces: Vec::new(),
         }
+    }
+
+    pub fn length(height: u32) -> f32 {
+        2u32.pow(height) as f32
     }
 }

@@ -128,5 +128,3 @@ impl Directions {
         }
     }
 }
-
-// Write condensed Zorder converter

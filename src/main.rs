@@ -9,7 +9,7 @@ use engine::{
 };
 
 use glam::Vec2;
-use macroquad::input::{MouseButton, KeyCode};
+use macroquad::input::{KeyCode, MouseButton, mouse_position};
 use parking_lot::RwLock;
 use rapier2d::math::Pose2;
 use std::f32::consts::PI;
@@ -41,35 +41,21 @@ impl App {
         graph.add_leaf();
         graph.add_leaf();
         let wrapped_graph = Arc::new(RwLock::new(graph));
-            
+
         let mut entities = EntityPool::new(wrapped_graph);
         let mut physics = Physics::default();
-        let head = {
+        let (head, height) = {
             let mut graph = entities.graph.write();
-            let mut head = graph.get_root(1);
+            let head = graph.get_root(1);
             let height = 3;
-            let length = 2u32.pow(height);
-            let max = length - 1;
-            let path = Zorder2d::path_from_cell([0, 0], height).unwrap();
-            head = graph.set_node(head, &path, 0);
-            let path = Zorder2d::path_from_cell([1, 0], height).unwrap();
-            head = graph.set_node(head, &path, 0);
-            let path = Zorder2d::path_from_cell([max, 0], height).unwrap();
-            head = graph.set_node(head, &path, 0);
-            let path = Zorder2d::path_from_cell([0, max], height).unwrap();
-            head = graph.set_node(head, &path, 0);
-            let path = Zorder2d::path_from_cell([max, max], height).unwrap();
-            head = graph.set_node(head, &path, 0);
-
-            head
+            (head, height)
         };
 
         entities.add(
-            DagPointer::new(head, 3),
+            DagPointer::new(head, height),
             Pose2::new(Vec2::ZERO, 0.),
             &mut physics
         );
-
 
         let mut input = Input::new();
         set_key_binds(&mut input);
@@ -131,6 +117,11 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
         Event::Zoom(zoom) => {
             camera.zoom_by(zoom);
         }
+        Event::PlaceBlockAtMouse => {
+            let mouse_pos = Vec2::from(mouse_position());
+            let world_pos = camera.screen_to_world(mouse_pos);
+            entities.get_mut(0).unwrap().set_block(physics, world_pos, DagPointer::new(0, 0));
+        }
         _ => println!("{:?} is unimplemented!!", event)
     } }
 }
@@ -148,7 +139,7 @@ pub fn set_key_binds(input: &mut Input) {
     input.bind(InputType::Keyboard(KeyCode::Equal), InputTrigger::Down, Event::Zoom(1.02));
     input.bind(InputType::Keyboard(KeyCode::Minus), InputTrigger::Down, Event::Zoom(1./1.02));
 
-    // input.bind(InputType::Mouse(MouseButton::Left), InputTrigger::Down, Event::PlaceBlockAtMouse);
+    input.bind(InputType::Mouse(MouseButton::Left), InputTrigger::Down, Event::PlaceBlockAtMouse);
 }
 
 #[macroquad::main("")]

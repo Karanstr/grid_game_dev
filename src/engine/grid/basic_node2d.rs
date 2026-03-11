@@ -1,5 +1,6 @@
 use super::graph::{Index, GraphNode, Node, Step};
 
+// Add compressed to-from Zorder
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Zorder2d {
