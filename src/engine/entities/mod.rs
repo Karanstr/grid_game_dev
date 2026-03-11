@@ -1,6 +1,6 @@
 mod entity;
 pub use entity::Entity;
-use crate::engine::{camera::Camera, grid::*, physics::*};
+use crate::engine::{camera::Camera, grid::dim2::*, physics::*};
 use lilypads::Pond;
 
 use rapier2d::{math::Pose2, prelude::{ColliderBuilder, SharedShape}};

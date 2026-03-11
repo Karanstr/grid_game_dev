@@ -10,30 +10,30 @@ impl super::Voxels {
     }
 
     // Based on dfs_leaves algorithm :(
-    fn cache_faces(&mut self) -> Vec<(Faces, Vec<Zorder2d>)> {
+    fn cache_faces(&mut self) -> Vec<(Faces, Cell)> {
         let graph = self.graph.read();
 
-        let mut stack = vec![(self.geometry.head as usize, Vec::new())];
+        let mut stack = vec![(self.geometry.head as usize, Cell::default())];
         let mut leaves = Vec::new();
     
         let nodes = graph.nodes.unsafe_data();
-        'search: while let Some((idx, zorder)) = stack.pop() {
+        'search: while let Some((idx, path)) = stack.pop() {
             // We don't track air nodes
             // Hack until I have a proper block attribute system
-            if idx == 0 { continue 'search }
+            if idx == 0 { continue }
             let cur_node = nodes[idx];
-            for child in Zorder2d::all().iter().rev() {
-                let child_idx = cur_node.get(*child);
+            for &child in Zorder2d::all().iter().rev() {
+                let child_idx = cur_node.child(child);
                 // This is stupid and deceptive, doing this nonsense *inside* of the loop.
                 // The current alternative is stupider though..
                 if child_idx == idx as u32 {
-                    leaves.extend(identify_faces(&graph, self.geometry.head, &zorder, &Directions::all()));
+                    leaves.extend(identify_faces(&graph, self.geometry.head, &path, &Directions::all()));
                     // Prevents other iterations of the children to run, because the parent is a leaf..
                     continue 'search
                 }
-                let mut child_zorder = zorder.clone();
-                child_zorder.push(*child);
-                stack.push((child_idx as usize, child_zorder));
+                let mut child_path = path.clone();
+                child_path.push_step(child);
+                stack.push((child_idx as usize, child_path));
             }
         }
 
@@ -46,15 +46,15 @@ impl super::Voxels {
 fn identify_faces(
     graph: &SparseDirectedGraph<2, BasicNode2d>,
     head: u32,
-    path: &Vec<Zorder2d>,
+    path: &Cell,
     faces_to_check: &[Directions],
-) -> Vec<(Faces, Vec<Zorder2d>)> {
-    let mut results: Vec<(Faces, Vec<Zorder2d>)> = Vec::new();
+) -> Vec<(Faces, Cell)> {
+    let mut results = Vec::new();
     let mut exposed = Faces::none();
     let mut splits = Faces::none();
     
     let max_bound = 2i32.pow(path.len() as u32);
-    let center = UVec2::from_array(Zorder2d::path_to_cell(path)).as_ivec2();
+    let center = UVec2::from_array(path.cell).as_ivec2();
 
     for direction in faces_to_check {
         let idx = *direction as usize;
@@ -64,10 +64,7 @@ fn identify_faces(
             continue;
         }
     
-        let check_path = Zorder2d::path_from_cell(
-            check_cell.as_uvec2().to_array(),
-            path.len() as u32
-        ).unwrap();
+        let check_path = Cell::new(check_cell.as_uvec2().to_array(), path.len());
         let result = graph.descend(head, &check_path);
         if result == 0 { exposed.0[idx] = true; } else if result >= 4 { splits.0[idx] = true; }
     }
@@ -88,9 +85,9 @@ fn identify_faces(
             (false, true) => &[dir_b],
             (false, false) => continue
         };
-        child_path.push(corner);
+        child_path.push_step(corner);
         results.extend(identify_faces(graph, head, &child_path, faces_to_check));
-        child_path.pop();
+        child_path.pop_step();
     }
     
     if exposed.has_some() { results.insert(0, (exposed, path.clone()));}

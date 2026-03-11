@@ -1,75 +1,160 @@
-use super::graph::{Index, GraphNode, Node, Step};
+use super::graph::{Step, Path, Index, Node, GraphNode};
 
-// Add compressed to-from Zorder
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum Zorder2d {
-  TopLeft,
-  TopRight,
-  BottomLeft,
-  BottomRight,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 impl Step<2> for Zorder2d {
-  fn all() -> &'static [Zorder2d] {
-    &[
-      Self::TopLeft,
-      Self::TopRight,
-      Self::BottomLeft,
-      Self::BottomRight,
-    ]
-  }
-
-  fn new(subcell: [u32; 2]) -> Option<Self> {
-    Some( match subcell {
-      [0, 0] => Self::TopLeft,
-      [1, 0] => Self::TopRight,
-      [0, 1] => Self::BottomLeft,
-      [1, 1] => Self::BottomRight,
-      _ => None?
-    })
-  }
-
-  fn subcell(&self) -> [u32; 2] {
-    match self {
-      Self::TopLeft     => [0, 0],
-      Self::TopRight    => [1, 0],
-      Self::BottomLeft  => [0, 1],
-      Self::BottomRight => [1, 1],
+    fn all() -> &'static [Zorder2d] {
+        &[
+            Self::TopLeft,
+            Self::TopRight,
+            Self::BottomLeft,
+            Self::BottomRight,
+        ]
     }
-  }
 
-  fn extract_last_step(cell: &mut [u32; 2]) -> Option<Self> {
-    let subcell = [cell[0] & 0b1, cell[1] & 0b1];
-    cell[0] >>= 1; cell[1] >>= 1;
-    Self::new(subcell)
-  }
-
-  fn path_to_cell(path: &[Self]) -> [u32; 2] {
-    let mut cell = [0; 2];
-    for &step in path {
-      let delta = step.subcell();
-      cell[0] = cell[0] << 1 | delta[0];
-      cell[1] = cell[1] << 1 | delta[1];
+    fn as_usize(&self) -> usize {
+        *self as usize
     }
-    cell
-  }
+}
 
+#[derive(Debug, Clone)]
+pub struct Cell {
+    pub cell: [u32; 2],
+    length: usize,
+}
+impl Cell {
+    pub fn new(cell: [u32; 2], length: usize) -> Self {
+        Self {
+            cell,
+            length,
+        }
+    }
+}
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            cell: [0; 2],
+            length: 0,
+        }
+    }
+}
+impl Path<2, Zorder2d> for Cell {
+    type InternalStep = [u32; 2];
+        fn to_internal(step: Zorder2d) -> Self::InternalStep {
+            match step {
+                Zorder2d::TopLeft     => [0, 0],
+                Zorder2d::TopRight    => [1, 0],
+                Zorder2d::BottomLeft  => [0, 1],
+                Zorder2d::BottomRight => [1, 1],
+            }
+        }
+    fn from_internal(step: Self::InternalStep) -> Zorder2d {
+        match step {
+            [0, 0] => Zorder2d::TopLeft,
+            [1, 0] => Zorder2d::TopRight,
+            [0, 1] => Zorder2d::BottomLeft,
+            [1, 1] => Zorder2d::BottomRight,
+            _ => unreachable!()
+        }
+    }
+    fn push_internal(&mut self, step: Self::InternalStep) {
+        self.cell[0] = (self.cell[0] << 1) | (step[0] & 1);
+        self.cell[1] = (self.cell[1] << 1) | (step[1] & 1);
+        self.length += 1;
+    }
+    fn pop_internal(&mut self) -> Option<Self::InternalStep> {
+        if self.length == 0 { return None }
+        let result = [self.cell[0] & 1, self.cell[1] & 1];
+        self.cell[0] >>= 1;
+        self.cell[1] >>= 1;
+        self.length -= 1;
+        Some(result)
+    }
+
+    fn len(&self) -> usize { self.length }
+    fn step_at(&self, n: usize) -> Option<Zorder2d> {
+        if self.length <= n { return None }
+        let shift = self.length - 1 - n;
+        let step = [(self.cell[0] >> shift) & 1, (self.cell[1] >> shift) & 1];
+        Some(Self::from_internal(step))
+    }
+}
+
+/// Interleaved yx yx yx yx...
+#[derive(Debug, Clone)]
+pub struct PackedCell {
+    packed: u64,
+    length: usize,
+}
+impl PackedCell {
+    pub fn new(packed: u64, length: usize) -> Self {
+        Self {
+            packed,
+            length,
+        }
+    }
+}
+impl Default for PackedCell {
+    fn default() -> Self {
+        Self {
+            packed: 0,
+            length: 0,
+        }
+    }
+}
+impl Path<2, Zorder2d> for PackedCell {
+    type InternalStep = u64;
+    fn to_internal(step: Zorder2d) -> Self::InternalStep { step.as_usize() as u64 }
+    fn from_internal(step: Self::InternalStep) -> Zorder2d {
+        match step {
+            0 => Zorder2d::TopLeft,
+            1 => Zorder2d::TopRight,
+            2 => Zorder2d::BottomLeft,
+            3 => Zorder2d::BottomRight,
+            _ => unreachable!()
+        }
+    }
+    fn push_internal(&mut self, step: Self::InternalStep) {
+        self.packed = (self.packed << 2) | (step & 0b11);
+        self.length += 1;
+    }
+    fn pop_internal(&mut self) -> Option<Self::InternalStep> {
+        if self.length == 0 { return None }
+        let result = self.packed & 0b11;
+        self.packed >>= 2;
+        self.length -= 1;
+        Some(result)
+    }
+
+    fn len(&self) -> usize { self.length }
+    fn step_at(&self, n: usize) -> Option<Zorder2d> {
+        if self.length <= n { return None }
+        // oldest step is at the highest bits
+        let shift = (self.length - 1 - n) * 2;
+        let step = (self.packed >> shift) & 0b11;
+        Some(Self::from_internal(step))
+    }
 }
 
 pub type BasicNode2d = [Index; 4];
 impl Node<2> for BasicNode2d {
-  type Children = Zorder2d;
-  const DEFAULT: Self = [0; 4];
+    const DEFAULT: Self = [0; 4];
+    type NativeStep = Zorder2d;
 
-  fn get(&self, child: Self::Children) -> Index { self[child as usize] }
+    fn child(&self, child: impl Step<2>) -> Index { self[child.as_usize()] }
 
-  fn with_child(&self, child: Self::Children, idx: Index) -> Self {
-    let mut new = self.clone();
-    new[child as usize] = idx;
-    new
-  }
+    fn with_child(&self, child: impl Step<2>, idx: Index) -> Self {
+        let mut new = self.clone();
+        new[child.as_usize()] = idx;
+        new
+    }
 
 }
 impl GraphNode<2> for BasicNode2d {}
-
 

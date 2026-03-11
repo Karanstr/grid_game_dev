@@ -7,23 +7,23 @@ use macroquad::color::*;
 // I don't know where I want this yet
 
 impl super::Entity {
-    pub fn draw(&self, graph: &SparseDirectedGraph<2, BasicNode2d>, pose: Pose, camera: &Camera, other_leaves: &Vec<(Faces, Vec<Zorder2d>)>) {
+    pub fn draw(&self, graph: &SparseDirectedGraph<2, BasicNode2d>, pose: Pose, camera: &Camera, other_leaves: &Vec<(Faces, Cell)>) {
         let length = Voxels::length(self.geometry.height);
         let leaves = dfs_leaves(graph.nodes.unsafe_data(), self.geometry.head);
-        render_leaves::<BasicNode2d>(&leaves, self.geometry.height, Vec2::splat(-length / 2.), pose, camera);
+        render_leaves(&leaves, self.geometry.height, Vec2::splat(-length / 2.), pose, camera);
         render_faces(other_leaves, self.geometry.height, Vec2::splat(-length / 2.), pose, camera);
     }
 }
 
-fn render_leaves<N: Node<2>>(
-    leaves: &Vec<(Index, Vec<N::Children>)>,
+fn render_leaves(
+    leaves: &Vec<(Index, Cell)>,
     height: u32,
     origin: Vec2,
     pose: Pose,
     camera: &Camera,
 ) {
     for (idx, path) in leaves {
-        let coords = N::Children::path_to_cell(&path);
+        let coords = path.cell;
         let cell_size = Voxels::length(height - path.len() as u32);
         let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
         let world_corners: [Vec2; 4] = [
@@ -46,14 +46,14 @@ fn render_leaves<N: Node<2>>(
 
 // Could be better but I don't care
 fn render_faces(
-    leaves: &Vec<(Faces, Vec<Zorder2d>)>,
+    leaves: &Vec<(Faces, Cell)>,
     height: u32,
     origin: Vec2,
     pose: Pose,
     camera: &Camera,
 ) {
     for (faces, path) in leaves {
-        let coords = Zorder2d::path_to_cell(&path);
+        let coords = path.cell;
         let cell_size = Voxels::length(height - path.len() as u32);
         let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
         let world_corners: [Vec2; 4] = [

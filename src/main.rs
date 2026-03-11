@@ -4,7 +4,7 @@ use engine::{
     physics::*,
     entities::*,
     camera::Camera,
-    grid::*,
+    grid::dim2::*,
     event::Event
 };
 
@@ -17,24 +17,24 @@ use std::sync::Arc;
 
 const SPEED: f32 = 0.1;
 const ROTATION_SPEED: f32 = PI/128.;
-const MAX_COLOR: usize = 4;
-const MAX_HEIGHT: u32 = 4;
+const MOD_COLOR: u32 = 2;
+const MOD_HEIGHT: u32 = 4;
 
-pub type GRAPH = Arc<RwLock< SparseDirectedGraph<2, BasicNode2d>>>;
+pub type GRAPH = Arc<RwLock< Graph2D<BasicNode2d> >>;
 
 struct App {
     input: Input,
     events: Vec<Event>,
+    other_data: OtherData,
 
     entities: EntityPool,
     physics: Physics,
 
     camera: Camera,
-
 }
 impl App {
     fn intialize() -> Self {
-        let mut graph = SparseDirectedGraph::new();
+        let mut graph = Graph2D::new();
         // Four leaves hardcoded for now
         graph.add_leaf();
         graph.add_leaf();
@@ -65,6 +65,7 @@ impl App {
         Self {
             input,
             events: Vec::new(),
+            other_data: OtherData::default(),
 
             entities,
             physics,
@@ -78,6 +79,7 @@ impl App {
             let App {
                 input,
                 events,
+                other_data,
 
                 entities,
                 physics,
@@ -88,7 +90,7 @@ impl App {
             camera.update_screensize();
 
             input.collect(events);
-            handle_events(events, entities, physics, camera);
+            handle_events(events, entities, physics, camera, other_data);
             
             physics.tick();
 
@@ -100,7 +102,7 @@ impl App {
 
 }
 
-fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &mut Physics, camera: &mut Camera) {
+fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &mut Physics, camera: &mut Camera, data: &mut OtherData) {
     for event in events.drain(..) { match event {
         Event::Clockwise => {
             entities.get(0).unwrap().rotate_by(ROTATION_SPEED, physics);
@@ -117,13 +119,37 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
         Event::Zoom(zoom) => {
             camera.zoom_by(zoom);
         }
+        Event::SwitchColor => {
+            data.color = (data.color + 1) % MOD_COLOR
+        }
+        Event::SwitchSize => {
+            data.height = (data.height + 1) % MOD_HEIGHT
+        }
         Event::PlaceBlockAtMouse => {
             let mouse_pos = Vec2::from(mouse_position());
             let world_pos = camera.screen_to_world(mouse_pos);
-            entities.get_mut(0).unwrap().set_block(physics, world_pos, DagPointer::new(0, 0));
+            entities.get_mut(0).unwrap().set_block(
+                physics,
+                world_pos,
+                DagPointer::new(data.color, data.height)
+            );
         }
         _ => println!("{:?} is unimplemented!!", event)
     } }
+}
+
+// I don't love this but I need something for now
+struct OtherData {
+    color: u32,
+    height: u32,
+}
+impl Default for OtherData {
+    fn default() -> Self {
+        Self {
+            color: 0,
+            height: 0,
+        }
+    }
 }
 
 pub fn set_key_binds(input: &mut Input) {
@@ -133,8 +159,8 @@ pub fn set_key_binds(input: &mut Input) {
     input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Clockwise);
     // input.bind(InputType::Keyboard(KeyCode::Space), InputTrigger::Pressed, Event::Stop);
 
-    // input.bind(InputType::Keyboard(KeyCode::V), InputTrigger::Pressed, Event::SwitchColor);
-    // input.bind(InputType::Keyboard(KeyCode::B), InputTrigger::Pressed, Event::SwitchSize);
+    input.bind(InputType::Keyboard(KeyCode::V), InputTrigger::Pressed, Event::SwitchColor);
+    input.bind(InputType::Keyboard(KeyCode::B), InputTrigger::Pressed, Event::SwitchSize);
 
     input.bind(InputType::Keyboard(KeyCode::Equal), InputTrigger::Down, Event::Zoom(1.02));
     input.bind(InputType::Keyboard(KeyCode::Minus), InputTrigger::Down, Event::Zoom(1./1.02));

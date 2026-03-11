@@ -1,7 +1,7 @@
 use glam::{UVec2, Vec2};
 use rapier2d::prelude::{ColliderHandle, RigidBodyHandle};
 
-use crate::engine::{grid::{DagPointer, Step, Zorder2d}, physics::{Physics, Voxels}};
+use crate::engine::{grid::dim2::*, physics::{Physics, Voxels}};
 
 mod movement;
 mod render;
@@ -50,7 +50,7 @@ impl Entity {
         for _ in set.height .. self.geometry.height {
             let subcell = [(local_point.x > half_length) as u32, (local_point.y > half_length) as u32];
             local_point -= half_length * UVec2::from(subcell).as_vec2();
-            path.push(Zorder2d::new(subcell).unwrap());
+            path.push(Cell::from_internal(subcell));
             half_length /= 2.;
         }
         

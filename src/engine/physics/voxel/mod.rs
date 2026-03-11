@@ -2,14 +2,14 @@ mod voxel_shape;
 mod voxel_faces;
 pub mod voxel_manifolds;
 
-pub use crate::engine::{grid::{DagPointer, Zorder2d}, physics::voxel::voxel_faces::Faces};
+pub use crate::engine::{grid::dim2::{DagPointer, Cell}, physics::voxel::voxel_faces::Faces};
 
 
 pub struct Voxels {
     pub geometry: DagPointer,
     pub graph: crate::GRAPH,
 
-    pub faces: Vec<(Faces, Vec<Zorder2d>)>,
+    pub faces: Vec<(Faces, Cell)>,
 }
 impl Voxels {
     pub fn new(graph: crate::GRAPH) -> Self {
