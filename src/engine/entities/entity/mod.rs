@@ -1,7 +1,6 @@
 use rapier2d::prelude::{ColliderHandle, RigidBodyHandle};
 
 use crate::engine::{grid::DagPointer, physics::{Physics, Voxels}};
-pub use render::render_leaves;
 
 mod movement;
 mod render;

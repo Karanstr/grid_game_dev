@@ -3,6 +3,7 @@ mod voxel;
 
 pub use voxel::Voxels;
 use rapier2d::prelude::*;
+pub use voxel::Faces;
 
 pub struct Physics {
     pub rigid_bodies: RigidBodySet,

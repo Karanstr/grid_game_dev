@@ -4,13 +4,13 @@ use crate::engine::grid::*;
 
 impl super::Voxels {
     // Sets new shape geometry, forcing internal regeneration of exposed faces
-    pub fn update_shape(&mut self, geometry: DagPointer) -> Vec<(u32, Vec<Zorder2d>)> {
+    pub fn update_shape(&mut self, geometry: DagPointer) {
         self.geometry = geometry;
-        self.cache_faces()
+        self.faces = self.cache_faces();
     }
 
     // Based on dfs_leaves algorithm :(
-    fn cache_faces(&mut self) -> Vec<(u32, Vec<Zorder2d>)>{
+    fn cache_faces(&mut self) -> Vec<(Faces, Vec<Zorder2d>)> {
         let graph = self.graph.read();
 
         let mut stack = vec![(self.geometry.head as usize, Vec::new())];
@@ -37,10 +37,7 @@ impl super::Voxels {
             }
         }
 
-        let real_leaves = leaves.into_iter().map(|(_, zorder)| {
-            (3, zorder)
-        }).collect();
-        real_leaves
+        leaves
 
     }
 }
@@ -75,62 +72,40 @@ fn identify_faces(
         if result == 0 { exposed.0[idx] = true; } else if result >= 4 { splits.0[idx] = true; }
     }
 
-    // Perform splits without duplication
+    const CORNERS: [(Zorder2d, Directions, Directions); 4] = [
+        (Zorder2d::TopLeft,     Directions::North, Directions::West),
+        (Zorder2d::TopRight,    Directions::North, Directions::East),
+        (Zorder2d::BottomLeft,  Directions::South, Directions::West),
+        (Zorder2d::BottomRight, Directions::South, Directions::East),
+    ];
     let mut child_path = path.clone();
-    if splits.north() || splits.west() {
-        child_path.push(Zorder2d::TopLeft);
-        let directions: &[Directions] = 
-            if splits.north() && splits.west() { &[Directions::North, Directions::West] }
-            else if splits.north() { &[Directions::North] }
-            else { &[Directions::West] }
-        ;
-        results.extend(identify_faces(graph, head, &child_path, directions));
+    for (corner, dir_a, dir_b) in CORNERS.into_iter() {
+        let needs_a = splits.0[dir_a as usize];
+        let needs_b = splits.0[dir_b as usize];
+        let faces_to_check: &[Directions] = match (needs_a, needs_b) {
+            (true, true) => &[dir_a, dir_b],
+            (true, false) => &[dir_a],
+            (false, true) => &[dir_b],
+            (false, false) => continue
+        };
+        child_path.push(corner);
+        results.extend(identify_faces(graph, head, &child_path, faces_to_check));
         child_path.pop();
     }
-    if splits.north() || splits.east() {
-        child_path.push(Zorder2d::TopRight);
-        let directions: &[Directions] = 
-            if splits.north() && splits.east() { &[Directions::North, Directions::East] }
-            else if splits.north() { &[Directions::North] }
-            else { &[Directions::East] }
-        ;
-        results.extend(identify_faces(graph, head, &child_path, directions));
-        child_path.pop();
-    }
-    if splits.south() || splits.west() {
-        child_path.push(Zorder2d::BottomLeft);
-        let directions: &[Directions] = 
-            if splits.south() && splits.west() { &[Directions::South, Directions::West] }
-            else if splits.south() { &[Directions::South] }
-            else { &[Directions::West] }
-        ;
-        results.extend(identify_faces(graph, head, &child_path, directions));
-        child_path.pop();
-    }
-    if splits.south() || splits.east() {
-        child_path.push(Zorder2d::BottomRight);
-        let directions: &[Directions] =
-            if splits.south() && splits.east() { &[Directions::South, Directions::East] }
-            else if splits.south() { &[Directions::South] }
-            else { &[Directions::East] }
-        ;
-        results.extend(identify_faces(graph, head, &child_path, directions));
-        child_path.pop();
-    }
-
+    
     if exposed.has_some() { results.insert(0, (exposed, path.clone()));}
     results
 }
 
-// [North, South, East, West]
-struct Faces([bool; 4]);
+/// [North, South, East, West]
+pub struct Faces([bool; 4]);
 impl Faces {
     fn none() -> Self { Self([false; 4]) }
-    fn north(&self) -> bool { self.0[0] }
-    fn south(&self) -> bool { self.0[1] }
-    fn east(&self) -> bool { self.0[2] }
-    fn west(&self) -> bool { self.0[3] }
-    fn has_some(&self) -> bool { self.0[0] || self.0[1] || self.0[2] || self.0[3] }
+    pub fn north(&self) -> bool { self.0[0] }
+    pub fn south(&self) -> bool { self.0[1] }
+    pub fn east(&self) -> bool { self.0[2] }
+    pub fn west(&self) -> bool { self.0[3] }
+    pub fn has_some(&self) -> bool { self.0[0] || self.0[1] || self.0[2] || self.0[3] }
 }
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -155,9 +130,3 @@ impl Directions {
 }
 
 // Write condensed Zorder converter
-pub struct FaceNode {
-    node: DagPointer,
-    location: Vec<Zorder2d>,
-    faces: Faces,
-}
-
