@@ -7,10 +7,6 @@ impl super::Voxels {
     pub fn update_shape(&mut self, geometry: DagPointer) {
         self.geometry = geometry;
         self.faces = self.cache_faces();
-        // println!("Beginning verification!!");
-        // for (_, cell) in self.faces.iter() {
-        //     println!("{:064b}", cell.convert::<PackedCell>().packed());
-        // }
     }
 
     // Based on dfs_leaves algorithm :(
@@ -73,7 +69,10 @@ fn identify_faces(
         if result == 0 { exposed.0[idx] = true; } else if result >= 4 { splits.0[idx] = true; }
     }
     
-    if exposed.has_some() { results.push((exposed, path.clone()));}
+    if exposed.has_some() && !splits.has_some() { 
+        results.push((exposed, path.clone()));
+        return results;
+    }
     
     const CORNERS: [(Zorder2d, Directions, Directions); 4] = [
         (Zorder2d::TopLeft,     Directions::North, Directions::West),
@@ -84,16 +83,9 @@ fn identify_faces(
     let mut child_path = path.clone();
     // We reverse so we can insert exposed before via push instead of after via insert(0)
     for (corner, dir_a, dir_b) in CORNERS.into_iter().rev() {
-        let needs_a = splits.0[dir_a as usize];
-        let needs_b = splits.0[dir_b as usize];
-        let faces_to_check: &[Directions] = match (needs_a, needs_b) {
-            (true, true) => &[dir_a, dir_b],
-            (true, false) => &[dir_a],
-            (false, true) => &[dir_b],
-            (false, false) => continue
-        };
+        if !splits.has_some() { continue; }
         child_path.push_step(corner);
-        results.extend(identify_faces(graph, head, &child_path, faces_to_check));
+        results.extend(identify_faces(graph, head, &child_path, &[dir_a, dir_b]));
         child_path.pop_step();
     }
     
@@ -131,3 +123,4 @@ impl Directions {
         }
     }
 }
+

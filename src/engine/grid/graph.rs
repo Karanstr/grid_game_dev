@@ -159,6 +159,7 @@ pub fn bfs_nodes<const D: usize, N: Node<D>>(nodes: &Vec<N>, head: Index) -> Vec
   bfs_indexes
 }
 
+// Replace with left first descent to reduce memory size
 pub fn dfs_leaves<const D: usize, N, S, P>(
   nodes: &Vec<N>, 
   head: Index

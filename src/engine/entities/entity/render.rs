@@ -10,28 +10,31 @@ impl super::Entity {
     pub fn draw(&self, graph: &SparseDirectedGraph<2, BasicNode2d>, pose: Pose, camera: &Camera, other_leaves: &Vec<(Faces, Cell)>) {
         let length = Voxels::length(self.geometry.height);
         let leaves = dfs_leaves(graph.nodes.unsafe_data(), self.geometry.head);
-        render_leaves(&leaves, self.geometry.height, Vec2::splat(-length / 2.), pose, camera);
-        render_faces(other_leaves, self.geometry.height, Vec2::splat(-length / 2.), pose, camera);
+        let tl_pose = pose.prepend_translation(Vec2::splat(-length / 2.));
+        render_leaves(&leaves, self.geometry.height, tl_pose, camera);
+        // debug
+        // let good_leaves = other_leaves.iter().map(|(_, cell)| { (3, cell.clone()) }).collect();
+        // render_leaves(&good_leaves, self.geometry.height, tl_pose, camera);
+        render_faces(other_leaves, self.geometry.height, tl_pose, camera);
     }
 }
 
 fn render_leaves(
     leaves: &Vec<(Index, Cell)>,
     height: u32,
-    origin: Vec2,
-    pose: Pose,
+    tl_pose: Pose,
     camera: &Camera,
 ) {
     for (idx, path) in leaves {
         let coords = path.cell();
         let cell_size = Voxels::length(height - path.len() as u32);
-        let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
+        let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size;
         let world_corners: [Vec2; 4] = [
             local_origin,
             local_origin + Vec2::new(cell_size, 0.0),
             local_origin + Vec2::new(cell_size, cell_size),
             local_origin + Vec2::new(0.0, cell_size),
-        ].map(|point| pose * point );
+        ].map(|point| tl_pose * point );
 
         let color = match idx {
             0 => continue,
@@ -48,20 +51,19 @@ fn render_leaves(
 fn render_faces(
     leaves: &Vec<(Faces, Cell)>,
     height: u32,
-    origin: Vec2,
-    pose: Pose,
+    tl_pose: Pose,
     camera: &Camera,
 ) {
     for (faces, path) in leaves {
         let coords = path.cell();
         let cell_size = Voxels::length(height - path.len() as u32);
-        let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size + origin;
+        let local_origin = Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size;
         let world_corners: [Vec2; 4] = [
             local_origin,
             local_origin + Vec2::new(cell_size, 0.0),
             local_origin + Vec2::new(cell_size, cell_size),
             local_origin + Vec2::new(0.0, cell_size),
-        ].map(|point| pose * point );
+        ].map(|point| tl_pose * point );
         
         if faces.north() {
             let point1 = world_corners[0];
