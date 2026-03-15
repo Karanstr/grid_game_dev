@@ -21,7 +21,7 @@ impl Entity {
             geometry,
         }
     }
-    
+
     pub fn set_geometry(&mut self, geometry: DagPointer, physics: &mut Physics) {
         self.geometry = geometry;
 

@@ -4,11 +4,11 @@ pub enum Event {
     Backward,
     Clockwise,
     CounterClockwise,
-    Stop,
-    
+
     Zoom(f32),
 
     SwitchColor,
     SwitchSize,
+    SwitchFocus,
     PlaceBlockAtMouse,
 }

@@ -29,7 +29,7 @@ impl<ManifoldData, ContactData> PersistentQueryDispatcher<ManifoldData, ContactD
             let Some(shape1) = shape1.downcast_ref::<Voxels>() &&
             let Some(shape2) = shape2.downcast_ref::<Voxels>()
         {
-            contact_manifold_voxel_voxel(&self, pos12, shape1, shape2, prediction, manifolds);
+            contact_manifold_voxel_voxel(pos12, shape1, shape2, prediction, manifolds);
 
         } else { return Err(Unsupported) }
 

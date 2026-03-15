@@ -69,11 +69,12 @@ fn identify_faces(
         if result == 0 { exposed.0[idx] = true; } else if result >= 4 { splits.0[idx] = true; }
     }
     
-    if exposed.has_some() && !splits.has_some() { 
-        results.push((exposed, path.clone()));
-        return results;
+    // If no splits we're done here
+    if !splits.has_some() {
+        if exposed.has_some() { results.push( (exposed, path.clone()) ) }
+        return results
     }
-    
+
     const CORNERS: [(Zorder2d, Directions, Directions); 4] = [
         (Zorder2d::TopLeft,     Directions::North, Directions::West),
         (Zorder2d::TopRight,    Directions::North, Directions::East),
@@ -81,9 +82,7 @@ fn identify_faces(
         (Zorder2d::BottomRight, Directions::South, Directions::East),
     ];
     let mut child_path = path.clone();
-    // We reverse so we can insert exposed before via push instead of after via insert(0)
-    for (corner, dir_a, dir_b) in CORNERS.into_iter().rev() {
-        if !splits.has_some() { continue; }
+    for (corner, dir_a, dir_b) in CORNERS {
         child_path.push_step(corner);
         results.extend(identify_faces(graph, head, &child_path, &[dir_a, dir_b]));
         child_path.pop_step();
@@ -93,6 +92,7 @@ fn identify_faces(
 }
 
 /// [North, South, East, West]
+#[derive(Clone, Debug)]
 pub struct Faces([bool; 4]);
 impl Faces {
     fn none() -> Self { Self([false; 4]) }

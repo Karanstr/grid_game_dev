@@ -3,7 +3,7 @@ mod voxel_faces;
 pub mod voxel_manifolds;
 
 pub use crate::engine::{grid::dim2::{DagPointer, Cell}, physics::voxel::voxel_faces::Faces};
-
+pub use voxel_manifolds::*;
 
 pub struct Voxels {
     pub geometry: DagPointer,

@@ -4,26 +4,26 @@ use rapier2d::math::Pose;
 use crate::engine::{camera::Camera, grid::*, physics::{Faces, Voxels}};
 use macroquad::color::*;
 
-// I don't know where I want this yet
-
 impl super::Entity {
-    pub fn draw(&self, graph: &SparseDirectedGraph<2, BasicNode2d>, pose: Pose, camera: &Camera, other_leaves: &Vec<(Faces, Cell)>) {
+    pub fn draw(&self, pose: Pose, camera: &Camera, cells: &[(Index, Cell)], opacity: f32) {
         let length = Voxels::length(self.geometry.height);
-        let leaves = dfs_leaves(graph.nodes.unsafe_data(), self.geometry.head);
         let tl_pose = pose.prepend_translation(Vec2::splat(-length / 2.));
-        render_leaves(&leaves, self.geometry.height, tl_pose, camera);
-        // debug
-        // let good_leaves = other_leaves.iter().map(|(_, cell)| { (3, cell.clone()) }).collect();
-        // render_leaves(&good_leaves, self.geometry.height, tl_pose, camera);
-        render_faces(other_leaves, self.geometry.height, tl_pose, camera);
+        render_leaves(&cells, self.geometry.height, tl_pose, camera, opacity);
+    }
+
+    pub fn outline(&self, pose: Pose, camera: &Camera, faces: &[(Faces, Cell)]) {
+        let length = Voxels::length(self.geometry.height);
+        let tl_pose = pose.prepend_translation(Vec2::splat(-length / 2.));
+        render_faces(&faces, self.geometry.height, tl_pose, camera);
     }
 }
 
-fn render_leaves(
-    leaves: &Vec<(Index, Cell)>,
+pub fn render_leaves(
+    leaves: &[(Index, Cell)],
     height: u32,
     tl_pose: Pose,
     camera: &Camera,
+    opacity: f32,
 ) {
     for (idx, path) in leaves {
         let coords = path.cell();
@@ -42,14 +42,14 @@ fn render_leaves(
             2 => BLUE,
             3 => DARKGRAY,
             _ => unreachable!("Reached unregistered leaf {idx}")
-        };
+        }.with_alpha(opacity);
         camera.draw_rectangle_from_corners(&world_corners, color);
     }
 }
 
 // Could be better but I don't care
 fn render_faces(
-    leaves: &Vec<(Faces, Cell)>,
+    leaves: &[(Faces, Cell)],
     height: u32,
     tl_pose: Pose,
     camera: &Camera,

@@ -1,10 +1,11 @@
+#![allow(dead_code)]
 use macroquad::{
-    shapes::{draw_circle, draw_line, draw_triangle, draw_triangle_lines},
-    color::*,
-    miniquad::window::screen_size,
-    math::Vec2 as MqVec2,
+    color::*, math::Vec2 as MqVec2, miniquad::window::screen_size, shapes::{draw_circle, draw_line, draw_rectangle_lines, draw_triangle, draw_triangle_lines}
 };
 use glam::Vec2;
+use rapier2d::prelude::Aabb;
+
+
 pub struct Camera { 
     position: Vec2,
     radius: f32,
@@ -26,7 +27,7 @@ impl Camera {
             scale: 1.,
 
             screen_size: Vec2::from(screen_size()),
-            dbg: true,
+            dbg: false,
         };
         new.fix_scale();
      
@@ -85,6 +86,13 @@ impl Camera {
         let p1 = self.world_to_screen(point1);
         let p2 = self.world_to_screen(point2);
         draw_line(p1.x, p1.y, p2.x, p2.y, thickness, color);
+    }
+
+    pub fn outline_aabb(&self, aabb: &Aabb) {
+        let corner1 = self.world_to_screen(aabb.mins);
+        let corner2 = self.world_to_screen(aabb.maxs);
+        let size = corner2 - corner1;
+        draw_rectangle_lines(corner1.x, corner1.y, size.x, size.y, 2., DARKPURPLE);
     }
 
     pub fn draw_rectangle_from_corners(&self, corners:&[Vec2; 4], color: Color) {
