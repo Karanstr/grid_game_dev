@@ -71,11 +71,11 @@ impl<const DIM: usize, Node: GraphNode<DIM>> SparseDirectedGraph<DIM, Node> {
     for cur_depth in (0 .. path.len()).rev() {
       let new_node = self.node(trail[cur_depth]).with_child(path.step_at(cur_depth).unwrap(), new_child);
       new_child = if let Some(idx) = self.find_index(&new_node) { idx } else { self.add_node(new_node) };
-    };
+    }
     new_child
   }
 
-  pub fn set_node<P: Path<DIM, impl Step<DIM>>>(&mut self, head:Index, path: &P, new_idx:Index) -> Index {
+  pub fn set_node<P: Path<DIM, impl Step<DIM>>>(&mut self, head: Index, path: &P, new_idx: Index) -> Index {
     let trail = self.get_trail(head, path);
     if *trail.last().unwrap() == new_idx { return head }
     let new_head = self.propagate_change(path, &trail, new_idx);
@@ -86,9 +86,9 @@ impl<const DIM: usize, Node: GraphNode<DIM>> SparseDirectedGraph<DIM, Node> {
 
   fn find_index(&self, node: &Node) -> Option<Index> { self.index_lookup.get(node).copied() }
   
-  pub fn node(&self, idx:Index) -> &Node { self.nodes.get(idx as usize).unwrap() }
+  pub fn node(&self, idx: Index) -> &Node { self.nodes.get(idx as usize).unwrap() }
 
-  pub fn child(&self, idx:Index, child: impl Step<DIM>) -> Index { self.node(idx).child(child) }
+  pub fn child(&self, idx: Index, child: impl Step<DIM>) -> Index { self.node(idx).child(child) }
 
   /// Wraps [SparseDirectedGraph::get_trail] to function as a 'read end of path'
   pub fn descend<P: Path<DIM, impl Step<DIM>>>(&self, head:Index, path: &P) -> Index { 
@@ -140,7 +140,7 @@ impl<const DIM: usize, Node: GraphNode<DIM>> SparseDirectedGraph<DIM, Node> {
 //
 // }
 
-use std::{collections::VecDeque, mem::MaybeUninit};
+use std::{collections::VecDeque, fmt::Debug, mem::MaybeUninit};
 pub fn bfs_nodes<const D: usize, N: Node<D>>(nodes: &Vec<N>, head: Index) -> Vec<Index> {
   let mut queue = VecDeque::from([head]);
   let mut bfs_indexes = Vec::new();
@@ -199,7 +199,8 @@ pub trait Step<const DIM: usize>: std::fmt::Debug + Clone + Copy + 'static {
   fn as_usize(&self) -> usize;
 }
 
-pub trait Path<const DIM: usize, S: Step<DIM>>: Default + Clone {
+
+pub trait Path<const DIM: usize, S: Step<DIM>>: Default + Clone + Debug {
   type InternalStep;
   fn to_internal(step: S) -> Self::InternalStep;
   fn from_internal(step: Self::InternalStep) -> S;
