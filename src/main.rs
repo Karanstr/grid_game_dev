@@ -82,7 +82,7 @@ impl App {
             entities,
             physics,
 
-            camera: Camera::new(Vec2::ZERO, 4.),
+            camera: Camera::new(Vec2::ZERO, 12.),
         }
     }
 

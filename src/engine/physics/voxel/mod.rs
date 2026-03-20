@@ -21,7 +21,5 @@ impl Voxels {
         }
     }
 
-    pub fn length(height: u32) -> f32 {
-        2u32.pow(height) as f32
-    }
+    pub fn length(height: u32) -> f32 { (1u32 << height) as f32 }
 }

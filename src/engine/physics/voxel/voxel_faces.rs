@@ -17,20 +17,16 @@ impl super::Voxels {
         let mut leaves = Vec::new();
     
         let nodes = graph.nodes.unsafe_data();
-        'search: while let Some((idx, path)) = stack.pop() {
-            // We don't track air nodes
-            // Hack until I have a proper block attribute system
-            if idx == 0 { continue }
+        while let Some((idx, path)) = stack.pop() {
             let cur_node = nodes[idx];
+            // Hack until I have a proper block attribute system
+            if cur_node.child(Zorder2d::TopLeft) == idx as u32 {
+                // We don't track air nodes, though they are a leaf
+                if idx != 0 { leaves.extend(identify_faces(&graph, self.geometry.head, &path, &Directions::all())) }
+                continue
+            }
             for &child in Zorder2d::all().iter().rev() {
                 let child_idx = cur_node.child(child);
-                // This is stupid and deceptive, doing this nonsense *inside* of the loop.
-                // The current alternative is stupider though..
-                if child_idx == idx as u32 {
-                    leaves.extend(identify_faces(&graph, self.geometry.head, &path, &Directions::all()));
-                    // Prevents other iterations of the children to run, because the parent is a leaf..
-                    continue 'search
-                }
                 let mut child_path = path.clone();
                 child_path.push_step(child);
                 stack.push((child_idx as usize, child_path));
@@ -101,10 +97,19 @@ impl Faces {
     pub fn east(&self) -> bool { self.0[2] }
     pub fn west(&self) -> bool { self.0[3] }
     pub fn has_some(&self) -> bool { self.0[0] || self.0[1] || self.0[2] || self.0[3] }
+    // This is dumb, but I care about it working rn
+    pub fn list(&self) -> Vec<Directions> {
+        let mut list = Vec::new();
+        if self.north() { list.push(Directions::North) }
+        if self.south() { list.push(Directions::South) }
+        if self.east() { list.push(Directions::East) }
+        if self.west() { list.push(Directions::West) }
+        list
+    }
 }
 #[derive(Clone, Copy)]
 #[repr(u8)]
-enum Directions {
+pub enum Directions {
     North,
     South,
     East,

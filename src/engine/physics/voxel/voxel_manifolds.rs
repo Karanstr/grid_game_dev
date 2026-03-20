@@ -20,6 +20,31 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
 
 }
 
+
+pub fn contact_debug_voxel_voxel(
+    pos12: &Pose,
+    shape1: &Voxels,
+    shape2: &Voxels,
+    camera: &Camera
+) -> Vec<(usize, usize)> {
+    let pairs = dual_tree_descent(&pos12, shape1, shape2, camera);
+    let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
+    let tl_pos12 = pos12.prepend_translation(topleft_offset);
+    let unit_local = Vec2::splat(Voxels::length(0));
+    let unit2_in_local = tl_pos12.transform_vector(unit_local);
+
+    if let Some((idx1, idx2)) = pairs.get(0) {
+        let (faces1, cell1) = &shape1.faces[*idx1];
+        let (faces2, cell2) = &shape2.faces[*idx2];
+    }
+    // for pair in pairs.iter() {
+
+    // }
+
+    pairs
+
+}
+
 #[derive(Clone, Debug)]
 struct Descent {
     cell: Cell,
@@ -36,21 +61,15 @@ impl Descent {
     }
 }
 
-pub struct PotentialPair {
-    pub cell1: Cell,
-    pub face1: usize,
-    pub cell2: Cell,
-    pub face2: usize,
-}
-
-// Warn: Currently assumes shape1 and shape2 are stored within the same DAG. I can't imagine a case where
-// this wouldn't be true, but worth noting down
-pub fn dual_tree_descent(
+// Warn: Currently assumes shape1 and shape2 are stored within the same DAG. 
+// I can't imagine a case where this wouldn't be true, but worth noting down
+/// Returns all colliding pairs (a, b), where a indexes shape1.faces and b indexes shape2.faces
+fn dual_tree_descent(
     pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
     camera: &Camera,
-) -> Vec<PotentialPair> {
+) -> Vec<(usize, usize)> {
     if shape1.faces.is_empty() || shape2.faces.is_empty() { 
         dbg!("Empty Shape passed to dual_tree_descent!!!");
         return vec![];
@@ -58,28 +77,30 @@ pub fn dual_tree_descent(
     let mut candidates = Vec::new();
     let mut stack = Vec::new();
 
-    let root_face1 = if let Some((_, cell)) = shape1.faces.get(0) { 
-        if cell.len() == 0 { Some(0) } else { None }
-    } else { None };
-    let root1 = Descent::new( Cell::default(), shape1.geometry, root_face1);
-
-    let root_face2 = if let Some((_, cell)) = shape2.faces.get(0) { 
-        if cell.len() == 0 { Some(0) } else { None }
-    } else { None };
-    let root2 = Descent::new(Cell::default(), shape2.geometry, root_face2);
-
+    // Duplicated with contact_debug_voxel_voxel
     let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
     let tl_pos12 = pos12.prepend_translation(topleft_offset);
+
+    let root1 = Descent::new(
+        Cell::default(), shape1.geometry,
+        if let Some((_, cell)) = shape1.faces.get(0) && cell.len() == 0 { Some(0) } else { None }
+    );
+    let root2 = Descent::new(
+        Cell::default(), shape2.geometry,
+        if let Some((_, cell)) = shape2.faces.get(0) && cell.len() == 0 { Some(0) } else { None }
+    );
+
     stack.push((root1, root2));
 
     while let Some((tree1, tree2)) = stack.pop() {
 
-        let length1 = Vec2::splat(Voxels::length(tree1.pointer.height));
-        let aabb1 = Aabb::new(Vec2::ZERO, length1)
+        let aabb1 = Aabb::new(Vec2::ZERO, Vec2::splat(Voxels::length(tree1.pointer.height)))
             .translated(get_cell_origin(&tree1.cell, shape1.geometry.height) + topleft_offset)
         ;
-        let length2 = Vec2::splat(Voxels::length(tree2.pointer.height));
-        let aabb2 = Aabb::new(Vec2::ZERO, length2)
+        // Take this transform_by and move it out of the hotloop, storing shape2_top_left instead
+        // Then instead of this Aabb = (Zero, unit_vector * length).translate(cell * unit_vector + top_left)
+        // Just like the one above.
+        let aabb2 = Aabb::new(Vec2::ZERO, Vec2::splat(Voxels::length(tree2.pointer.height)))
             .translated(get_cell_origin(&tree2.cell, shape2.geometry.height))
             .transform_by(&tl_pos12)
         ;
@@ -89,13 +110,7 @@ pub fn dual_tree_descent(
         
         match (tree1.face, tree2.face) {
             (Some(face1), Some(face2)) => {
-                let pair = PotentialPair {
-                    cell1: tree1.cell.clone(),
-                    face1,
-                    cell2: tree2.cell.clone(),
-                    face2,
-                };
-                candidates.push(pair);
+                candidates.push((face1, face2));
             }
             (None, Some(_)) => {
                 let splits = descend_split(&tree1, shape1);

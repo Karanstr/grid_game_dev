@@ -5,7 +5,7 @@ use lilypads::Pond;
 
 use rapier2d::{math::Pose2, prelude::{ColliderBuilder, SharedShape}};
 
-// https://docs.rs/hecs/latest/hecs/
+// https://docs.rs/hecs/latest/hecs/ ?
 
 pub struct EntityPool {
     entities: Pond<Entity>,
@@ -41,7 +41,6 @@ impl EntityPool {
         self.entities.insert(entity)
     }
 
-    // I don't like this, I'm cheating until I'm sure physics works.
     pub fn draw_all(&self, physics: &Physics, camera: &Camera) {
         for (_, entity) in self.entities.iter() {
             let pose = *physics.colliders.get(entity.collider_handle).unwrap().position();
@@ -50,6 +49,7 @@ impl EntityPool {
         }
     }
 
+    // I don't like this, I'm cheating until I'm sure physics works.
     pub fn debug_render(&self, physics: &Physics, camera: &Camera) {
         let Some(entity1) = self.entities.get(0) else { return };
         let Some(entity2) = self.entities.get(1) else { return };
@@ -58,12 +58,11 @@ impl EntityPool {
         let pos12 = collider1.position().inverse() * collider2.position();
         let shape1 = collider1.shape().downcast_ref::<Voxels>().unwrap();
         let shape2 = collider2.shape().downcast_ref::<Voxels>().unwrap();
-        let dtd = dual_tree_descent(&pos12, shape1, shape2, camera);
+        let dtd = contact_debug_voxel_voxel(&pos12, shape1, shape2, camera);
         for pair in dtd {
-            entity1.outline(*collider1.position(), camera, &[shape1.faces[pair.face1].clone()]);
-            entity2.outline(*collider2.position(), camera, &[shape2.faces[pair.face2].clone()]);
+            entity1.outline(*collider1.position(), camera, &[shape1.faces[pair.0].clone()]);
+            entity2.outline(*collider2.position(), camera, &[shape2.faces[pair.1].clone()]);
         }
-
     }
 }
 
