@@ -61,9 +61,13 @@ impl EntityPool {
         let shape2 = collider2.shape().downcast_ref::<Voxels>().unwrap();
 
         let result = contact_debug_voxel_voxel(&pos12, shape1, shape2);
-        for (point, depth, normal) in result {
-            camera.draw_point(point, 0.1, GREEN);
-            camera.draw_vec_line(point, point + normal * depth * -1., 2., GOLD);
+        for (point, depth, normal) in &result[1] {
+            camera.draw_point(*point, 0.1, GOLD);
+            camera.draw_vec_line(*point, point + normal * depth * -1., 2., GOLD);
+        }
+        for (point, depth, normal) in &result[0] {
+            camera.draw_point(*point, 0.1, GREEN);
+            camera.draw_vec_line(*point, point + normal * depth * -1., 2., GREEN);
         }
     }
 }

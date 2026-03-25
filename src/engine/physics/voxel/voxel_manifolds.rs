@@ -20,20 +20,62 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
 
 }
 
-
+// Returns [manifold_points, all_points]
 pub fn contact_debug_voxel_voxel(
     pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-) -> Vec<(Vec2, f32, Vec2)> {
+) -> [Vec<(Vec2, f32, Vec2)>; 2] {
     let points = generate_contact_points_voxel_voxel(pos12, shape1, shape2);
+    let mut manifold_points = Vec::new();
+    let mut north = Vec::new();
+    let mut south = Vec::new();
+    let mut east = Vec::new();
+    let mut west = Vec::new();
+
+    for (point, depth, normal) in points.clone() {
+        match normal {
+            Vec2::NEG_Y => north.push((point, depth, normal)),
+            Vec2::Y => south.push((point, depth, normal)),
+            Vec2::X => east.push((point, depth, normal)),
+            Vec2::NEG_X => west.push((point, depth, normal)),
+            _ => {}
+        }
+    }
+    manifold_points.extend(reduce_to_manifold(north));
+    manifold_points.extend(reduce_to_manifold(south));
+    manifold_points.extend(reduce_to_manifold(east));
+    manifold_points.extend(reduce_to_manifold(west));
     
-    // Reduce to manifold
-    points
+    [manifold_points, points]
 }
 
-/// Returns [point, normal]
-// Additionally compute depth
+// Also written by ai for now
+fn reduce_to_manifold(points: Vec<(Vec2, f32, Vec2)>) -> Vec<(Vec2, f32, Vec2)> {
+    if points.len() <= 1 { return points; }
+
+    // Deepest point
+    let deepest = points.iter()
+        .copied()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+
+    // Point furthest from the deepest
+    let furthest = points.iter()
+        .copied()
+        .max_by(|a, b| {
+            a.0.distance_squared(deepest.0)
+                .partial_cmp(&b.0.distance_squared(deepest.0))
+                .unwrap()
+        }).unwrap();
+
+    if deepest.0.distance_squared(furthest.0) < f32::EPSILON {
+        vec![deepest]
+    } else {
+        vec![deepest, furthest]
+    }
+}
+
+/// Returns (point, depth, normal)
 fn generate_contact_points_voxel_voxel(
     pos12: &Pose,
     shape1: &Voxels,
