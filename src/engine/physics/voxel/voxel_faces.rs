@@ -119,7 +119,7 @@ impl Directions {
     fn all() -> [Self; 4] {
         [Self::North, Self::South, Self::East, Self::West]
     }
-    fn step(&self) -> IVec2 {
+    pub fn step(&self) -> IVec2 {
         match self {
             Self::North => IVec2::new(0, -1),
             Self::South => IVec2::new(0, 1),

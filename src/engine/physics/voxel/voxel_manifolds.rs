@@ -1,11 +1,14 @@
 use std::cmp::Ordering;
 
 use glam::Vec2;
+use macroquad::color::*;
 use rapier2d::prelude::BoundingVolume;
 use rapier2d::{math::Pose, parry::bounding_volume::Aabb};
 use rapier2d::parry::query::ContactManifold;
 use crate::engine::camera::Camera;
 use crate::engine::grid::dim2::*;
+use crate::engine::physics::Faces;
+use crate::engine::physics::voxel::voxel_faces::Directions;
 
 use super::Voxels;
 
@@ -30,19 +33,87 @@ pub fn contact_debug_voxel_voxel(
     let pairs = dual_tree_descent(&pos12, shape1, shape2, camera);
     let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
     let tl_pos12 = pos12.prepend_translation(topleft_offset);
-    let unit_local = Vec2::splat(Voxels::length(0));
-    let unit2_in_local = tl_pos12.transform_vector(unit_local);
 
-    if let Some((idx1, idx2)) = pairs.get(0) {
+    for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
+        let lines1 = generate_lines(faces1, cell1, shape1);
+        let lines2 = generate_lines(faces2, cell2, shape2);
+        for [start2, end2] in lines2.iter() {
+            let start2 = tl_pos12.transform_point(*start2);
+            let end2 = tl_pos12.transform_point(*end2);
+            for [start1, end1] in lines1.iter() {
+                let start1 = start1 + topleft_offset;
+                let end1 = end1 + topleft_offset;
+                if let Some(point) = intersect_axis_aligned(start1, end1, start2, end2) {
+                    camera.draw_point(point, 0.1, YELLOW);
+                }
+            }
+        }
+        for [start, end] in lines1 {
+            camera.draw_vec_line(
+                start + topleft_offset,
+                end + topleft_offset,
+                2.,
+                GREEN
+            );
+        }
+        for [start, end] in lines2 {
+            camera.draw_vec_line(
+                tl_pos12.transform_point(start),
+                tl_pos12.transform_point(end),
+                2.,
+                GREEN
+            );
+        }
     }
-    // for pair in pairs.iter() {
-
-    // }
 
     pairs
 
+}
+
+pub fn intersect_axis_aligned(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2) -> Option<Vec2> {
+    let b_dir = b2 - b1;
+
+    let (a_const, b_start, b_delta) = if (a2.x - a1.x).abs() < f32::EPSILON {
+        (a1.x, b1.x, b_dir.x)
+    } else {
+        (a1.y, b1.y, b_dir.y)
+    };
+
+    let t = (a_const - b_start) / b_delta;
+
+    let p = b1 + b_dir * t;
+
+    let in_b = (0.0..=1.0).contains(&t);
+
+    let a_min = a1.min(a2);
+    let a_max = a1.max(a2);
+    let in_a = p.cmpge(a_min).all() && p.cmple(a_max).all();
+
+    if in_b && in_a { Some(p) } else { None }
+}
+
+// Make a lines struct to also perform intersection tests?
+fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<[Vec2; 2]> {
+    let mut lines = Vec::new();
+    let directions = faces.list();
+    let unit = Vec2::splat(Voxels::length(shape.geometry.height - cell.len() as u32));
+    for direction in directions {
+        let (p1, p2) = match direction {
+            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.)),
+            Directions::South => (Vec2::new(0., 1.), Vec2::ONE),
+            Directions::East => (Vec2::new(1., 0.), Vec2::ONE),
+            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.))
+        };
+        let cell = cell.cell();
+        let vec_cell = Vec2::new(cell[0] as f32, cell[1] as f32);
+        lines.push([
+            (vec_cell + p1) * unit,
+            (vec_cell + p2) * unit,
+        ]);
+    }
+    lines
 }
 
 #[derive(Clone, Debug)]

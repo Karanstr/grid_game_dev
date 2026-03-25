@@ -58,11 +58,11 @@ impl EntityPool {
         let pos12 = collider1.position().inverse() * collider2.position();
         let shape1 = collider1.shape().downcast_ref::<Voxels>().unwrap();
         let shape2 = collider2.shape().downcast_ref::<Voxels>().unwrap();
-        let dtd = contact_debug_voxel_voxel(&pos12, shape1, shape2, camera);
-        for pair in dtd {
-            entity1.outline(*collider1.position(), camera, &[shape1.faces[pair.0].clone()]);
-            entity2.outline(*collider2.position(), camera, &[shape2.faces[pair.1].clone()]);
-        }
+        let _ = contact_debug_voxel_voxel(&pos12, shape1, shape2, camera);
+        // for pair in dtd {
+            // entity1.outline(*collider1.position(), camera, &[shape1.faces[pair.0].clone()]);
+            // entity2.outline(*collider2.position(), camera, &[shape2.faces[pair.1].clone()]);
+        // }
     }
 }
 
