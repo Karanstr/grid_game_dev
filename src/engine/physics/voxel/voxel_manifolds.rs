@@ -1,11 +1,8 @@
 use std::cmp::Ordering;
-
 use glam::Vec2;
-use macroquad::color::*;
 use rapier2d::prelude::BoundingVolume;
 use rapier2d::{math::Pose, parry::bounding_volume::Aabb};
 use rapier2d::parry::query::ContactManifold;
-use crate::engine::camera::Camera;
 use crate::engine::grid::dim2::*;
 use crate::engine::physics::Faces;
 use crate::engine::physics::voxel::voxel_faces::Directions;
@@ -28,89 +25,95 @@ pub fn contact_debug_voxel_voxel(
     pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-    camera: &Camera
-) -> Vec<(usize, usize)> {
-    let pairs = dual_tree_descent(&pos12, shape1, shape2, camera);
+) -> Vec<(Vec2, f32, Vec2)> {
+    let points = generate_contact_points_voxel_voxel(pos12, shape1, shape2);
+    
+    // Reduce to manifold
+    points
+}
+
+/// Returns [point, normal]
+// Additionally compute depth
+fn generate_contact_points_voxel_voxel(
+    pos12: &Pose,
+    shape1: &Voxels,
+    shape2: &Voxels,
+) -> Vec<(Vec2, f32, Vec2)> {
+    let mut points = Vec::new();
     let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
     let tl_pos12 = pos12.prepend_translation(topleft_offset);
+    let pairs = dual_tree_descent(topleft_offset, &tl_pos12, shape1, shape2);
 
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
         let lines1 = generate_lines(faces1, cell1, shape1);
         let lines2 = generate_lines(faces2, cell2, shape2);
-        for [start2, end2] in lines2.iter() {
+        for [start2, end2, _] in lines2.iter() {
             let start2 = tl_pos12.transform_point(*start2);
             let end2 = tl_pos12.transform_point(*end2);
-            for [start1, end1] in lines1.iter() {
-                let start1 = start1 + topleft_offset;
-                let end1 = end1 + topleft_offset;
-                if let Some(point) = intersect_axis_aligned(start1, end1, start2, end2) {
-                    camera.draw_point(point, 0.1, YELLOW);
-                }
+            for [start1, end1, normal] in lines1.iter() {
+                if let Some((point, depth)) = intersect_axis_aligned_with_depth(
+                    start1 + topleft_offset,
+                    end1 + topleft_offset,
+                    start2,
+                    end2,
+                    *normal
+                ) { points.push((point, depth, *normal)) }
             }
         }
-        for [start, end] in lines1 {
-            camera.draw_vec_line(
-                start + topleft_offset,
-                end + topleft_offset,
-                2.,
-                GREEN
-            );
-        }
-        for [start, end] in lines2 {
-            camera.draw_vec_line(
-                tl_pos12.transform_point(start),
-                tl_pos12.transform_point(end),
-                2.,
-                GREEN
-            );
-        }
     }
-
-    pairs
-
+    points
 }
 
-pub fn intersect_axis_aligned(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2) -> Option<Vec2> {
+// Written by AI, don't trust
+fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, normal: Vec2) -> Option<(Vec2, f32)> {
     let b_dir = b2 - b1;
-
-    let (a_const, b_start, b_delta) = if (a2.x - a1.x).abs() < f32::EPSILON {
-        (a1.x, b1.x, b_dir.x)
-    } else {
-        (a1.y, b1.y, b_dir.y)
-    };
-
-    let t = (a_const - b_start) / b_delta;
-
+    let axis = if normal.x != 0.0 { 0 } else { 1 };
+    let other = 1 - axis;
+    let d = b_dir[axis];
+    if d.abs() < f32::EPSILON { return None; }
+    let t = (a1[axis] - b1[axis]) / d;
+    if !(0.0..=1.0).contains(&t) { return None; }
     let p = b1 + b_dir * t;
-
-    let in_b = (0.0..=1.0).contains(&t);
-
     let a_min = a1.min(a2);
     let a_max = a1.max(a2);
-    let in_a = p.cmpge(a_min).all() && p.cmple(a_max).all();
+    if p[other] < a_min[other] || p[other] > a_max[other] { return None; }
 
-    if in_b && in_a { Some(p) } else { None }
+    // Find t values where B crosses the face extents on the other axis,
+    // clamped to the valid segment range [0, 1]
+    let t_at_other = |val: f32| -> f32 {
+        if b_dir[other].abs() < f32::EPSILON { t } else { (val - b1[other]) / b_dir[other] }
+    };
+
+    let ta = t_at_other(a_min[other]).clamp(0.0, 1.0);
+    let tb = t_at_other(a_max[other]).clamp(0.0, 1.0);
+    let (t_lo, t_hi) = (ta.min(tb), ta.max(tb));
+
+    // Depth is measured purely along the normal axis — parallel segments
+    // can only be as deep as their actual normal-axis distance to the face
+    let depth_at = |s: f32| normal[axis] * (a1[axis] - (b1 + b_dir * s)[axis]);
+    let depth = depth_at(t_lo).max(depth_at(t_hi));
+    // Some((p, depth))
+    if depth > 0.0 { Some((p, depth)) } else { None }
 }
 
-// Make a lines struct to also perform intersection tests?
-fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<[Vec2; 2]> {
+/// Returns ([start, end, normal])
+fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<[Vec2; 3]> {
     let mut lines = Vec::new();
-    let directions = faces.list();
-    let unit = Vec2::splat(Voxels::length(shape.geometry.height - cell.len() as u32));
-    for direction in directions {
-        let (p1, p2) = match direction {
-            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.)),
-            Directions::South => (Vec2::new(0., 1.), Vec2::ONE),
-            Directions::East => (Vec2::new(1., 0.), Vec2::ONE),
-            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.))
+    for direction in faces.list() {
+        let (p1, p2, normal) = match direction {
+            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.), Vec2::NEG_Y),
+            Directions::South => (Vec2::new(0., 1.), Vec2::ONE, Vec2::Y),
+            Directions::East => (Vec2::new(1., 0.), Vec2::ONE, Vec2::X),
+            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.), Vec2::NEG_X)
         };
-        let cell = cell.cell();
-        let vec_cell = Vec2::new(cell[0] as f32, cell[1] as f32);
+        // I know not exactly optimal
+        let (pos, size) = cell_pos_size(cell, shape.geometry.height);
         lines.push([
-            (vec_cell + p1) * unit,
-            (vec_cell + p2) * unit,
+            pos + (p1 * size),
+            pos + (p2 * size),
+            normal
         ]);
     }
     lines
@@ -136,10 +139,10 @@ impl Descent {
 // I can't imagine a case where this wouldn't be true, but worth noting down
 /// Returns all colliding pairs (a, b), where a indexes shape1.faces and b indexes shape2.faces
 fn dual_tree_descent(
-    pos12: &Pose,
+    topleft_offset: Vec2,
+    tl_pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-    camera: &Camera,
 ) -> Vec<(usize, usize)> {
     if shape1.faces.is_empty() || shape2.faces.is_empty() { 
         dbg!("Empty Shape passed to dual_tree_descent!!!");
@@ -147,10 +150,6 @@ fn dual_tree_descent(
     }
     let mut candidates = Vec::new();
     let mut stack = Vec::new();
-
-    // Duplicated with contact_debug_voxel_voxel
-    let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
-    let tl_pos12 = pos12.prepend_translation(topleft_offset);
 
     let root1 = Descent::new(
         Cell::default(), shape1.geometry,
@@ -160,51 +159,46 @@ fn dual_tree_descent(
         Cell::default(), shape2.geometry,
         if let Some((_, cell)) = shape2.faces.get(0) && cell.len() == 0 { Some(0) } else { None }
     );
-
     stack.push((root1, root2));
 
-    while let Some((tree1, tree2)) = stack.pop() {
+    while let Some((node1, node2)) = stack.pop() {
 
-        let aabb1 = Aabb::new(Vec2::ZERO, Vec2::splat(Voxels::length(tree1.pointer.height)))
-            .translated(get_cell_origin(&tree1.cell, shape1.geometry.height) + topleft_offset)
+        let (pos1, size1) = cell_pos_size(&node1.cell, shape1.geometry.height);
+        let aabb1 = Aabb::new(Vec2::ZERO, Vec2::splat(size1))
+            .translated(pos1 + topleft_offset)
         ;
-        // Take this transform_by and move it out of the hotloop, storing shape2_top_left instead
-        // Then instead of this Aabb = (Zero, unit_vector * length).translate(cell * unit_vector + top_left)
-        // Just like the one above.
-        let aabb2 = Aabb::new(Vec2::ZERO, Vec2::splat(Voxels::length(tree2.pointer.height)))
-            .translated(get_cell_origin(&tree2.cell, shape2.geometry.height))
-            .transform_by(&tl_pos12)
+        let (pos2, size2) = cell_pos_size(&node2.cell, shape2.geometry.height);
+        let aabb2 = Aabb::new(Vec2::ZERO, Vec2::splat(size2))
+            .translated(pos2).transform_by(&tl_pos12)
         ;
-
         if !aabb1.intersects(&aabb2) { continue }
-        camera.outline_aabb(&aabb2);
         
-        match (tree1.face, tree2.face) {
+        match (node1.face, node2.face) {
             (Some(face1), Some(face2)) => {
                 candidates.push((face1, face2));
             }
             (None, Some(_)) => {
-                let splits = descend_split(&tree1, shape1);
+                let splits = descend_split(&node1, shape1);
                 for split in splits.into_iter().flatten() {
-                    stack.push((split, tree2.clone()));
+                    stack.push((split, node2.clone()));
                 }
             }
-            (None, None) if tree1.pointer.height >= tree2.pointer.height => {
-                let splits = descend_split(&tree1, shape1);
+            (None, None) if node1.pointer.height >= node2.pointer.height => {
+                let splits = descend_split(&node1, shape1);
                 for split in splits.into_iter().flatten() {
-                    stack.push((split, tree2.clone()));
+                    stack.push((split, node2.clone()));
                 }
             }
             (Some(_), None) => {
-                let splits = descend_split(&tree2, shape2);
+                let splits = descend_split(&node2, shape2);
                 for split in splits.into_iter().flatten() {
-                    stack.push((tree1.clone(), split));
+                    stack.push((node1.clone(), split));
                 }
             }
-            (None, None) if tree1.pointer.height < tree2.pointer.height => {
-                let splits = descend_split(&tree2, shape2);
+            (None, None) if node1.pointer.height < node2.pointer.height => {
+                let splits = descend_split(&node2, shape2);
                 for split in splits.into_iter().flatten() {
-                    stack.push((tree1.clone(), split));
+                    stack.push((node1.clone(), split));
                 }
             }
             _ => unreachable!()
@@ -249,8 +243,8 @@ fn ancestry(cell1: &Cell, cell2: &Cell) -> Ordering {
     packed1.packed().cmp(&packed2.packed())
 }
 
-fn get_cell_origin(cell: &Cell, head_height: u32) -> Vec2 {
+fn cell_pos_size(cell: &Cell, head_height: u32) -> (Vec2, f32) {
     let coords = cell.cell();
     let cell_size = Voxels::length(head_height - cell.len() as u32);
-    Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size
+    (Vec2::new(coords[0] as f32, coords[1] as f32) * cell_size, cell_size)
 }

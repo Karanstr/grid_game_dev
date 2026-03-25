@@ -77,8 +77,8 @@ impl Camera {
 // Drawing methods
 impl Camera {
 
-    pub fn draw_point(&self, position: Vec2, radius: f32, color: Color) {
-        let pos = self.world_to_screen(position);
+    pub fn draw_point(&self, point: Vec2, radius: f32, color: Color) {
+        let pos = self.world_to_screen(point);
         draw_circle(pos.x, pos.y, radius * self.scale, color);
     }
 

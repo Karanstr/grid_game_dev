@@ -107,7 +107,7 @@ impl App {
             physics.tick();
 
             entities.draw_all(physics, camera);
-            entities.debug_render(physics, camera);
+            entities.run_physics(physics, camera);
 
             let entity = entities.get(other_data.entity).unwrap().collider_handle;
             let position = physics.colliders.get(entity).unwrap().position();

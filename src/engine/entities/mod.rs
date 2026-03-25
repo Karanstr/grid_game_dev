@@ -1,5 +1,6 @@
 mod entity;
 pub use entity::Entity;
+use macroquad::color::*;
 use crate::engine::{camera::Camera, grid::dim2::*, physics::*};
 use lilypads::Pond;
 
@@ -50,7 +51,7 @@ impl EntityPool {
     }
 
     // I don't like this, I'm cheating until I'm sure physics works.
-    pub fn debug_render(&self, physics: &Physics, camera: &Camera) {
+    pub fn run_physics(&self, physics: &Physics, camera: &Camera) {
         let Some(entity1) = self.entities.get(0) else { return };
         let Some(entity2) = self.entities.get(1) else { return };
         let collider1 = physics.colliders.get(entity1.collider_handle).unwrap();
@@ -58,11 +59,12 @@ impl EntityPool {
         let pos12 = collider1.position().inverse() * collider2.position();
         let shape1 = collider1.shape().downcast_ref::<Voxels>().unwrap();
         let shape2 = collider2.shape().downcast_ref::<Voxels>().unwrap();
-        let _ = contact_debug_voxel_voxel(&pos12, shape1, shape2, camera);
-        // for pair in dtd {
-            // entity1.outline(*collider1.position(), camera, &[shape1.faces[pair.0].clone()]);
-            // entity2.outline(*collider2.position(), camera, &[shape2.faces[pair.1].clone()]);
-        // }
+
+        let result = contact_debug_voxel_voxel(&pos12, shape1, shape2);
+        for (point, depth, normal) in result {
+            camera.draw_point(point, 0.1, GREEN);
+            camera.draw_vec_line(point, point + normal * depth * -1., 2., GOLD);
+        }
     }
 }
 
