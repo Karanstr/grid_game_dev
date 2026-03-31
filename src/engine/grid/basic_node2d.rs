@@ -94,7 +94,7 @@ pub struct PackedCell {
     length: usize,
 }
 impl PackedCell {
-    pub fn new(packed: u64, length: usize) -> Self {
+    pub fn _new(packed: u64, length: usize) -> Self {
         Self {
             packed,
             length,

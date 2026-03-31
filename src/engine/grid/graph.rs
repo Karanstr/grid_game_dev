@@ -141,7 +141,7 @@ impl<const DIM: usize, Node: GraphNode<DIM>> SparseDirectedGraph<DIM, Node> {
 // }
 
 use std::{collections::VecDeque, fmt::Debug, mem::MaybeUninit};
-pub fn bfs_nodes<const D: usize, N: Node<D>>(nodes: &Vec<N>, head: Index) -> Vec<Index> {
+pub fn _bfs_nodes<const D: usize, N: Node<D>>(nodes: &Vec<N>, head: Index) -> Vec<Index> {
   let mut queue = VecDeque::from([head]);
   let mut bfs_indexes = Vec::new();
 

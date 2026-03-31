@@ -14,7 +14,7 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-    _prediction: f32,
+    prediction: f32,
     manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>
 ) where 
     ManifoldData: Default,
@@ -36,7 +36,6 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
             Directions::South => directions[1].0.push((point, depth)),
             Directions::East  => directions[2].0.push((point, depth)),
             Directions::West  => directions[3].0.push((point, depth)),
-            _ => {}
         }
     }
 

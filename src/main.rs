@@ -154,7 +154,7 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
                 DagPointer::new(data.color, data.height)
             );
         }
-        _ => println!("{:?} is unimplemented!!", event)
+        // _ => println!("{:?} is unimplemented!!", event)
     } }
 }
 
