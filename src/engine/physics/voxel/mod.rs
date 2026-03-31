@@ -4,6 +4,8 @@ pub mod voxel_manifolds;
 
 pub use crate::engine::{grid::dim2::{DagPointer, Cell}, physics::voxel::voxel_faces::Faces};
 
+/// Local origin is the top left corner of the grid
+/// Analogous to a voxel chunk
 pub struct Voxels {
     pub geometry: DagPointer,
     pub graph: crate::GRAPH,

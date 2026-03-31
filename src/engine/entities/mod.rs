@@ -50,7 +50,8 @@ impl EntityPool {
 
     pub fn draw_all(&self, physics: &Physics, camera: &Camera) {
         for (_, entity) in self.entities.iter() {
-            let pose = *physics.colliders.get(entity.collider_handle).unwrap().position();
+            // Rn we use rigid_bodies, but with chunking I imagine you would query colliders
+            let pose = *physics.rigid_bodies.get(entity.rb_handle).unwrap().position();
             let leaves = dfs_leaves(self.graph.read().nodes.unsafe_data(), entity.geometry.head);
             entity.draw(pose, camera, &leaves, 0.5);
         }

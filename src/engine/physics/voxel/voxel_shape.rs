@@ -7,17 +7,19 @@ use rapier2d::{
 impl Shape for super::Voxels {
     
     fn compute_local_aabb(&self) -> Aabb {
-        let half_extents = Vector::splat(Self::length(self.geometry.height) / 2.);
-        Aabb::from_half_extents(Vector::ZERO, half_extents)
+        Aabb::new(Vector::ZERO, Vector::splat(Self::length(self.geometry.height)))
     }
 
     fn compute_local_bounding_sphere(&self) -> rapier2d::parry::bounding_volume::BoundingSphere {
         let side_length = Self::length(self.geometry.height);
-        rapier2d::parry::bounding_volume::BoundingSphere::new(Vector::ZERO, side_length / FRAC_1_SQRT_2)
+        let center = Vector::splat(side_length / 2.);
+        rapier2d::parry::bounding_volume::BoundingSphere::new(center, side_length / FRAC_1_SQRT_2)
     }
 
+    // For now sets center of mass as center of the grid
     fn mass_properties(&self, density: f32) -> rapier2d::prelude::MassProperties {
-        rapier2d::prelude::MassProperties::new(Vector::ZERO, density, density)
+        let local_com = Vector::splat(Self::length(self.geometry.height) / 2.);
+        rapier2d::prelude::MassProperties::new(local_com, density, density)
     }
     
     fn shape_type(&self) -> rapier2d::prelude::ShapeType {
@@ -38,6 +40,7 @@ impl Shape for super::Voxels {
 
 }
 
+// ~~~ USELESS ~~~
 impl PointQuery for super::Voxels { 
     
     fn project_local_point(&self, _: rapier2d::prelude::Vector, _: bool) -> rapier2d::parry::query::PointProjection {

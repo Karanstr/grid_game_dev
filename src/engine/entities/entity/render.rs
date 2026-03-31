@@ -6,16 +6,14 @@ use macroquad::color::*;
 
 impl super::Entity {
     pub fn draw(&self, pose: Pose, camera: &Camera, cells: &[(Index, Cell)], opacity: f32) {
-        let length = Voxels::length(self.geometry.height);
-        let tl_pose = pose.prepend_translation(Vec2::splat(-length / 2.));
-        render_leaves(&cells, self.geometry.height, tl_pose, camera, opacity);
+        render_leaves(&cells, self.geometry.height, pose, camera, opacity);
     }
 }
 
 pub fn render_leaves(
     leaves: &[(Index, Cell)],
     height: u32,
-    tl_pose: Pose,
+    pose: Pose,
     camera: &Camera,
     opacity: f32,
 ) {
@@ -28,7 +26,7 @@ pub fn render_leaves(
             local_origin + Vec2::new(cell_size, 0.0),
             local_origin + Vec2::new(cell_size, cell_size),
             local_origin + Vec2::new(0.0, cell_size),
-        ].map(|point| tl_pose * point );
+        ].map(|point| pose * point );
 
         let color = match idx {
             0 => continue,

@@ -21,9 +21,9 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     ContactData: Default + Copy
 {
     manifolds.clear();
-    let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
-    let tl_pos12 = pos12.prepend_translation(topleft_offset);
-    let points = generate_contact_points_voxel_voxel(topleft_offset, &tl_pos12, shape1, shape2);
+    // let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
+    // let tl_pos12 = pos12.prepend_translation(topleft_offset);
+    let points = generate_contact_points_voxel_voxel(&pos12, shape1, shape2);
     let mut directions = [
         (Vec::new(), Directions::North),
         (Vec::new(), Directions::South),
@@ -85,31 +85,24 @@ fn reduce_to_manifold(points: Vec<(Vec2, f32)>) -> Vec<(Vec2, f32)> {
 }
 
 /// Returns (point, depth, normal)
-fn generate_contact_points_voxel_voxel(
-    topleft_offset: Vec2,
-    tl_pos12: &Pose,
-    shape1: &Voxels,
-    shape2: &Voxels,
-) -> Vec<(Vec2, f32, Directions)> {
+fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Directions)> {
     let mut points = Vec::new();
-    let pairs = dual_tree_descent(topleft_offset, &tl_pos12, shape1, shape2);
+    let pairs = dual_tree_descent(&pos12, shape1, shape2);
 
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
-        let lines1 = generate_lines(faces1, cell1, shape1);
-        let lines2 = generate_lines(faces2, cell2, shape2);
-        for (start2, end2, _) in lines2.iter() {
-            let start2 = tl_pos12.transform_point(*start2);
-            let end2 = tl_pos12.transform_point(*end2);
-            for (start1, end1, normal) in lines1.iter() {
+        for (start2, end2, _) in generate_lines(faces2, cell2, shape2) {
+            let start2 = pos12.transform_point(start2);
+            let end2 = pos12.transform_point(end2);
+            for (start1, end1, normal) in generate_lines(faces1, cell1, shape1) {
                 if let Some((point, depth)) = intersect_axis_aligned_with_depth(
-                    start1 + topleft_offset,
-                    end1 + topleft_offset,
+                    start1,
+                    end1,
                     start2,
                     end2,
-                    *normal
-                ) { points.push((point, depth, *normal)) }
+                    normal
+                ) { points.push((point, depth, normal)) }
             }
         }
     }
@@ -191,8 +184,7 @@ impl Descent {
 // I can't imagine a case where this wouldn't be true, but worth noting down
 /// Returns all colliding pairs (a, b), where a indexes shape1.faces and b indexes shape2.faces
 fn dual_tree_descent(
-    topleft_offset: Vec2,
-    tl_pos12: &Pose,
+    pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
 ) -> Vec<(usize, usize)> {
@@ -213,15 +205,16 @@ fn dual_tree_descent(
     );
     stack.push((root1, root2));
 
+
     while let Some((node1, node2)) = stack.pop() {
 
         let (pos1, size1) = cell_pos_size(&node1.cell, shape1.geometry.height);
         let aabb1 = Aabb::new(Vec2::ZERO, Vec2::splat(size1))
-            .translated(pos1 + topleft_offset)
+            .translated(pos1)
         ;
         let (pos2, size2) = cell_pos_size(&node2.cell, shape2.geometry.height);
         let aabb2 = Aabb::new(Vec2::ZERO, Vec2::splat(size2))
-            .translated(pos2).transform_by(&tl_pos12)
+            .translated(pos2).transform_by(&pos12)
         ;
         if !aabb1.intersects(&aabb2) { continue }
         

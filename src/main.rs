@@ -109,9 +109,9 @@ impl App {
             entities.draw_all(physics, camera);
 
             let entity = entities.get(other_data.entity).unwrap().rb_handle;
-            let position = physics.rigid_bodies.get(entity).unwrap().position();
+            let position = physics.rigid_bodies.get(entity).unwrap().center_of_mass();
             let mouse_ratio = mouse_position_local();
-            camera.follow(position.translation + Vec2::new(mouse_ratio.x, mouse_ratio.y) * 2.5, 0.2);
+            camera.follow(position + Vec2::new(mouse_ratio.x, mouse_ratio.y) * 2.5, 0.2);
             
             macroquad::window::next_frame().await
         }
