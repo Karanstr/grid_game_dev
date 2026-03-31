@@ -32,7 +32,7 @@ impl Default for Physics {
 impl Physics {
     pub fn tick(&mut self) {
         self.pipeline.step(
-            Vector::new(0., 100.),
+            Vector::new(0., 0.),
             &IntegrationParameters::default(),
             &mut self.islands,
             &mut self.broad_phase,

@@ -107,7 +107,7 @@ impl Faces {
         list
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Directions {
     North,

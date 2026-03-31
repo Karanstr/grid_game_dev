@@ -53,7 +53,7 @@ impl App {
         };
         entities.add(
             DagPointer::new(head, height),
-            Pose2::new(Vec2::ZERO, 0.),
+            Pose2::new(Vec2::new(0., -20.), 0.),
             &mut physics
         );
 
@@ -107,10 +107,9 @@ impl App {
             physics.tick();
 
             entities.draw_all(physics, camera);
-            entities.run_physics(physics, camera);
 
-            let entity = entities.get(other_data.entity).unwrap().collider_handle;
-            let position = physics.colliders.get(entity).unwrap().position();
+            let entity = entities.get(other_data.entity).unwrap().rb_handle;
+            let position = physics.rigid_bodies.get(entity).unwrap().position();
             let mouse_ratio = mouse_position_local();
             camera.follow(position.translation + Vec2::new(mouse_ratio.x, mouse_ratio.y) * 2.5, 0.2);
             

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use glam::Vec2;
-use rapier2d::prelude::BoundingVolume;
+use rapier2d::prelude::{BoundingVolume, PackedFeatureId, TrackedContact};
 use rapier2d::{math::Pose, parry::bounding_volume::Aabb};
 use rapier2d::parry::query::ContactManifold;
 use crate::engine::grid::dim2::*;
@@ -9,49 +9,59 @@ use crate::engine::physics::voxel::voxel_faces::Directions;
 
 use super::Voxels;
 
-#[allow(unused_variables)]
+// Leverage subshapes/features using u64 zorder
 pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-    prediction: f32,
+    _prediction: f32,
     manifolds: &mut Vec<ContactManifold<ManifoldData, ContactData>>
-) {
-
-}
-
-// Returns [manifold_points, all_points]
-pub fn contact_debug_voxel_voxel(
-    pos12: &Pose,
-    shape1: &Voxels,
-    shape2: &Voxels,
-) -> [Vec<(Vec2, f32, Vec2)>; 2] {
-    let points = generate_contact_points_voxel_voxel(pos12, shape1, shape2);
-    let mut manifold_points = Vec::new();
-    let mut north = Vec::new();
-    let mut south = Vec::new();
-    let mut east = Vec::new();
-    let mut west = Vec::new();
-
+) where 
+    ManifoldData: Default,
+    ContactData: Default + Copy
+{
+    manifolds.clear();
+    let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
+    let tl_pos12 = pos12.prepend_translation(topleft_offset);
+    let points = generate_contact_points_voxel_voxel(topleft_offset, &tl_pos12, shape1, shape2);
+    let mut directions = [
+        (Vec::new(), Directions::North),
+        (Vec::new(), Directions::South),
+        (Vec::new(), Directions::East),
+        (Vec::new(), Directions::West),
+    ];
     for (point, depth, normal) in points.clone() {
         match normal {
-            Vec2::NEG_Y => north.push((point, depth, normal)),
-            Vec2::Y => south.push((point, depth, normal)),
-            Vec2::X => east.push((point, depth, normal)),
-            Vec2::NEG_X => west.push((point, depth, normal)),
+            Directions::North => directions[0].0.push((point, depth)),
+            Directions::South => directions[1].0.push((point, depth)),
+            Directions::East  => directions[2].0.push((point, depth)),
+            Directions::West  => directions[3].0.push((point, depth)),
             _ => {}
         }
     }
-    manifold_points.extend(reduce_to_manifold(north));
-    manifold_points.extend(reduce_to_manifold(south));
-    manifold_points.extend(reduce_to_manifold(east));
-    manifold_points.extend(reduce_to_manifold(west));
-    
-    [manifold_points, points]
+
+    let tl_pos21 = pos12.inverse();
+    for (points, direction) in directions {
+        let mut manifold = ContactManifold::new();
+        manifold.local_n1 = direction.step().as_vec2();
+        manifold.local_n2 = tl_pos21.transform_vector(manifold.local_n1);
+        for (point, depth) in reduce_to_manifold(points) {
+            manifold.points.push(TrackedContact::new(
+                point,
+                tl_pos21.transform_point(point),
+                PackedFeatureId::UNKNOWN,
+                PackedFeatureId::UNKNOWN,
+                -depth
+            ))
+        }
+        manifolds.push(manifold);
+    }
 }
 
 // Also written by ai for now
-fn reduce_to_manifold(points: Vec<(Vec2, f32, Vec2)>) -> Vec<(Vec2, f32, Vec2)> {
+// This could be optimized by returning an array[2] for 2d
+/// returns Vec<(point, depth)>
+fn reduce_to_manifold(points: Vec<(Vec2, f32)>) -> Vec<(Vec2, f32)> {
     if points.len() <= 1 { return points; }
 
     // Deepest point
@@ -77,13 +87,12 @@ fn reduce_to_manifold(points: Vec<(Vec2, f32, Vec2)>) -> Vec<(Vec2, f32, Vec2)> 
 
 /// Returns (point, depth, normal)
 fn generate_contact_points_voxel_voxel(
-    pos12: &Pose,
+    topleft_offset: Vec2,
+    tl_pos12: &Pose,
     shape1: &Voxels,
     shape2: &Voxels,
-) -> Vec<(Vec2, f32, Vec2)> {
+) -> Vec<(Vec2, f32, Directions)> {
     let mut points = Vec::new();
-    let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
-    let tl_pos12 = pos12.prepend_translation(topleft_offset);
     let pairs = dual_tree_descent(topleft_offset, &tl_pos12, shape1, shape2);
 
     for (idx1, idx2) in pairs.iter() {
@@ -91,10 +100,10 @@ fn generate_contact_points_voxel_voxel(
         let (faces2, cell2) = &shape2.faces[*idx2];
         let lines1 = generate_lines(faces1, cell1, shape1);
         let lines2 = generate_lines(faces2, cell2, shape2);
-        for [start2, end2, _] in lines2.iter() {
+        for (start2, end2, _) in lines2.iter() {
             let start2 = tl_pos12.transform_point(*start2);
             let end2 = tl_pos12.transform_point(*end2);
-            for [start1, end1, normal] in lines1.iter() {
+            for (start1, end1, normal) in lines1.iter() {
                 if let Some((point, depth)) = intersect_axis_aligned_with_depth(
                     start1 + topleft_offset,
                     end1 + topleft_offset,
@@ -109,8 +118,10 @@ fn generate_contact_points_voxel_voxel(
 }
 
 // Written by AI, don't trust
-fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, normal: Vec2) -> Option<(Vec2, f32)> {
+/// Returns intersection Option<point, depth>
+fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, axis_aligned_direction: Directions) -> Option<(Vec2, f32)> {
     let b_dir = b2 - b1;
+    let normal = axis_aligned_direction.step().as_vec2();
     let axis = if normal.x != 0.0 { 0 } else { 1 };
     let other = 1 - axis;
     let d = b_dir[axis];
@@ -140,23 +151,23 @@ fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, nor
     if depth > 0.0 { Some((p, depth)) } else { None }
 }
 
-/// Returns ([start, end, normal])
-fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<[Vec2; 3]> {
+/// Returns Vec<(start, end, normal)>
+fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2, Directions)> {
     let mut lines = Vec::new();
     for direction in faces.list() {
-        let (p1, p2, normal) = match direction {
-            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.), Vec2::NEG_Y),
-            Directions::South => (Vec2::new(0., 1.), Vec2::ONE, Vec2::Y),
-            Directions::East => (Vec2::new(1., 0.), Vec2::ONE, Vec2::X),
-            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.), Vec2::NEG_X)
+        let (p1, p2) = match direction {
+            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.)),
+            Directions::South => (Vec2::new(0., 1.), Vec2::ONE),
+            Directions::East => (Vec2::new(1., 0.), Vec2::ONE),
+            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.))
         };
         // I know not exactly optimal
         let (pos, size) = cell_pos_size(cell, shape.geometry.height);
-        lines.push([
+        lines.push((
             pos + (p1 * size),
             pos + (p2 * size),
-            normal
-        ]);
+            direction
+        ));
     }
     lines
 }

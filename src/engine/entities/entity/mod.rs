@@ -7,14 +7,14 @@ mod movement;
 mod render;
 
 pub struct Entity {
-    rb_handle: Option<RigidBodyHandle>,
+    pub rb_handle: RigidBodyHandle,
     pub collider_handle: ColliderHandle,
 
     pub geometry: DagPointer,
 }
 impl Entity {
 
-    pub fn new(rb_handle: Option<RigidBodyHandle>, collider_handle: ColliderHandle, geometry: DagPointer) -> Self {
+    pub fn new(rb_handle: RigidBodyHandle, collider_handle: ColliderHandle, geometry: DagPointer) -> Self {
         Self {
             rb_handle,
             collider_handle,
