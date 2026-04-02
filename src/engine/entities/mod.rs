@@ -20,6 +20,18 @@ impl EntityPool {
         }
     }
 
+    pub fn debug_physics(&self, physics: &Physics, camera: &Camera) {
+        let Some(entity1) = self.entities.get(0) else { return };
+        let Some(entity2) = self.entities.get(1) else { return };
+        let collider1 = physics.colliders.get(entity1.collider_handle).unwrap();
+        let collider2 = physics.colliders.get(entity2.collider_handle).unwrap();
+        let pos12 = collider1.position().inverse() * collider2.position();
+        let shape1 = collider1.shape().downcast_ref::<Voxels>().unwrap();
+        let shape2 = collider2.shape().downcast_ref::<Voxels>().unwrap();
+    
+        debug_voxel_voxel(&pos12, collider1.position(), shape1, shape2, &camera);
+    }
+
     pub fn len(&self) -> usize { self.entities.len() }
 
     pub fn get(&self, idx: usize) -> Option<&Entity> {

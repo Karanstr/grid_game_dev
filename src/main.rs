@@ -104,6 +104,7 @@ impl App {
             input.collect(events);
             handle_events(events, entities, physics, camera, other_data);
             
+            entities.debug_physics(physics, camera);
             physics.tick();
 
             entities.draw_all(physics, camera);

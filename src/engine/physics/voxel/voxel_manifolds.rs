@@ -1,8 +1,10 @@
 use std::cmp::Ordering;
 use glam::Vec2;
+use macroquad::color::GOLD;
 use rapier2d::prelude::{BoundingVolume, PackedFeatureId, TrackedContact};
 use rapier2d::{math::Pose, parry::bounding_volume::Aabb};
 use rapier2d::parry::query::ContactManifold;
+use crate::engine::camera::Camera;
 use crate::engine::grid::dim2::*;
 use crate::engine::physics::Faces;
 use crate::engine::physics::voxel::voxel_faces::Directions;
@@ -21,8 +23,7 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     ContactData: Default + Copy
 {
     manifolds.clear();
-    // let topleft_offset = Vec2::splat(-Voxels::length(shape1.geometry.height) / 2.);
-    // let tl_pos12 = pos12.prepend_translation(topleft_offset);
+
     let points = generate_contact_points_voxel_voxel(&pos12, shape1, shape2);
     let mut directions = [
         (Vec::new(), Directions::North),
@@ -39,15 +40,15 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
         }
     }
 
-    let tl_pos21 = pos12.inverse();
+    let pos21 = pos12.inverse();
     for (points, direction) in directions {
         let mut manifold = ContactManifold::new();
         manifold.local_n1 = direction.step().as_vec2();
-        manifold.local_n2 = tl_pos21.transform_vector(manifold.local_n1);
+        manifold.local_n2 = pos21.transform_vector(manifold.local_n1);
         for (point, depth) in reduce_to_manifold(points) {
             manifold.points.push(TrackedContact::new(
                 point,
-                tl_pos21.transform_point(point),
+                pos21.transform_point(point),
                 PackedFeatureId::UNKNOWN,
                 PackedFeatureId::UNKNOWN,
                 -depth
@@ -55,6 +56,41 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
         }
         manifolds.push(manifold);
     }
+}
+
+pub fn debug_voxel_voxel(
+    pos12: &Pose,
+    shape1_pos: &Pose,
+    shape1: &Voxels,
+    shape2: &Voxels,
+    camera: &Camera
+) {
+
+    let points = generate_contact_points_voxel_voxel(&pos12, shape1, shape2);
+    let mut directions = [
+        (Vec::new(), Directions::North),
+        (Vec::new(), Directions::South),
+        (Vec::new(), Directions::East),
+        (Vec::new(), Directions::West),
+    ];
+    for (point, depth, normal) in points.clone() {
+        match normal {
+            Directions::North => directions[0].0.push((point, depth)),
+            Directions::South => directions[1].0.push((point, depth)),
+            Directions::East  => directions[2].0.push((point, depth)),
+            Directions::West  => directions[3].0.push((point, depth)),
+        }
+    }
+
+    for (points, direction) in directions {
+        for (point, depth) in reduce_to_manifold(points) {
+            let point = shape1_pos.transform_point(point);
+            let normal = direction.step().as_vec2();
+            camera.draw_point(point, 0.1, GOLD);
+            camera.draw_vec_line(point, point + depth * normal, 2., GOLD);
+        }
+    }
+
 }
 
 // Also written by ai for now
