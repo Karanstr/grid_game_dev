@@ -128,22 +128,37 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
+        let mut raw_points = Vec::new();
+        let mut best_normal = None;
         for (start2, end2, _) in generate_lines(faces2, cell2, shape2) {
             let start2 = pos12.transform_point(start2);
             let end2 = pos12.transform_point(end2);
             for (start1, end1, normal) in generate_lines(faces1, cell1, shape1) {
-                if let Some((point, depth)) = intersect_axis_aligned_with_depth(
+                let Some((point, depth)) = intersect_axis_aligned_with_depth(
                     start1,
                     end1,
                     start2,
                     end2,
                     normal
-                ) { points.push((point, depth, normal)) }
+                ) else { continue };
+
+                if let Some((_, best_depth)) = best_normal {
+                    if depth < best_depth {
+                        best_normal = Some((normal, depth))
+                    }
+                } else { best_normal = Some((normal, depth)) }
+                raw_points.push((point, depth, normal));
             }
+        }
+        
+        for point in raw_points {
+            let Some((normal, _)) = best_normal else { continue };
+            if point.2 == normal { points.push(point); }
         }
     }
     points
 }
+
 
 // Written by AI, don't trust
 /// Returns intersection Option<point, depth>
@@ -199,6 +214,13 @@ fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2
     }
     lines
 }
+
+
+
+
+
+
+
 
 #[derive(Clone, Debug)]
 struct Descent {
