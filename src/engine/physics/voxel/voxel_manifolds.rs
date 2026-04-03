@@ -11,6 +11,25 @@ use crate::engine::physics::voxel::voxel_faces::Directions;
 
 use super::Voxels;
 
+pub fn debug_voxel_voxel(
+    pos12: &Pose,
+    shape1_pos: &Pose,
+    shape1: &Voxels,
+    shape2: &Voxels,
+    camera: &Camera
+) {
+    let mut manifolds = Vec::new();
+    contact_manifold_voxel_voxel::<(), ()>(pos12, shape1, shape2, 0., &mut manifolds);
+    for manifold in manifolds {
+        let normal = shape1_pos.transform_vector(manifold.local_n1);
+        for contact in manifold.points {
+            let point = shape1_pos.transform_point(contact.local_p1);
+            camera.draw_point(point, 0.1, GOLD);
+            camera.draw_vec_line(point, point + contact.dist * normal * -1., 2., GOLD);
+        }
+    }
+}
+
 // Leverage subshapes/features using u64 zorder
 pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     pos12: &Pose,
@@ -25,27 +44,14 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     manifolds.clear();
 
     let points = generate_contact_points_voxel_voxel(&pos12, shape1, shape2);
-    let mut directions = [
-        (Vec::new(), Directions::North),
-        (Vec::new(), Directions::South),
-        (Vec::new(), Directions::East),
-        (Vec::new(), Directions::West),
-    ];
-    for (point, depth, normal) in points.clone() {
-        match normal {
-            Directions::North => directions[0].0.push((point, depth)),
-            Directions::South => directions[1].0.push((point, depth)),
-            Directions::East  => directions[2].0.push((point, depth)),
-            Directions::West  => directions[3].0.push((point, depth)),
-        }
-    }
+    let unstructured_manifolds = reduce_manifold_voxel_voxel(&points);
 
     let pos21 = pos12.inverse();
-    for (points, direction) in directions {
+    for (normal, contacts) in unstructured_manifolds {
         let mut manifold = ContactManifold::new();
-        manifold.local_n1 = direction.step().as_vec2();
+        manifold.local_n1 = normal;
         manifold.local_n2 = pos21.transform_vector(manifold.local_n1);
-        for (point, depth) in reduce_to_manifold(points) {
+        for (point, depth) in contacts {
             manifold.points.push(TrackedContact::new(
                 point,
                 pos21.transform_point(point),
@@ -58,78 +64,61 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     }
 }
 
-pub fn debug_voxel_voxel(
-    pos12: &Pose,
-    shape1_pos: &Pose,
-    shape1: &Voxels,
-    shape2: &Voxels,
-    camera: &Camera
-) {
+// Written by AI
+fn reduce_manifold_voxel_voxel(points: &[(Vec2, f32, Vec2)]) -> Vec<(Vec2, Vec<(Vec2, f32)>)> {
+    let mut grouped: Vec<(Vec2, Vec<(Vec2, f32)>)> = Vec::new();
 
-    let points = generate_contact_points_voxel_voxel(&pos12, shape1, shape2);
-    let mut directions = [
-        (Vec::new(), Directions::North),
-        (Vec::new(), Directions::South),
-        (Vec::new(), Directions::East),
-        (Vec::new(), Directions::West),
-    ];
-    for (point, depth, normal) in points.clone() {
-        match normal {
-            Directions::North => directions[0].0.push((point, depth)),
-            Directions::South => directions[1].0.push((point, depth)),
-            Directions::East  => directions[2].0.push((point, depth)),
-            Directions::West  => directions[3].0.push((point, depth)),
+    'outer: for &(point, depth, normal) in points {
+        // Check if this normal already exists
+        for (n, pts) in grouped.iter_mut() {
+            if (*n - normal).length_squared() < 1e-6 {
+                pts.push((point, depth));
+                continue 'outer;
+            }
         }
+        // New normal group
+        grouped.push((normal, vec![(point, depth)]));
     }
 
-    for (points, direction) in directions {
-        for (point, depth) in reduce_to_manifold(points) {
-            let point = shape1_pos.transform_point(point);
-            let normal = direction.step().as_vec2();
-            camera.draw_point(point, 0.1, GOLD);
-            camera.draw_vec_line(point, point + depth * normal, 2., GOLD);
-        }
-    }
-
+    // Reduce each group along tangent
+    grouped
+        .into_iter()
+        .map(|(normal, pts)| (normal, reduce_to_manifold(pts, normal)))
+        .collect()
 }
 
-// Also written by ai for now
-// This could be optimized by returning an array[2] for 2d
 /// returns Vec<(point, depth)>
-fn reduce_to_manifold(points: Vec<(Vec2, f32)>) -> Vec<(Vec2, f32)> {
+fn reduce_to_manifold(points: Vec<(Vec2, f32)>, normal: Vec2) -> Vec<(Vec2, f32)> {
     if points.len() <= 1 { return points; }
+    let tangent = normal.perp();
 
-    // Deepest point
+    // Deepest point (largest penetration)
     let deepest = points.iter()
-        .copied()
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+        .max_by(|a, b| a.1.total_cmp(&b.1)).unwrap()
+    ;
 
-    // Point furthest from the deepest
+    // Furthest point along tangent from deepest
     let furthest = points.iter()
-        .copied()
         .max_by(|a, b| {
-            a.0.distance_squared(deepest.0)
-                .partial_cmp(&b.0.distance_squared(deepest.0))
-                .unwrap()
-        }).unwrap();
+            let da = (a.0 - deepest.0).dot(tangent).abs();
+            let db = (b.0 - deepest.0).dot(tangent).abs();
+            da.total_cmp(&db)
+        }).unwrap()
+    ;
 
-    if deepest.0.distance_squared(furthest.0) < f32::EPSILON {
-        vec![deepest]
-    } else {
-        vec![deepest, furthest]
-    }
+    if (deepest.0 - furthest.0).dot(tangent).abs() < f32::EPSILON {
+        vec![*deepest]
+    } else { vec![*deepest, *furthest] }
 }
 
 /// Returns (point, depth, normal)
-fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Directions)> {
+fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Vec2)> {
     let mut points = Vec::new();
     let pairs = dual_tree_descent(&pos12, shape1, shape2);
 
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
-        let mut raw_points = Vec::new();
-        let mut best_normal = None;
         for (start2, end2, _) in generate_lines(faces2, cell2, shape2) {
             let start2 = pos12.transform_point(start2);
             let end2 = pos12.transform_point(end2);
@@ -142,55 +131,37 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
                     normal
                 ) else { continue };
 
-                if let Some((_, best_depth)) = best_normal {
-                    if depth < best_depth {
-                        best_normal = Some((normal, depth))
-                    }
-                } else { best_normal = Some((normal, depth)) }
-                raw_points.push((point, depth, normal));
+                points.push((point, depth, normal.step().as_vec2()));
             }
-        }
-        
-        for point in raw_points {
-            let Some((normal, _)) = best_normal else { continue };
-            if point.2 == normal { points.push(point); }
         }
     }
     points
 }
 
-
-// Written by AI, don't trust
-/// Returns intersection Option<point, depth>
-fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, axis_aligned_direction: Directions) -> Option<(Vec2, f32)> {
-    let b_dir = b2 - b1;
+// Written by AI
+fn intersect_axis_aligned_with_depth(
+    a1: Vec2, a2: Vec2,
+    b1: Vec2, b2: Vec2,
+    axis_aligned_direction: Directions,
+) -> Option<(Vec2, f32)> {
     let normal = axis_aligned_direction.step().as_vec2();
-    let axis = if normal.x != 0.0 { 0 } else { 1 };
-    let other = 1 - axis;
-    let d = b_dir[axis];
-    if d.abs() < f32::EPSILON { return None; }
-    let t = (a1[axis] - b1[axis]) / d;
-    if !(0.0..=1.0).contains(&t) { return None; }
-    let p = b1 + b_dir * t;
+    let ax = if normal.x != 0.0 { 0 } else { 1 }; // normal axis
+    let tg = 1 - ax;                              // tangent axis
+    let b_dir = b2 - b1;
     let a_min = a1.min(a2);
     let a_max = a1.max(a2);
-    if p[other] < a_min[other] || p[other] > a_max[other] { return None; }
 
-    // Find t values where B crosses the face extents on the other axis,
-    // clamped to the valid segment range [0, 1]
-    let t_at_other = |val: f32| -> f32 {
-        if b_dir[other].abs() < f32::EPSILON { t } else { (val - b1[other]) / b_dir[other] }
-    };
+    let t = (a1[ax] - b1[ax]) / b_dir[ax];
+    if !(0.0..=1.0).contains(&t) { return None; }
 
-    let ta = t_at_other(a_min[other]).clamp(0.0, 1.0);
-    let tb = t_at_other(a_max[other]).clamp(0.0, 1.0);
-    let (t_lo, t_hi) = (ta.min(tb), ta.max(tb));
+    let p = b1 + b_dir * t;
+    if p[tg] < a_min[tg] || p[tg] > a_max[tg] { return None; }
 
-    // Depth is measured purely along the normal axis — parallel segments
-    // can only be as deep as their actual normal-axis distance to the face
-    let depth_at = |s: f32| normal[axis] * (a1[axis] - (b1 + b_dir * s)[axis]);
-    let depth = depth_at(t_lo).max(depth_at(t_hi));
-    // Some((p, depth))
+    let pos_to_time = |val: f32| ((val - b1[tg]) / b_dir[tg]).clamp(0.0, 1.0);
+    let (ta, tb) = (pos_to_time(a_min[tg]), pos_to_time(a_max[tg]));
+    let depth_at  = |s: f32| normal[ax] * (a1[ax] - (b1 + b_dir * s)[ax]);
+    let depth = depth_at(ta.min(tb)).max(depth_at(ta.max(tb)));
+
     if depth > 0.0 { Some((p, depth)) } else { None }
 }
 
@@ -204,7 +175,6 @@ fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2
             Directions::East => (Vec2::new(1., 0.), Vec2::ONE),
             Directions::West => (Vec2::ZERO, Vec2::new(0., 1.))
         };
-        // I know not exactly optimal
         let (pos, size) = cell_pos_size(cell, shape.geometry.height);
         lines.push((
             pos + (p1 * size),
