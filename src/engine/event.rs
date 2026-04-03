@@ -1,9 +1,8 @@
 #[derive(Clone, Copy, Debug)]
 pub enum Event {
-    Forward,
-    Backward,
-    Clockwise,
-    CounterClockwise,
+    Forward, Backward,
+    Left, Right,
+    Clockwise, CounterClockwise,
 
     Zoom(f32),
 

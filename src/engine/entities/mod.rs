@@ -42,14 +42,24 @@ impl EntityPool {
         self.entities.get_mut(idx)
     }
 
-    pub fn add(&mut self, geometry: DagPointer, position: Pose2, physics: &mut Physics) -> usize {
-        let rb_handle = physics.rigid_bodies.insert(
-            RigidBodyBuilder::dynamic()
-                .pose(position)
-                .linear_damping(0.8)
-                .angular_damping(0.8)
-            .build()
-        );
+    pub fn add(&mut self, geometry: DagPointer, position: Pose2, physics: &mut Physics, fixed: bool) -> usize {
+        let rb_handle = if fixed {
+            physics.rigid_bodies.insert(
+                RigidBodyBuilder::fixed()
+                    .pose(position)
+                    .linear_damping(0.8)
+                    .angular_damping(0.8)
+                .build()
+            )
+        } else {
+            physics.rigid_bodies.insert(
+                RigidBodyBuilder::dynamic()
+                    .pose(position)
+                    .linear_damping(0.8)
+                    .angular_damping(0.8)
+                .build()
+            )
+        };
 
         let collider = ColliderBuilder::new(SharedShape::new(
             Voxels::new(self.graph.clone())

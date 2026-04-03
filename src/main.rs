@@ -54,19 +54,21 @@ impl App {
         entities.add(
             DagPointer::new(head, height),
             Pose2::new(Vec2::new(0., -20.), 0.),
-            &mut physics
+            &mut physics,
+            true
         );
 
         let (head, height) = {
             let mut graph = entities.graph.write();
             let head = graph.get_root(2);
-            let height = 3;
+            let height = 0;
             (head, height)
         };
         entities.add(
             DagPointer::new(head, height),
             Pose2::new(Vec2::ZERO, 0.),
-            &mut physics
+            &mut physics,
+            false
         );
 
         let mut input = Input::new();
@@ -134,6 +136,12 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
         Event::Backward => {
             entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::NEG_X * SPEED, physics);
         }
+        Event::Left => {
+            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::NEG_Y * SPEED, physics);
+        }
+        Event::Right => {
+            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::Y * SPEED, physics);
+        }
         Event::Zoom(zoom) => {
             camera.zoom_by(zoom);
         }
@@ -155,7 +163,7 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
                 DagPointer::new(data.color, data.height)
             );
         }
-        // _ => println!("{:?} is unimplemented!!", event)
+        _ => println!("{:?} is unimplemented!!", event)
     } }
 }
 
@@ -178,8 +186,10 @@ impl Default for OtherData {
 pub fn set_key_binds(input: &mut Input) {
     input.bind(InputType::Keyboard(KeyCode::W), InputTrigger::Down, Event::Forward);
     input.bind(InputType::Keyboard(KeyCode::S), InputTrigger::Down, Event::Backward);
-    input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::CounterClockwise);
-    input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Clockwise);
+    input.bind(InputType::Keyboard(KeyCode::A), InputTrigger::Down, Event::Left);
+    input.bind(InputType::Keyboard(KeyCode::D), InputTrigger::Down, Event::Right);
+    input.bind(InputType::Keyboard(KeyCode::Q), InputTrigger::Down, Event::CounterClockwise);
+    input.bind(InputType::Keyboard(KeyCode::E), InputTrigger::Down, Event::Clockwise);
 
     input.bind(InputType::Keyboard(KeyCode::V), InputTrigger::Pressed, Event::SwitchColor);
     input.bind(InputType::Keyboard(KeyCode::B), InputTrigger::Pressed, Event::SwitchSize);
