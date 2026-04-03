@@ -47,47 +47,62 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     let unstructured_manifolds = reduce_manifold_voxel_voxel(&points);
 
     let pos21 = pos12.inverse();
-    for (normal, contacts) in unstructured_manifolds {
+    for ((normal, is_shape1), contacts) in unstructured_manifolds {
         let mut manifold = ContactManifold::new();
-        manifold.local_n1 = normal;
-        manifold.local_n2 = pos21.transform_vector(manifold.local_n1);
-        for (point, depth) in contacts {
-            manifold.points.push(TrackedContact::new(
-                point,
-                pos21.transform_point(point),
-                PackedFeatureId::UNKNOWN,
-                PackedFeatureId::UNKNOWN,
-                -depth
-            ))
+        if is_shape1 {
+            manifold.local_n1 = normal;
+            manifold.local_n2 = -pos21.transform_vector(manifold.local_n1);
+            for (point, depth) in contacts {
+                manifold.points.push(TrackedContact::new(
+                    point,
+                    pos21.transform_point(point),
+                    PackedFeatureId::UNKNOWN,
+                    PackedFeatureId::UNKNOWN,
+                    -depth
+                ))
+            }
+        } else {
+            manifold.local_n2 = normal;
+            manifold.local_n1 = -pos12.transform_vector(manifold.local_n2);
+            for (point, depth) in contacts {
+                manifold.points.push(TrackedContact::new(
+                    pos12.transform_point(point),
+                    point,
+                    PackedFeatureId::UNKNOWN,
+                    PackedFeatureId::UNKNOWN,
+                    -depth
+                ))
+            }
         }
         manifolds.push(manifold);
     }
 }
 
 // Written by AI
-fn reduce_manifold_voxel_voxel(points: &[(Vec2, f32, Vec2)]) -> Vec<(Vec2, Vec<(Vec2, f32)>)> {
-    let mut grouped: Vec<(Vec2, Vec<(Vec2, f32)>)> = Vec::new();
+fn reduce_manifold_voxel_voxel(points: &[(Vec2, f32, Vec2, bool)]) -> Vec<((Vec2, bool), Vec<(Vec2, f32)>)> {
+    let mut grouped: Vec<((Vec2, bool), Vec<(Vec2, f32)>)> = Vec::new();
 
-    'outer: for &(point, depth, normal) in points {
+    'outer: for &(point, depth, normal, is_shape1) in points {
         // Check if this normal already exists
-        for (n, pts) in grouped.iter_mut() {
-            if (*n - normal).length_squared() < 1e-6 {
+        for ((n, is), pts) in grouped.iter_mut() {
+            if (*n - normal).length_squared() < 1e-6 && is_shape1 == *is {
                 pts.push((point, depth));
                 continue 'outer;
             }
         }
         // New normal group
-        grouped.push((normal, vec![(point, depth)]));
+        grouped.push(((normal, is_shape1), vec![(point, depth)]));
     }
 
     // Reduce each group along tangent
     grouped
         .into_iter()
-        .map(|(normal, pts)| (normal, reduce_to_manifold(pts, normal)))
-        .collect()
+        .map(|((normal, is_shape1), pts)| 
+            ((normal, is_shape1), reduce_to_manifold(pts, normal))
+        ).collect()
 }
 
-/// returns Vec<(point, depth)>
+/// returns Vec<(point, depth, is_shape1)>
 fn reduce_to_manifold(points: Vec<(Vec2, f32)>, normal: Vec2) -> Vec<(Vec2, f32)> {
     if points.len() <= 1 { return points; }
     let tangent = normal.perp();
@@ -111,8 +126,8 @@ fn reduce_to_manifold(points: Vec<(Vec2, f32)>, normal: Vec2) -> Vec<(Vec2, f32)
     } else { vec![*deepest, *furthest] }
 }
 
-/// Returns (point, depth, normal)
-fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Vec2)> {
+/// Returns (point, depth, normal, is_shape1)
+fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Vec2, bool)> {
     let mut points = Vec::new();
     let pairs = dual_tree_descent(&pos12, shape1, shape2);
 
@@ -122,28 +137,30 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
         let (faces2, cell2) = &shape2.faces[*idx2];
         for (start2, end2, normal2) in generate_lines(faces2, cell2, shape2) {
             for (start1, end1, normal1) in generate_lines(faces1, cell1, shape1) {
-                let result_1 = intersect_axis_aligned_with_depth(
+                let result1 = intersect_axis_aligned_with_depth(
                     start1,
                     end1,
                     pos12.transform_point(start2),
                     pos12.transform_point(end2),
                     normal1
                 );
-                let result_2 = intersect_axis_aligned_with_depth(
+                let result2 = intersect_axis_aligned_with_depth(
                     start2,
                     end2,
                     pose21.transform_point(start1),
                     pose21.transform_point(end1),
                     normal2
                 );
-                // TODO
-                // We need to add a flag to say whether the contact is shape1 or shape2
-                // This way when we construct the manifold we aren't flipping them by mistake
-                let result = match (result_1, result_2) {
-                    (Some(h1), Some(h2)) => {
-                        if h1.1.abs() <= h2.1.abs() { Some(h1) } else { Some(h2) }
+                let result = match (result1, result2) {
+                    (Some(res1), Some(res2)) => {
+                        if res1.1 <= res2.1 { 
+                            Some((res1.0, res1.1, res1.2, true))
+                        } else {
+                            Some((res2.0, res2.1, res2.2, false))
+                        }
                     },
-                    (Some(h), None) | (None, Some(h)) => Some(h),
+                    (Some(res), None) => Some((res.0, res.1, res.2, true)),
+                    (None, Some(res)) => Some((res.0, res.1, res.2, false)),
                     (None, None) => None,
                 };
                 let Some(result) = result else { continue };
@@ -234,7 +251,7 @@ fn dual_tree_descent(
     shape2: &Voxels,
 ) -> Vec<(usize, usize)> {
     if shape1.faces.is_empty() || shape2.faces.is_empty() { 
-        dbg!("Empty Shape passed to dual_tree_descent!!!");
+        eprintln!("Empty Shape passed to dual_tree_descent!!!");
         return vec![];
     }
     let mut candidates = Vec::new();
