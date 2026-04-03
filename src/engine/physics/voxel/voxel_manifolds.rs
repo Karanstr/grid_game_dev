@@ -116,22 +116,39 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
     let mut points = Vec::new();
     let pairs = dual_tree_descent(&pos12, shape1, shape2);
 
+    let pose21 = pos12.inverse();
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
-        for (start2, end2, _) in generate_lines(faces2, cell2, shape2) {
-            let start2 = pos12.transform_point(start2);
-            let end2 = pos12.transform_point(end2);
-            for (start1, end1, normal) in generate_lines(faces1, cell1, shape1) {
-                let Some((point, depth)) = intersect_axis_aligned_with_depth(
+        for (start2, end2, normal2) in generate_lines(faces2, cell2, shape2) {
+            for (start1, end1, normal1) in generate_lines(faces1, cell1, shape1) {
+                let result_1 = intersect_axis_aligned_with_depth(
                     start1,
                     end1,
+                    pos12.transform_point(start2),
+                    pos12.transform_point(end2),
+                    normal1
+                );
+                let result_2 = intersect_axis_aligned_with_depth(
                     start2,
                     end2,
-                    normal
-                ) else { continue };
+                    pose21.transform_point(start1),
+                    pose21.transform_point(end1),
+                    normal2
+                );
+                // TODO
+                // We need to add a flag to say whether the contact is shape1 or shape2
+                // This way when we construct the manifold we aren't flipping them by mistake
+                let result = match (result_1, result_2) {
+                    (Some(h1), Some(h2)) => {
+                        if h1.1.abs() <= h2.1.abs() { Some(h1) } else { Some(h2) }
+                    },
+                    (Some(h), None) | (None, Some(h)) => Some(h),
+                    (None, None) => None,
+                };
+                let Some(result) = result else { continue };
 
-                points.push((point, depth, normal.step().as_vec2()));
+                points.push(result);
             }
         }
     }
@@ -143,7 +160,7 @@ fn intersect_axis_aligned_with_depth(
     a1: Vec2, a2: Vec2,
     b1: Vec2, b2: Vec2,
     axis_aligned_direction: Directions,
-) -> Option<(Vec2, f32)> {
+) -> Option<(Vec2, f32, Vec2)> {
     let normal = axis_aligned_direction.step().as_vec2();
     let ax = if normal.x != 0.0 { 0 } else { 1 }; // normal axis
     let tg = 1 - ax;                              // tangent axis
@@ -162,7 +179,7 @@ fn intersect_axis_aligned_with_depth(
     let depth_at  = |s: f32| normal[ax] * (a1[ax] - (b1 + b_dir * s)[ax]);
     let depth = depth_at(ta.min(tb)).max(depth_at(ta.max(tb)));
 
-    if depth > 0.0 { Some((p, depth)) } else { None }
+    if depth > 0.0 { Some((p, depth, normal)) } else { None }
 }
 
 /// Returns Vec<(start, end, normal)>
