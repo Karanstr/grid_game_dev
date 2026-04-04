@@ -24,8 +24,7 @@ pub fn debug_voxel_voxel(
         let normal = shape1_pos.transform_vector(manifold.local_n1);
         for contact in manifold.points {
             let point = shape1_pos.transform_point(contact.local_p1);
-            camera.draw_point(point, 0.1, GOLD);
-            camera.draw_vec_line(point, point + contact.dist * normal * -1., 2., GOLD);
+            camera.draw_vec_line(point, point + contact.dist * normal * -100., 4., GOLD);
         }
     }
 }
@@ -204,11 +203,32 @@ fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2
     let mut lines = Vec::new();
     for direction in faces.list() {
         let (p1, p2) = match direction {
-            Directions::North => (Vec2::ZERO, Vec2::new(1., 0.)),
-            Directions::South => (Vec2::new(0., 1.), Vec2::ONE),
-            Directions::East => (Vec2::new(1., 0.), Vec2::ONE),
-            Directions::West => (Vec2::ZERO, Vec2::new(0., 1.))
+            Directions::North => {
+                let (mut min, mut max) = (Vec2::ZERO, Vec2::new(1., 0.));
+                if !faces.west() { min.x -= 0.5 }
+                if !faces.east() { max.x += 0.5 }
+                (min, max)
+            },
+            Directions::South => {
+                let (mut min, mut max) = (Vec2::new(0., 1.), Vec2::ONE);
+                if !faces.west() { min.x -= 0.5 }
+                if !faces.east() { max.x += 0.5 }
+                (min, max)
+            },
+            Directions::East => {
+                let (mut min, mut max) = (Vec2::new(1., 0.), Vec2::ONE);
+                if !faces.north() { min.y -= 0.5 }
+                if !faces.south() { max.y += 0.5 }
+                (min, max)
+            },
+            Directions::West => {
+                let (mut min, mut max) = (Vec2::ZERO, Vec2::new(0., 1.));
+                if !faces.north() { min.y -= 0.5 }
+                if !faces.south() { max.y += 0.5 }
+                (min, max)
+            }
         };
+
         let (pos, size) = cell_pos_size(cell, shape.geometry.height);
         lines.push((
             pos + (p1 * size),

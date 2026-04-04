@@ -131,16 +131,16 @@ fn handle_events(events: &mut Vec<Event>, entities: &mut EntityPool, physics: &m
             entities.get(data.entity).unwrap().rotate_by(-ROTATION_SPEED, physics);
         }
         Event::Forward => {
-            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::X * SPEED, physics);
-        }
-        Event::Backward => {
-            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::NEG_X * SPEED, physics);
-        }
-        Event::Left => {
             entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::NEG_Y * SPEED, physics);
         }
-        Event::Right => {
+        Event::Backward => {
             entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::Y * SPEED, physics);
+        }
+        Event::Left => {
+            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::NEG_X * SPEED, physics);
+        }
+        Event::Right => {
+            entities.get(data.entity).unwrap().move_wrt_rotation(Vec2::X * SPEED, physics);
         }
         Event::Zoom(zoom) => {
             camera.zoom_by(zoom);

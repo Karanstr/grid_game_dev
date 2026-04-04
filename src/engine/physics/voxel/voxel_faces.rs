@@ -116,7 +116,7 @@ pub enum Directions {
     West,
 }
 impl Directions {
-    fn all() -> [Self; 4] {
+    pub fn all() -> [Self; 4] {
         [Self::North, Self::South, Self::East, Self::West]
     }
     pub fn step(&self) -> IVec2 {
