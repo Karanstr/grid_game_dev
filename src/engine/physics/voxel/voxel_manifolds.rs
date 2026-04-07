@@ -8,7 +8,6 @@ use crate::engine::camera::Camera;
 use crate::engine::grid::dim2::*;
 use crate::engine::physics::Faces;
 use crate::engine::physics::voxel::voxel_faces::Directions;
-
 use super::Voxels;
 
 pub fn debug_voxel_voxel(
@@ -29,6 +28,18 @@ pub fn debug_voxel_voxel(
     }
 }
 
+
+#[derive(Clone, Copy)]
+struct Contact {
+    point: Vec2,
+    depth: f32,
+}
+#[derive(Clone, Copy)]
+struct ManifoldMeta {
+    normal: Vec2,
+    shape1: bool,
+}
+
 // Leverage subshapes/features using u64 zorder
 pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     pos12: &Pose,
@@ -46,30 +57,30 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
     let unstructured_manifolds = reduce_manifold_voxel_voxel(&points);
 
     let pos21 = pos12.inverse();
-    for ((normal, is_shape1), contacts) in unstructured_manifolds {
+    for (contacts, meta) in unstructured_manifolds {
         let mut manifold = ContactManifold::new();
-        if is_shape1 {
-            manifold.local_n1 = normal;
+        if meta.shape1 {
+            manifold.local_n1 = meta.normal;
             manifold.local_n2 = -pos21.transform_vector(manifold.local_n1);
-            for (point, depth) in contacts {
+            for contact in contacts {
                 manifold.points.push(TrackedContact::new(
-                    point,
-                    pos21.transform_point(point),
+                    contact.point,
+                    pos21.transform_point(contact.point),
                     PackedFeatureId::UNKNOWN,
                     PackedFeatureId::UNKNOWN,
-                    -depth
+                    -contact.depth
                 ))
             }
         } else {
-            manifold.local_n2 = normal;
+            manifold.local_n2 = meta.normal;
             manifold.local_n1 = -pos12.transform_vector(manifold.local_n2);
-            for (point, depth) in contacts {
+            for contact in contacts {
                 manifold.points.push(TrackedContact::new(
-                    pos12.transform_point(point),
-                    point,
+                    pos12.transform_point(contact.point),
+                    contact.point,
                     PackedFeatureId::UNKNOWN,
                     PackedFeatureId::UNKNOWN,
-                    -depth
+                    -contact.depth
                 ))
             }
         }
@@ -78,55 +89,51 @@ pub fn contact_manifold_voxel_voxel<ManifoldData, ContactData>(
 }
 
 // Written by AI
-fn reduce_manifold_voxel_voxel(points: &[(Vec2, f32, Vec2, bool)]) -> Vec<((Vec2, bool), Vec<(Vec2, f32)>)> {
-    let mut grouped: Vec<((Vec2, bool), Vec<(Vec2, f32)>)> = Vec::new();
+fn reduce_manifold_voxel_voxel(points: &[(Contact, ManifoldMeta)]) -> Vec<(Vec<Contact>, ManifoldMeta)> {
+    let mut grouped: Vec<(Vec<Contact>, ManifoldMeta)> = Vec::new();
 
-    'outer: for &(point, depth, normal, is_shape1) in points {
+    'outer: for &(contact, meta) in points {
         // Check if this normal already exists
-        for ((n, is), pts) in grouped.iter_mut() {
-            if (*n - normal).length_squared() < 1e-6 && is_shape1 == *is {
-                pts.push((point, depth));
+        for (contacts, m) in grouped.iter_mut() {
+            if (m.normal - meta.normal).length_squared() < 1e-6 && meta.shape1 == m.shape1 {
+                contacts.push(contact);
                 continue 'outer;
             }
         }
         // New normal group
-        grouped.push(((normal, is_shape1), vec![(point, depth)]));
+        grouped.push((vec![contact], meta));
     }
 
-    // Reduce each group along tangent
-    grouped
-        .into_iter()
-        .map(|((normal, is_shape1), pts)| 
-            ((normal, is_shape1), reduce_to_manifold(pts, normal))
-        ).collect()
+    // Reduce each group sharing a normal
+    grouped.into_iter().map( |(contacts, meta)|
+        (reduce_to_manifold(contacts, meta.normal), meta)
+    ).collect()
 }
 
-/// returns Vec<(point, depth, is_shape1)>
-fn reduce_to_manifold(points: Vec<(Vec2, f32)>, normal: Vec2) -> Vec<(Vec2, f32)> {
-    if points.len() <= 1 { return points; }
+fn reduce_to_manifold(contacts: Vec<Contact>, normal: Vec2) -> Vec<Contact> {
+    if contacts.len() <= 1 { return contacts; }
     let tangent = normal.perp();
 
     // Deepest point (largest penetration)
-    let deepest = points.iter()
-        .max_by(|a, b| a.1.total_cmp(&b.1)).unwrap()
+    let deepest = contacts.iter()
+        .max_by(|a, b| a.depth.total_cmp(&b.depth)).unwrap()
     ;
 
     // Furthest point along tangent from deepest
-    let furthest = points.iter()
+    let furthest = contacts.iter()
         .max_by(|a, b| {
-            let da = (a.0 - deepest.0).dot(tangent).abs();
-            let db = (b.0 - deepest.0).dot(tangent).abs();
+            let da = (a.point - deepest.point).dot(tangent).abs();
+            let db = (b.point - deepest.point).dot(tangent).abs();
             da.total_cmp(&db)
         }).unwrap()
     ;
 
-    if (deepest.0 - furthest.0).dot(tangent).abs() < f32::EPSILON {
+    if (deepest.point - furthest.point).dot(tangent).abs() < f32::EPSILON {
         vec![*deepest]
     } else { vec![*deepest, *furthest] }
 }
 
-/// Returns (point, depth, normal, is_shape1)
-fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Vec2, f32, Vec2, bool)> {
+fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Contact, ManifoldMeta)> {
     let mut points = Vec::new();
     let pairs = dual_tree_descent(&pos12, shape1, shape2);
 
@@ -134,8 +141,8 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
     for (idx1, idx2) in pairs.iter() {
         let (faces1, cell1) = &shape1.faces[*idx1];
         let (faces2, cell2) = &shape2.faces[*idx2];
-        for (start2, end2, normal2) in generate_lines(faces2, cell2, shape2) {
-            for (start1, end1, normal1) in generate_lines(faces1, cell1, shape1) {
+        for (start1, end1, normal1) in generate_lines(faces1, cell1, shape1) {
+            for (start2, end2, normal2) in generate_lines(faces2, cell2, shape2) {
                 let result1 = intersect_axis_aligned_with_depth(
                     start1,
                     end1,
@@ -150,81 +157,82 @@ fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &V
                     pose21.transform_point(end1),
                     normal2
                 );
-                let result = match (result1, result2) {
-                    (Some(res1), Some(res2)) => {
-                        if res1.1 <= res2.1 { 
-                            Some((res1.0, res1.1, res1.2, true))
+                points.push( match (result1, result2) {
+                    (Some(contact1), Some(contact2)) => {
+                        if contact1.depth <= contact2.depth {
+                            (contact1, ManifoldMeta{normal: normal1, shape1: true})
                         } else {
-                            Some((res2.0, res2.1, res2.2, false))
+                            (contact2, ManifoldMeta{normal: normal2, shape1: false})
                         }
                     },
-                    (Some(res), None) => Some((res.0, res.1, res.2, true)),
-                    (None, Some(res)) => Some((res.0, res.1, res.2, false)),
-                    (None, None) => None,
-                };
-                let Some(result) = result else { continue };
-
-                points.push(result);
+                    (Some(contact), None) => (
+                        contact,
+                        ManifoldMeta{normal: normal1, shape1: true}
+                    ),
+                    (None, Some(contact)) => (
+                        contact,
+                        ManifoldMeta{normal: normal2, shape1: false}
+                    ),
+                    (None, None) => continue,
+                });
             }
         }
     }
     points
 }
 
-// Written by AI
-fn intersect_axis_aligned_with_depth(
-    a1: Vec2, a2: Vec2,
-    b1: Vec2, b2: Vec2,
-    axis_aligned_direction: Directions,
-) -> Option<(Vec2, f32, Vec2)> {
-    let normal = axis_aligned_direction.step().as_vec2();
-    let ax = if normal.x != 0.0 { 0 } else { 1 }; // normal axis
-    let tg = 1 - ax;                              // tangent axis
+fn intersect_axis_aligned_with_depth(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2, a_normal: Vec2) -> Option<Contact> {
+    let (normal_idx, tangent_idx) = if a_normal.x != 0.0 { (0, 1) } else { (1, 0) };
     let b_dir = b2 - b1;
     let a_min = a1.min(a2);
     let a_max = a1.max(a2);
 
-    let t = (a1[ax] - b1[ax]) / b_dir[ax];
+    let t = (a1[normal_idx] - b1[normal_idx]) / b_dir[normal_idx];
     if !(0.0..=1.0).contains(&t) { return None; }
 
-    let p = b1 + b_dir * t;
-    if p[tg] < a_min[tg] || p[tg] > a_max[tg] { return None; }
+    let point = b1 + b_dir * t;
+    if !(a_min[tangent_idx] ..= a_max[tangent_idx]).contains(&point[tangent_idx]) { return None; }
 
-    let pos_to_time = |val: f32| ((val - b1[tg]) / b_dir[tg]).clamp(0.0, 1.0);
-    let (ta, tb) = (pos_to_time(a_min[tg]), pos_to_time(a_max[tg]));
-    let depth_at  = |s: f32| normal[ax] * (a1[ax] - (b1 + b_dir * s)[ax]);
-    let depth = depth_at(ta.min(tb)).max(depth_at(ta.max(tb)));
+    let pos_to_time = |pos: f32| ((pos - b1[tangent_idx]) / b_dir[tangent_idx]).clamp(0.0, 1.0);
+    let depth_at  = |t: f32| a_normal[normal_idx] * (a1[normal_idx] - (b1 + b_dir * t)[normal_idx]);
+    let (time_a, time_b) = (pos_to_time(a_min[tangent_idx]), pos_to_time(a_max[tangent_idx]));
+    let depth = depth_at(time_a.min(time_b)).max(depth_at(time_a.max(time_b)));
 
-    if depth > 0.0 { Some((p, depth, normal)) } else { None }
+    if depth > 0.0 { Some(Contact{point, depth}) } else { None }
 }
 
 /// Returns Vec<(start, end, normal)>
-fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2, Directions)> {
+fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2, Vec2)> {
     let mut lines = Vec::new();
     for direction in faces.list() {
+        // We do this silly extension thing to prevent squeezing between contacts caused by
+        // the grid being chunked instead of a contiguous surface. If the face has a contiguous
+        // face to a side, extend that face to that side some amount.
+        // +-1 is an arbitrary amount which gets scaled, but I'm fairly sure we're fine.
+        // If it breaks things, revisit this
         let (p1, p2) = match direction {
             Directions::North => {
                 let (mut min, mut max) = (Vec2::ZERO, Vec2::new(1., 0.));
-                if !faces.west() { min.x -= 0.5 }
-                if !faces.east() { max.x += 0.5 }
+                if !faces.west() { min.x -= 1. }
+                if !faces.east() { max.x += 1. }
                 (min, max)
             },
             Directions::South => {
                 let (mut min, mut max) = (Vec2::new(0., 1.), Vec2::ONE);
-                if !faces.west() { min.x -= 0.5 }
-                if !faces.east() { max.x += 0.5 }
+                if !faces.west() { min.x -= 1. }
+                if !faces.east() { max.x += 1. }
                 (min, max)
             },
             Directions::East => {
                 let (mut min, mut max) = (Vec2::new(1., 0.), Vec2::ONE);
-                if !faces.north() { min.y -= 0.5 }
-                if !faces.south() { max.y += 0.5 }
+                if !faces.north() { min.y -= 1. }
+                if !faces.south() { max.y += 1. }
                 (min, max)
             },
             Directions::West => {
                 let (mut min, mut max) = (Vec2::ZERO, Vec2::new(0., 1.));
-                if !faces.north() { min.y -= 0.5 }
-                if !faces.south() { max.y += 0.5 }
+                if !faces.north() { min.y -= 1. }
+                if !faces.south() { max.y += 1. }
                 (min, max)
             }
         };
@@ -233,15 +241,11 @@ fn generate_lines(faces: &Faces, cell: &Cell, shape: &Voxels) -> Vec<(Vec2, Vec2
         lines.push((
             pos + (p1 * size),
             pos + (p2 * size),
-            direction
+            direction.step().as_vec2()
         ));
     }
     lines
 }
-
-
-
-
 
 
 
