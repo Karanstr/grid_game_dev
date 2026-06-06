@@ -133,6 +133,8 @@ fn reduce_to_manifold(contacts: Vec<Contact>, normal: Vec2) -> Vec<Contact> {
     } else { vec![*deepest, *furthest] }
 }
 
+
+// Needs to be changed
 fn generate_contact_points_voxel_voxel(pos12: &Pose, shape1: &Voxels, shape2: &Voxels) -> Vec<(Contact, ManifoldMeta)> {
     let mut points = Vec::new();
     let pairs = dual_tree_descent(&pos12, shape1, shape2);
@@ -308,24 +310,14 @@ fn dual_tree_descent(
             (Some(face1), Some(face2)) => {
                 candidates.push((face1, face2));
             }
-            (None, Some(_)) => {
-                let splits = descend_split(&node1, shape1);
-                for split in splits.into_iter().flatten() {
-                    stack.push((split, node2.clone()));
-                }
-            }
+            (None, Some(_)) |
             (None, None) if node1.pointer.height >= node2.pointer.height => {
                 let splits = descend_split(&node1, shape1);
                 for split in splits.into_iter().flatten() {
                     stack.push((split, node2.clone()));
                 }
             }
-            (Some(_), None) => {
-                let splits = descend_split(&node2, shape2);
-                for split in splits.into_iter().flatten() {
-                    stack.push((node1.clone(), split));
-                }
-            }
+            (Some(_), None) |
             (None, None) if node1.pointer.height < node2.pointer.height => {
                 let splits = descend_split(&node2, shape2);
                 for split in splits.into_iter().flatten() {
